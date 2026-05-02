@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export default function AdminSidebar() {
-  const pathname = usePathname();
+export default function AdminSidebar({ user, role }: { user: any; role: string | null }) {
+    const pathname = usePathname();
   const isMarkusView = pathname.startsWith("/admin/markus");
+
+  
 
   return (
     <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-black/5 bg-white/80 p-5 shadow-xl shadow-black/5 backdrop-blur lg:block">
@@ -13,8 +15,11 @@ export default function AdminSidebar() {
         <div className="text-2xl font-black tracking-tight">primakavi</div>
         <div className="mt-2 inline-flex rounded-full bg-[#fbf7ef] px-3 py-1 text-xs font-black">
           SHOW PORTAL
+          V.1.01
         </div>
       </div>
+
+      
 
       <nav className="space-y-2">
         <SidebarLink href="/admin" label="Dashboard" icon="✨" active={pathname === "/admin"} />
@@ -22,26 +27,42 @@ export default function AdminSidebar() {
         <SidebarLink href="/admin/markus" label="Markus-Ansicht" icon="🎹" active={isMarkusView} />
       </nav>
 
-      <div
-        className={[
-          "absolute bottom-5 left-5 right-5 rounded-3xl p-5 shadow-sm ring-1 ring-black/5",
-          isMarkusView
-            ? "bg-gradient-to-br from-lime-200 via-green-100 to-white"
-            : "bg-gradient-to-br from-[#fff2c8] to-[#ffe1cf]",
-        ].join(" ")}
-      >
-        <div className="text-2xl">{isMarkusView ? "🎹" : "💡"}</div>
+<div className="absolute bottom-5 left-5 right-5 space-y-3">
+  <div
+    className={[
+      "rounded-3xl p-5 shadow-sm ring-1 ring-black/5",
+      isMarkusView
+        ? "bg-gradient-to-br from-lime-200 via-green-100 to-white"
+        : "bg-gradient-to-br from-[#fff2c8] to-[#ffe1cf]",
+    ].join(" ")}
+  >
+    <div className="text-2xl">{isMarkusView ? "🎹" : "💡"}</div>
 
-        <p className="mt-3 text-sm font-black">
-          {isMarkusView ? "Markus-Modus aktiv" : "Booking-Zentrale"}
-        </p>
+    <p className="mt-3 text-sm font-black">
+      {isMarkusView ? "Markus-Modus aktiv" : "Booking-Zentrale"}
+    </p>
 
-        <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-          {isMarkusView
-            ? "Reduzierte Piano-Vorschau – perfekt für Technik, Ablauf und Adresse."
-            : "Alles rund um Shows, Akten und Vorbereitung."}
-        </p>
-      </div>
+    <p className="mt-1 text-xs leading-relaxed text-neutral-600">
+      {isMarkusView
+        ? "Reduzierte Piano-Vorschau – perfekt für Technik, Ablauf und Adresse."
+        : "Alles rund um Shows, Akten und Vorbereitung."}
+    </p>
+  </div>
+<div className="mt-10 rounded-2xl bg-[#fbf7ef] p-4 ring-1 ring-black/5">
+  <p className="text-xs text-neutral-500">Eingeloggt als</p>
+
+  <p className="mt-1 text-sm font-black text-zinc-900">
+    {user?.email || "—"}
+  </p>
+
+  <Link
+    href="/logout"
+    className="block rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-black text-zinc-700 transition hover:bg-zinc-200"
+  >
+    Logout
+  </Link>
+</div>
+</div>
     </aside>
   );
 }
