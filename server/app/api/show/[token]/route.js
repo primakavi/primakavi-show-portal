@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/show/[token]/route.js")
+R.c("server/chunks/primakavi-show-portal_app_api_show_[token]_route_ts_0j_h523._.js")
+R.c("server/chunks/0x1i_next_0.dc9j3._.js")
+R.c("server/chunks/0x1i_@supabase_postgrest-js_dist_index_mjs_12plbbs._.js")
+R.c("server/chunks/0x1i_@supabase_auth-js_dist_module_0p113lp._.js")
+R.c("server/chunks/0x1i_0s9ol6i._.js")
+R.c("server/chunks/[root-of-the-server]__0t_i.ia._.js")
+R.c("server/chunks/0egh__next-internal_server_app_api_show_[token]_route_actions_0v21g.u.js")
+R.m("[project]/primakavi-show-portal/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/primakavi-show-portal/app/api/show/[token]/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)")
+module.exports=R.m("[project]/primakavi-show-portal/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/primakavi-show-portal/app/api/show/[token]/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)").exports

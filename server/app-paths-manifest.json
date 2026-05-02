@@ -1,0 +1,9 @@
+{
+  "/admin/markus/page": "app/admin/markus/page.js",
+  "/admin/page": "app/admin/page.js",
+  "/admin/shows/[id]/page": "app/admin/shows/[id]/page.js",
+  "/admin/shows/page": "app/admin/shows/page.js",
+  "/api/show/[token]/files/route": "app/api/show/[token]/files/route.js",
+  "/api/show/[token]/route": "app/api/show/[token]/route.js",
+  "/show/[token]/page": "app/show/[token]/page.js"
+}

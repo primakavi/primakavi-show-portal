@@ -1,0 +1,41 @@
+{
+  "node": {
+    "402274442b32d392693ced387e9a15cafee8bb82f5": {
+      "workers": {
+        "app/admin/shows/page": {
+          "moduleId": "[project]/primakavi-show-portal/.next-internal/server/app/admin/shows/page/actions.js { ACTIONS_MODULE0 => \"[project]/primakavi-show-portal/app/admin/shows/page.tsx [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "$$RSC_SERVER_ACTION_0",
+          "filename": "primakavi-show-portal/app/admin/shows/page.tsx"
+        }
+      },
+      "exportedName": "$$RSC_SERVER_ACTION_0",
+      "filename": "primakavi-show-portal/app/admin/shows/page.tsx"
+    },
+    "40399aedbd592b32cca6cc84f2e7ee2cfb8cd7f91e": {
+      "workers": {
+        "app/admin/shows/page": {
+          "moduleId": "[project]/primakavi-show-portal/.next-internal/server/app/admin/shows/page/actions.js { ACTIONS_MODULE0 => \"[project]/primakavi-show-portal/app/admin/shows/page.tsx [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "$$RSC_SERVER_ACTION_1",
+          "filename": "primakavi-show-portal/app/admin/shows/page.tsx"
+        }
+      },
+      "exportedName": "$$RSC_SERVER_ACTION_1",
+      "filename": "primakavi-show-portal/app/admin/shows/page.tsx"
+    },
+    "40b489684359e45ad7119dbc77bf4066fdd245abd9": {
+      "workers": {
+        "app/admin/shows/page": {
+          "moduleId": "[project]/primakavi-show-portal/.next-internal/server/app/admin/shows/page/actions.js { ACTIONS_MODULE0 => \"[project]/primakavi-show-portal/app/admin/shows/page.tsx [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "$$RSC_SERVER_ACTION_2",
+          "filename": "primakavi-show-portal/app/admin/shows/page.tsx"
+        }
+      },
+      "exportedName": "$$RSC_SERVER_ACTION_2",
+      "filename": "primakavi-show-portal/app/admin/shows/page.tsx"
+    }
+  },
+  "edge": {}
+}

@@ -1,0 +1,23 @@
+{
+  "devFiles": [],
+  "ampDevFiles": [],
+  "polyfillFiles": [],
+  "lowPriorityFiles": [],
+  "rootMainFiles": [],
+  "pages": {
+    "/_app": [
+      "static/chunks/0x1i_next_dist_compiled_04vdxni._.js",
+      "static/chunks/0x1i_next_dist_shared_lib_0zk0ift._.js",
+      "static/chunks/0x1i_next_dist_client_0..3smw._.js",
+      "static/chunks/0x1i_next_dist_03my0xq._.js",
+      "static/chunks/0x1i_next_app_0m_5p67.js",
+      "static/chunks/[next]_entry_page-loader_ts_084mg41._.js",
+      "static/chunks/0x1i_react-dom_0.46hhv._.js",
+      "static/chunks/0x1i_0iaj4t3._.js",
+      "static/chunks/[root-of-the-server]__059iass._.js",
+      "static/chunks/primakavi-show-portal_pages__app_07xvfw~._.js",
+      "static/chunks/turbopack-primakavi-show-portal_pages__app_06e7prq._.js"
+    ]
+  },
+  "ampFirstPages": []
+}

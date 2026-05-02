@@ -1,0 +1,17 @@
+{
+  "node": {
+    "404b113459dcaa8d32014e56bdac80fc175f5b5024": {
+      "workers": {
+        "app/admin/shows/[id]/page": {
+          "moduleId": "[project]/primakavi-show-portal/.next-internal/server/app/admin/shows/[id]/page/actions.js { ACTIONS_MODULE0 => \"[project]/primakavi-show-portal/app/admin/shows/[id]/page.tsx [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
+          "async": false,
+          "exportedName": "$$RSC_SERVER_ACTION_0",
+          "filename": "primakavi-show-portal/app/admin/shows/[id]/page.tsx"
+        }
+      },
+      "exportedName": "$$RSC_SERVER_ACTION_0",
+      "filename": "primakavi-show-portal/app/admin/shows/[id]/page.tsx"
+    }
+  },
+  "edge": {}
+}
