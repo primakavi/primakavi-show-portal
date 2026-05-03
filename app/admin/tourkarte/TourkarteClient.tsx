@@ -3,6 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const TourMap = dynamic(() => import("./TourMap"), {
   ssr: false,
@@ -23,15 +24,35 @@ type Show = {
 };
 
 export default function TourkarteClient({ shows }: { shows: Show[] }) {
+  const router = useRouter();
+
   const [filter, setFilter] = useState<"kommend" | "markus" | "alle" | "ohne">(
     "kommend"
   );
-
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
+  const [isGeocoding, setIsGeocoding] = useState(false);
+
+  async function runGeocoding() {
+    setIsGeocoding(true);
+
+    await fetch("/api/jobs/geocode-show", {
+      method: "GET",
+    });
+
+    router.refresh();
+    setIsGeocoding(false);
+  }
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  const pendingGeocodingCount = shows.filter(
+    (show) =>
+      show.geocoding_status === "pending" ||
+      show.latitude === null ||
+      show.longitude === null
+  ).length;
 
   const filteredShows = useMemo(() => {
     return shows.filter((show) => {
@@ -55,7 +76,7 @@ export default function TourkarteClient({ shows }: { shows: Show[] }) {
 
   const tourStops = useMemo(() => {
     return filteredShows
-      .filter((s) => s.latitude && s.longitude)
+      .filter((s) => s.latitude !== null && s.longitude !== null)
       .sort((a, b) => {
         const da = a.show_date ? new Date(a.show_date).getTime() : 0;
         const db = b.show_date ? new Date(b.show_date).getTime() : 0;
@@ -85,14 +106,13 @@ export default function TourkarteClient({ shows }: { shows: Show[] }) {
   return (
     <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
       <div className="mx-auto max-w-7xl space-y-6">
-
-        {/* 🔥 HEADER */}
         <header className="relative overflow-hidden rounded-[2.4rem] bg-[#101014] p-10 text-white shadow-2xl shadow-black/10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(255,105,180,0.38),transparent_28%),radial-gradient(circle_at_35%_25%,rgba(255,145,60,0.28),transparent_35%),radial-gradient(circle_at_70%_95%,rgba(190,255,90,0.13),transparent_28%)]" />
 
           <div className="absolute right-20 top-8 rotate-6 text-7xl text-pink-400">
             🗺️
           </div>
+
           <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div>
               <p className="text-sm font-bold uppercase tracking-widest text-white/50">
@@ -109,6 +129,19 @@ export default function TourkarteClient({ shows }: { shows: Show[] }) {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {pendingGeocodingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={runGeocoding}
+                  disabled={isGeocoding}
+                  className="rounded-full bg-lime-300 px-4 py-2 text-sm font-black text-zinc-950 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isGeocoding
+                    ? "Lade Standorte…"
+                    : `Standorte laden (${pendingGeocodingCount})`}
+                </button>
+              )}
+
               <FilterButton active={filter === "kommend"} onClick={() => setFilter("kommend")}>
                 Kommend
               </FilterButton>
@@ -125,7 +158,6 @@ export default function TourkarteClient({ shows }: { shows: Show[] }) {
           </div>
         </header>
 
-        {/* 🔥 FILTER */}
         <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-black/5">
           <div className="grid gap-4 md:grid-cols-2">
             <input
@@ -145,16 +177,17 @@ export default function TourkarteClient({ shows }: { shows: Show[] }) {
         </section>
 
         <div className="grid gap-5 xl:grid-cols-[420px_1fr]">
-
-          {/* 🔥 SIDEBAR */}
           <aside className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-black/5">
             <div className="grid grid-cols-3 gap-3">
               <Stat label="Stops" value={tourStops.length} />
-              <Stat label="KM" value={Math.round(legs.reduce((s, l) => s + l.distance, 0))} />
+              <Stat
+                label="KM"
+                value={Math.round(legs.reduce((s, l) => s + l.distance, 0))}
+              />
               <Stat label="Lücken" value={longLegs.length} />
             </div>
 
-            <div className="mt-6 space-y-3 max-h-[600px] overflow-auto">
+            <div className="mt-6 max-h-[600px] space-y-3 overflow-auto">
               {tourStops.map((show, i) => (
                 <div key={show.id}>
                   <Link
@@ -169,7 +202,7 @@ export default function TourkarteClient({ shows }: { shows: Show[] }) {
                   </Link>
 
                   {legs[i] && (
-                    <p className="text-xs text-orange-500 pl-4">
+                    <p className="pl-4 text-xs text-orange-500">
                       ↓ {Math.round(legs[i].distance)} km
                     </p>
                   )}
@@ -178,11 +211,9 @@ export default function TourkarteClient({ shows }: { shows: Show[] }) {
             </div>
           </aside>
 
-          {/* 🔥 MAP */}
           <section className="rounded-[2rem] bg-white p-3 shadow-xl ring-1 ring-black/5">
             <TourMap shows={tourStops} />
           </section>
-
         </div>
       </div>
     </main>
@@ -192,12 +223,11 @@ export default function TourkarteClient({ shows }: { shows: Show[] }) {
 function FilterButton({ active, onClick, children }: any) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={[
         "rounded-full px-4 py-2 text-sm font-black",
-        active
-          ? "bg-white text-black"
-          : "bg-white/10 text-white",
+        active ? "bg-white text-black" : "bg-white/10 text-white",
       ].join(" ")}
     >
       {children}
@@ -207,7 +237,7 @@ function FilterButton({ active, onClick, children }: any) {
 
 function Stat({ label, value }: any) {
   return (
-    <div className="bg-[#fbf7ef] rounded-2xl p-3 text-center">
+    <div className="rounded-2xl bg-[#fbf7ef] p-3 text-center">
       <p className="text-2xl font-black">{value}</p>
       <p className="text-xs text-zinc-400">{label}</p>
     </div>
