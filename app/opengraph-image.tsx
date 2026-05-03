@@ -7,13 +7,7 @@ export const size = {
 
 export const contentType = "image/png";
 
-export default async function Image() {
-  const logoRes = await fetch("https://booking.primakavi.de/logo-primakavi.png", {
-    cache: "no-store",
-  });
-
-  const logo = await logoRes.arrayBuffer();
-
+export default function Image() {
   return new ImageResponse(
     (
       <div
@@ -88,22 +82,20 @@ export default async function Image() {
                 justifyContent: "center",
               }}
             >
-              <img
-                src={logo as any}
-                width="50"
-                height="50"
+              <div
                 style={{
+                  width: 50,
+                  height: 50,
                   borderRadius: 13,
+                  backgroundImage:
+                    "url(https://booking.primakavi.de/logo-primakavi.png)",
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
                 }}
               />
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
+            <div style={{ display: "flex", flexDirection: "column" }}>
               <div
                 style={{
                   fontSize: 31,
@@ -114,6 +106,7 @@ export default async function Image() {
               >
                 primakavi
               </div>
+
               <div
                 style={{
                   marginTop: 4,
