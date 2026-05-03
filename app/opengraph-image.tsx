@@ -24,101 +24,71 @@ export default function Image() {
           position: "relative",
         }}
       >
-        {/* 🌈 Glow Gradient (wie Dashboard) */}
+        {/* Glow */}
         <div
           style={{
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(circle at 20% 30%, rgba(251,146,60,0.35), transparent 35%), radial-gradient(circle at 80% 40%, rgba(236,72,153,0.35), transparent 40%), radial-gradient(circle at 50% 80%, rgba(168,85,247,0.25), transparent 40%)",
+              "radial-gradient(circle at 20% 30%, rgba(251,146,60,0.35), transparent 35%), radial-gradient(circle at 80% 40%, rgba(236,72,153,0.35), transparent 40%)",
           }}
         />
 
-        {/* ✦ Doodles (wie UI) */}
-        <div
-          style={{
-            position: "absolute",
-            right: 120,
-            top: 80,
-            fontSize: 60,
-            color: "#fb923c",
-          }}
-        >
-          ★
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            right: 80,
-            bottom: 80,
-            fontSize: 48,
-            color: "#ec4899",
-          }}
-        >
-          👑
-        </div>
-
-        {/* 🔝 Header (Logo + Brand) */}
+        {/* Logo + Brand */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 20,
+            gap: 16,
             zIndex: 2,
           }}
         >
           <img
             src="https://booking.primakavi.de/logo-primakavi.png"
-            width="64"
-            height="64"
+            width="48"
+            height="48"
             style={{
-              borderRadius: 16,
+              borderRadius: 12,
               background: "#d9ff00",
-              padding: 6,
+              padding: 4,
             }}
           />
 
-          <div
+          <span
             style={{
-              fontSize: 32,
+              fontSize: 28,
               fontWeight: 800,
-              letterSpacing: "-0.02em",
             }}
           >
             primakavi
-          </div>
+          </span>
         </div>
 
-        {/* 🧠 Headline */}
+        {/* Headline */}
         <div
           style={{
             fontSize: 84,
             fontWeight: 900,
             marginTop: 50,
-            lineHeight: 1.05,
-            letterSpacing: "-0.03em",
             zIndex: 2,
           }}
         >
-          BOOKING CRM
+          BOOKING CRM.
         </div>
 
-        {/* 💬 Subline */}
+        {/* Subline */}
         <div
           style={{
             fontSize: 30,
             marginTop: 28,
             color: "#d4d4d4",
-            maxWidth: 820,
-            lineHeight: 1.4,
             zIndex: 2,
           }}
         >
           Shows, Akten & Tourplanung an einem Ort.
         </div>
 
-        {/* 🔥 Badge */}
+        {/* Badge */}
         <div
           style={{
             position: "absolute",
@@ -129,7 +99,6 @@ export default function Image() {
             background: "linear-gradient(135deg, #f472b6, #fb923c)",
             fontSize: 20,
             fontWeight: 800,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
             zIndex: 2,
           }}
         >
