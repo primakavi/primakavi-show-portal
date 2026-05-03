@@ -14,79 +14,60 @@ export default function Image() {
         style={{
           width: "1200px",
           height: "630px",
-          background: "#fbf7ef",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
           padding: "80px",
+          background: "#0b0b0b",
+          color: "white",
           fontFamily: "Arial",
           position: "relative",
         }}
       >
-        {/* 🌈 Soft Gradient Blobs */}
+        {/* 🌈 Glow Gradient (wie Dashboard) */}
         <div
           style={{
             position: "absolute",
-            top: -120,
-            right: -120,
-            width: 420,
-            height: 420,
+            inset: 0,
             background:
-              "radial-gradient(circle, rgba(236,72,153,0.35), transparent 60%)",
+              "radial-gradient(circle at 20% 30%, rgba(251,146,60,0.35), transparent 35%), radial-gradient(circle at 80% 40%, rgba(236,72,153,0.35), transparent 40%), radial-gradient(circle at 50% 80%, rgba(168,85,247,0.25), transparent 40%)",
           }}
         />
 
+        {/* ✦ Doodles (wie UI) */}
         <div
           style={{
             position: "absolute",
-            bottom: -140,
-            left: -140,
-            width: 420,
-            height: 420,
-            background:
-              "radial-gradient(circle, rgba(251,146,60,0.35), transparent 60%)",
-          }}
-        />
-
-        <div
-          style={{
-            position: "absolute",
-            top: 120,
-            left: 300,
-            width: 300,
-            height: 300,
-            background:
-              "radial-gradient(circle, rgba(221,242,26,0.25), transparent 60%)",
-          }}
-        />
-
-        {/* ✦ Doodles */}
-        <div
-          style={{
-            position: "absolute",
+            right: 120,
             top: 80,
-            right: 180,
-            fontSize: 48,
-            color: "rgba(236,72,153,0.4)",
+            fontSize: 60,
+            color: "#fb923c",
           }}
         >
-          ✦
+          ★
         </div>
 
         <div
           style={{
             position: "absolute",
-            bottom: 120,
-            left: 200,
-            fontSize: 32,
-            color: "rgba(0,0,0,0.15)",
+            right: 80,
+            bottom: 80,
+            fontSize: 48,
+            color: "#ec4899",
           }}
         >
-          ✧
+          👑
         </div>
 
         {/* 🔝 Header (Logo + Brand) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 20,
+            zIndex: 2,
+          }}
+        >
           <img
             src="https://booking.primakavi.de/logo-primakavi.png"
             width="64"
@@ -100,9 +81,8 @@ export default function Image() {
 
           <div
             style={{
-              fontSize: 34,
+              fontSize: 32,
               fontWeight: 800,
-              color: "#111",
               letterSpacing: "-0.02em",
             }}
           >
@@ -110,18 +90,18 @@ export default function Image() {
           </div>
         </div>
 
-        {/* 🧠 Main Title */}
+        {/* 🧠 Headline */}
         <div
           style={{
-            fontSize: 82,
+            fontSize: 84,
             fontWeight: 900,
             marginTop: 50,
-            color: "#111",
             lineHeight: 1.05,
             letterSpacing: "-0.03em",
+            zIndex: 2,
           }}
         >
-          Show Portal
+          BOOKING CRM
         </div>
 
         {/* 💬 Subline */}
@@ -129,12 +109,13 @@ export default function Image() {
           style={{
             fontSize: 30,
             marginTop: 28,
-            color: "#444",
+            color: "#d4d4d4",
             maxWidth: 820,
             lineHeight: 1.4,
+            zIndex: 2,
           }}
         >
-          Shows, Akten, Portale & Vorbereitung an einem Ort.
+          Shows, Akten & Tourplanung an einem Ort.
         </div>
 
         {/* 🔥 Badge */}
@@ -146,10 +127,10 @@ export default function Image() {
             padding: "16px 28px",
             borderRadius: 999,
             background: "linear-gradient(135deg, #f472b6, #fb923c)",
-            color: "white",
             fontSize: 20,
             fontWeight: 800,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+            zIndex: 2,
           }}
         >
           booking.primakavi.de
