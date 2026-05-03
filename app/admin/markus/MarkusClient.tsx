@@ -378,10 +378,10 @@ function technikText(show: any) {
 
 function travelText(show: any) {
   const values = [
-    show.parking_available ? "Parkplatz vorhanden" : null,
-    show.loading_zone_available ? "Ladezone vorhanden" : null,
-    show.no_parking_available ? "Keine Parkmöglichkeit" : null,
-    show.public_transport_recommended ? "ÖPNV empfohlen" : null,
+    show.parking_available === true ? "Parkplatz vorhanden" : null,
+    show.loading_zone_available === true ? "Ladezone vorhanden" : null,
+    show.no_parking_available === true ? "Keine Parkmöglichkeit" : null,
+    show.public_transport_recommended === true ? "ÖPNV empfohlen" : null,
     show.parking_details,
     show.travel_notes,
   ];
