@@ -5,6 +5,7 @@ import AdminClient from "../AdminClient";
 
 export default async function ShowsPage() {
   const { data: shows, error } = await supabaseAdmin
+    .schema("booking")
     .from("shows")
     .select(`
       id,
@@ -22,22 +23,24 @@ export default async function ShowsPage() {
       contact_email,
       contact_phone,
       venue_address,
-      schedule,
-      technik,
-      anreise,
-      unterkunft,
 
       internal_status,
       billing_status,
       contract_status,
       markus_included,
 
-      portal_data,
       checklist,
+      last_portal_update,
+      last_reviewed_at,
 
-      show_files (id, file_name, file_type)
+      show_files (id, file_name, file_type),
+      show_portal_submissions (
+        id,
+        submitted_at,
+        reviewed_at
+      )
     `)
-    .order("show_date", { ascending: true });
+    .order("show_date", { ascending: true, nullsFirst: false });
 
   if (error) {
     return (
@@ -59,28 +62,23 @@ export default async function ShowsPage() {
   );
 }
 
-// ---------------- ACTIONS ----------------
-
-async function createShowAction(formData: FormData) {
+async function createShowAction() {
   "use server";
 
-  const showDate = String(formData.get("show_date") || "");
-  const venue = String(formData.get("venue") || "");
-
-  const token = createToken(showDate, venue);
+  const token = createToken("", "");
 
   const { data, error } = await supabaseAdmin
+    .schema("booking")
     .from("shows")
     .insert({
       token,
-      artist: String(formData.get("artist") || "Sonja Gründemann"),
-      program: String(formData.get("program") || ""),
-      show_date: showDate || null,
-      weekday: getWeekday(showDate),
-      venue,
-      city: String(formData.get("city") || ""),
-      start_time: String(formData.get("start_time") || ""),
-      entry_time: String(formData.get("entry_time") || ""),
+      artist: "Sonja Gründemann",
+      program: "Jetzt mal Tacheles",
+      internal_status: "neu",
+      billing_status: "offen",
+      contract_status: "offen",
+      markus_included: false,
+      checklist: {},
     })
     .select("id")
     .single();
@@ -100,33 +98,54 @@ async function duplicateShowAction(formData: FormData) {
   const id = String(formData.get("show_id") || "");
   if (!id) return;
 
-  const { data: original } = await supabaseAdmin
+  const { data: original, error: originalError } = await supabaseAdmin
+    .schema("booking")
     .from("shows")
     .select("*")
     .eq("id", id)
     .single();
 
-  const token = createToken(original?.show_date || "", original?.venue || "");
+  if (originalError || !original) {
+    throw new Error(
+      originalError?.message || "Original-Show konnte nicht geladen werden."
+    );
+  }
 
-  const { data: duplicate } = await supabaseAdmin
+  const token = createToken(original.show_date || "", original.venue || "");
+
+  const {
+    id: _oldId,
+    created_at: _oldCreatedAt,
+    token: _oldToken,
+    contract_created_at: _oldContractCreatedAt,
+    last_portal_update: _oldLastPortalUpdate,
+    last_reviewed_at: _oldLastReviewedAt,
+    ...copy
+  } = original;
+
+  const { data: duplicate, error } = await supabaseAdmin
+    .schema("booking")
     .from("shows")
     .insert({
+      ...copy,
       token,
-      artist: original?.artist,
-      program: original?.program,
-      show_date: original?.show_date,
-      weekday: original?.weekday,
-      venue: `${original?.venue} Kopie`,
-      city: original?.city,
-      start_time: original?.start_time,
-      entry_time: original?.entry_time,
+      venue: `${original.venue || "Show"} (Kopie)`,
+      internal_status: "neu",
+      billing_status: "offen",
+      checklist: {},
+      last_portal_update: null,
+      last_reviewed_at: null,
     })
     .select("id")
     .single();
 
+  if (error || !duplicate) {
+    throw new Error(error?.message || "Show konnte nicht dupliziert werden.");
+  }
+
   revalidateAll();
 
-  redirect(`/admin/shows/${duplicate?.id}`);
+  redirect(`/admin/shows/${duplicate.id}`);
 }
 
 async function deleteShowAction(formData: FormData) {
@@ -135,7 +154,15 @@ async function deleteShowAction(formData: FormData) {
   const id = String(formData.get("show_id") || "");
   if (!id) return;
 
-  await supabaseAdmin.from("shows").delete().eq("id", id);
+  const { error } = await supabaseAdmin
+    .schema("booking")
+    .from("shows")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 
   revalidateAll();
 }
@@ -146,25 +173,22 @@ function revalidateAll() {
   revalidatePath("/admin/markus");
 }
 
-// ---------------- HELPERS ----------------
-
 function createToken(date: string, venue: string) {
   const cleanVenue =
     venue
       .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/ä/g, "ae")
+      .replace(/ö/g, "oe")
+      .replace(/ü/g, "ue")
+      .replace(/ß/g, "ss")
       .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
       .slice(0, 18) || "show";
 
   const cleanDate = date ? date.replaceAll("-", "") : "date";
   const random = crypto.randomUUID().slice(0, 6);
 
   return `${cleanDate}-${cleanVenue}-${random}`;
-}
-
-function getWeekday(date: string) {
-  if (!date) return null;
-
-  const d = new Date(date);
-
-  return d.toLocaleDateString("de-DE", { weekday: "long" }).toUpperCase();
 }

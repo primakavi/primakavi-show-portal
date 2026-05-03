@@ -8,7 +8,7 @@ type FilterKey = "alle" | "kommend" | "vergangen" | "offen" | "fertig";
 export default function MarkusClient({ shows }: { shows: any[] }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("alle");
-  const [openIds, setOpenIds] = useState<string[]>([]);
+  const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -19,15 +19,22 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
         show.city,
         show.venue_address,
         show.program,
-        show.technik,
-        show.schedule,
-        show.anreise,
-        show.unterkunft,
+        show.schedule_notes,
+        show.tech_notes,
+        show.piano_type,
+        show.epiano_available,
+        show.piano_notes,
+        show.tech_contact,
+        show.travel_notes,
+        show.parking_details,
         show.accommodation_type,
+        show.accommodation_hotel_name,
+        show.accommodation_address,
+        show.accommodation_buyout,
         show.accommodation_notes,
         show.markus_notes,
         show.catering_details,
-        show.backstage_equipment,
+        show.backstage_notes,
       ]
         .filter(Boolean)
         .join(" ")
@@ -54,19 +61,24 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
   }, [shows, query, filter, today]);
 
   function toggle(id: string) {
-    setOpenIds((current) =>
-      current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id]
-    );
+    setOpenIds((current) => ({
+      ...current,
+      [id]: !current[id],
+    }));
   }
 
   function openAll() {
-    setOpenIds(filteredShows.map((show) => show.id));
+    const next: Record<string, boolean> = {};
+
+    filteredShows.forEach((show) => {
+      next[String(show.id)] = true;
+    });
+
+    setOpenIds(next);
   }
 
   function closeAll() {
-    setOpenIds([]);
+    setOpenIds({});
   }
 
   return (
@@ -128,34 +140,19 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
 
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-wrap gap-2">
-                <FilterButton
-                  active={filter === "alle"}
-                  onClick={() => setFilter("alle")}
-                >
+                <FilterButton active={filter === "alle"} onClick={() => setFilter("alle")}>
                   Alle
                 </FilterButton>
-                <FilterButton
-                  active={filter === "kommend"}
-                  onClick={() => setFilter("kommend")}
-                >
+                <FilterButton active={filter === "kommend"} onClick={() => setFilter("kommend")}>
                   Kommend
                 </FilterButton>
-                <FilterButton
-                  active={filter === "vergangen"}
-                  onClick={() => setFilter("vergangen")}
-                >
+                <FilterButton active={filter === "vergangen"} onClick={() => setFilter("vergangen")}>
                   Vergangen
                 </FilterButton>
-                <FilterButton
-                  active={filter === "offen"}
-                  onClick={() => setFilter("offen")}
-                >
+                <FilterButton active={filter === "offen"} onClick={() => setFilter("offen")}>
                   Offen
                 </FilterButton>
-                <FilterButton
-                  active={filter === "fertig"}
-                  onClick={() => setFilter("fertig")}
-                >
+                <FilterButton active={filter === "fertig"} onClick={() => setFilter("fertig")}>
                   Fertig
                 </FilterButton>
               </div>
@@ -178,8 +175,8 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
               <MarkusAccordion
                 key={show.id}
                 show={show}
-                isOpen={openIds.includes(show.id)}
-                onToggle={() => toggle(show.id)}
+                isOpen={!!openIds[String(show.id)]}
+                onToggle={() => toggle(String(show.id))}
                 today={today}
               />
             ))}
@@ -246,9 +243,7 @@ function MarkusAccordion({
             </p>
 
             {show.venue_address && (
-              <p className="mt-2 text-sm text-zinc-500">
-                {show.venue_address}
-              </p>
+              <p className="mt-2 text-sm text-zinc-500">{show.venue_address}</p>
             )}
           </div>
 
@@ -256,9 +251,7 @@ function MarkusAccordion({
             <p className="font-black text-zinc-950">
               Beginn: {show.start_time || "—"}
             </p>
-            <p className="mt-1 text-zinc-500">
-              Einlass: {show.entry_time || "—"}
-            </p>
+            <p className="mt-1 text-zinc-500">Einlass: {show.entry_time || "—"}</p>
           </div>
 
           <div className="text-right text-3xl font-black text-zinc-400">
@@ -269,24 +262,20 @@ function MarkusAccordion({
 
       {isOpen && (
         <div className="mt-4 rounded-[1.6rem] bg-[#fbf7ef] p-5">
-<div className="grid gap-3 md:grid-cols-2">
-    <Info title="Adresse" value={addressText(show)} />
-  <Info title="Ablauf" value={show.schedule} />
+          <div className="grid gap-3 md:grid-cols-2">
+            <Info title="Adresse" value={addressText(show)} />
+            <Info title="Ablauf" value={scheduleText(show)} />
+            <Info title="Piano / Technik" value={technikText(show)} highlight />
 
-  <Info title="Piano / Technik" value={show.technik} highlight />
+            {show.markus_notes && (
+              <Info title="Notizen für Markus" value={show.markus_notes} highlight />
+            )}
 
-  {show.markus_notes && (
-    <Info
-      title="Notizen für Markus"
-      value={show.markus_notes}
-      highlight
-    />
-  )}
-
-  <Info title="Anreise" value={show.anreise || show.travel_details} />
-  <Info title="Unterkunft" value={accommodationText(show)} />
-  <Info title="Catering / Backstage" value={cateringText(show)} />
-</div>        </div>
+            <Info title="Anreise" value={travelText(show)} />
+            <Info title="Unterkunft" value={accommodationText(show)} />
+            <Info title="Catering / Backstage" value={cateringText(show)} />
+          </div>
+        </div>
       )}
     </article>
   );
@@ -370,30 +359,70 @@ function Info({
 }
 
 function addressText(show: any) {
-  return (
-    [show.venue, show.venue_address, show.city]
-      .filter(Boolean)
-      .join("\n") || null
-  );
+  return [show.venue, show.venue_address, show.city].filter(Boolean).join("\n") || null;
+}
+
+function technikText(show: any) {
+  const values = [
+    show.tech_sound_available ? "Ton vorhanden" : null,
+    show.tech_lights_available ? "Licht vorhanden" : null,
+    show.piano_type ? `Klavier / Flügel: ${show.piano_type}` : null,
+    show.epiano_available ? `E-Piano: ${show.epiano_available}` : null,
+    show.piano_notes ? `Modell: ${show.piano_notes}` : null,
+    show.tech_contact ? `Technik-Kontakt: ${show.tech_contact}` : null,
+    show.tech_notes,
+  ];
+
+  return values.filter(Boolean).join("\n") || null;
+}
+
+function travelText(show: any) {
+  const values = [
+    show.parking_available ? "Parkplatz vorhanden" : null,
+    show.loading_zone_available ? "Ladezone vorhanden" : null,
+    show.no_parking_available ? "Keine Parkmöglichkeit" : null,
+    show.public_transport_recommended ? "ÖPNV empfohlen" : null,
+    show.parking_details,
+    show.travel_notes,
+  ];
+
+  return values.filter(Boolean).join("\n") || null;
 }
 
 function cateringText(show: any) {
-  return (
-    [show.catering_status, show.catering_details, show.backstage_equipment]
-      .filter(Boolean)
-      .join("\n") || null
-  );
+  const values = [
+    show.catering_status,
+    show.catering_details,
+    show.backstage_room_available ? "Backstage-Raum vorhanden" : null,
+    show.backstage_mirror_available ? "Spiegel vorhanden" : null,
+    show.backstage_seating_available ? "Sitzgelegenheit vorhanden" : null,
+    show.backstage_table_available ? "Tisch vorhanden" : null,
+    show.backstage_no_room ? "Kein Backstage-Raum vorhanden" : null,
+    show.backstage_notes,
+  ];
+
+  return values.filter(Boolean).join("\n") || null;
 }
 
 function accommodationText(show: any) {
   const values = [
     show.accommodation_type,
+    show.accommodation_hotel_name,
+    show.accommodation_address,
+    show.accommodation_buyout ? `Buyout: ${show.accommodation_buyout}` : null,
     show.accommodation_notes,
-    show.unterkunft,
-  ]
-    .filter(Boolean)
-    .map((value) => String(value).replace(/^Unterkunft:\s*/i, "").trim())
-    .filter(Boolean);
+  ];
 
-  return Array.from(new Set(values)).join("\n") || null;
+  return values.filter(Boolean).join("\n") || null;
+}
+function scheduleText(show: any) {
+  const values = [
+    show.arrival_time ? `Ankunft: ${show.arrival_time}` : null,
+    show.soundcheck_time ? `Soundcheck: ${show.soundcheck_time}` : null,
+    show.entry_time ? `Einlass: ${show.entry_time}` : null,
+    show.start_time ? `Beginn: ${show.start_time}` : null,
+    show.schedule_notes ? `Notizen: ${show.schedule_notes}` : null,
+  ];
+
+  return values.filter(Boolean).join("\n") || null;
 }

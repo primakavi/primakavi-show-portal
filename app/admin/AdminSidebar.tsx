@@ -1,68 +1,130 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export default function AdminSidebar({ user, role }: { user: any; role: string | null }) {
-    const pathname = usePathname();
+export default function AdminSidebar({
+  user,
+  role,
+}: {
+  user: any;
+  role: string | null;
+}) {
+  const pathname = usePathname();
   const isMarkusView = pathname.startsWith("/admin/markus");
 
-  
-
   return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-black/5 bg-white/80 p-5 shadow-xl shadow-black/5 backdrop-blur lg:block">
-      <div className="mb-10">
-        <div className="text-2xl font-black tracking-tight">primakavi</div>
-        <div className="mt-2 inline-flex rounded-full bg-[#fbf7ef] px-3 py-1 text-xs font-black">
-          SHOW PORTAL
-          V.1.01
-        </div>
-      </div>
-
+    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-black/5 bg-[#fffdf8] px-6 py-6 shadow-[20px_0_60px_rgba(0,0,0,0.04)] lg:flex lg:flex-col">
       
+      {/* HEADER */}
+      <Link href="/admin" className="mb-10 block">
+        <div className="flex items-center gap-4">
+          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl bg-[#d9ff00] ring-1 ring-black/10">
+            <Image
+              src="/logo-primakavi.png"
+              alt="primakavi"
+              fill
+              priority
+              className="object-cover"
+            />
+          </div>
 
-      <nav className="space-y-2">
-        <SidebarLink href="/admin" label="Dashboard" icon="✨" active={pathname === "/admin"} />
-        <SidebarLink href="/admin/shows" label="Alle Shows" icon="📋" active={pathname.startsWith("/admin/shows")} />
-        <SidebarLink href="/admin/markus" label="Markus-Ansicht" icon="🎹" active={isMarkusView} />
+          <div>
+            <div className="text-xl font-black tracking-tight text-zinc-950">
+              primakavi
+            </div>
+
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
+                Show Portal
+              </span>
+              <span className="h-1 w-1 rounded-full bg-zinc-300" />
+              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
+                V.1.02
+              </span>
+            </div>
+          </div>
+        </div>
+      </Link>
+
+      {/* NAV */}
+      <nav className="space-y-1">
+        <SidebarLink
+          href="/admin"
+          label="Dashboard"
+          icon="✨"
+          active={pathname === "/admin"}
+        />
+
+        <SidebarLink
+          href="/admin/shows"
+          label="Alle Shows"
+          icon="📋"
+          active={pathname.startsWith("/admin/shows")}
+        />
+
+        <SidebarLink
+          href="/admin/markus"
+          label="Markus-Ansicht"
+          icon="🎹"
+          active={isMarkusView}
+        />
       </nav>
 
-<div className="absolute bottom-5 left-5 right-5 space-y-3">
-  <div
-    className={[
-      "rounded-3xl p-5 shadow-sm ring-1 ring-black/5",
-      isMarkusView
-        ? "bg-gradient-to-br from-lime-200 via-green-100 to-white"
-        : "bg-gradient-to-br from-[#fff2c8] to-[#ffe1cf]",
-    ].join(" ")}
-  >
-    <div className="text-2xl">{isMarkusView ? "🎹" : "💡"}</div>
+      {/* FOOTER */}
+      <div className="mt-auto space-y-4">
+        
+        {/* BOOKING CARD */}
+        <div
+          className={[
+            "rounded-3xl px-5 py-4 text-zinc-900 shadow-[0_10px_30px_rgba(0,0,0,0.05)] ring-1 ring-black/5",
+            isMarkusView
+              ? "bg-gradient-to-br from-lime-200 via-green-100 to-white"
+              : "bg-gradient-to-br from-[#fff2c8] via-[#ffe1cf] to-white",
+          ].join(" ")}
+        >
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
+            {isMarkusView ? "Markus-Modus" : "Booking"}
+          </p>
 
-    <p className="mt-3 text-sm font-black">
-      {isMarkusView ? "Markus-Modus aktiv" : "Booking-Zentrale"}
-    </p>
+          <p className="mt-3 text-sm font-black text-zinc-950">
+            {isMarkusView
+              ? "Reduzierte Ansicht aktiv"
+              : "Show-Zentrale aktiv"}
+          </p>
 
-    <p className="mt-1 text-xs leading-relaxed text-neutral-600">
-      {isMarkusView
-        ? "Reduzierte Piano-Vorschau – perfekt für Technik, Ablauf und Adresse."
-        : "Alles rund um Shows, Akten und Vorbereitung."}
-    </p>
-  </div>
-<div className="mt-10 rounded-2xl bg-[#fbf7ef] p-4 ring-1 ring-black/5">
-  <p className="text-xs text-neutral-500">Eingeloggt als</p>
+          <p className="mt-2 text-xs leading-relaxed text-zinc-600">
+            {isMarkusView
+              ? "Fokus auf Ablauf, Technik, Adresse und Piano-relevante Infos."
+              : "Shows, Akten, Vorbereitung und interne Steuerung an einem Ort."}
+          </p>
+        </div>
 
-  <p className="mt-1 text-sm font-black text-zinc-900">
-    {user?.email || "—"}
-  </p>
+        {/* USER */}
+        <div className="border-t border-black/5 pt-5">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-400">
+            Eingeloggt
+          </p>
 
-  <Link
-    href="/logout"
-    className="block rounded-2xl bg-zinc-100 px-4 py-3 text-sm font-black text-zinc-700 transition hover:bg-zinc-200"
-  >
-    Logout
-  </Link>
-</div>
-</div>
+          <p className="mt-2 truncate text-sm font-black text-zinc-900">
+            {user?.email || "—"}
+          </p>
+
+          {role && (
+            <p className="mt-1 text-xs font-bold text-zinc-400">
+              Rolle: {role}
+            </p>
+          )}
+
+          <Link
+            href="/logout"
+            className="mt-4 flex h-11 items-center justify-center rounded-2xl bg-zinc-950 text-sm font-black text-white transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/15"
+          >
+            Logout
+          </Link>
+        </div>
+      </div>
     </aside>
   );
 }
@@ -82,14 +144,22 @@ function SidebarLink({
     <Link
       href={href}
       className={[
-        "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-black transition",
+        "flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-black transition",
         active
-          ? "bg-black text-white shadow-lg shadow-black/10"
-          : "text-neutral-700 hover:bg-[#fbf7ef] hover:text-black",
+          ? "bg-zinc-950 text-white shadow-lg shadow-black/10"
+          : "text-zinc-600 hover:bg-[#fbf7ef] hover:text-zinc-950",
       ].join(" ")}
     >
-      <span className="text-lg">{icon}</span>
-      {label}
+      <span
+        className={[
+          "flex h-9 w-9 items-center justify-center rounded-xl text-lg transition",
+          active ? "bg-white/15" : "bg-white/70",
+        ].join(" ")}
+      >
+        {icon}
+      </span>
+
+      <span>{label}</span>
     </Link>
   );
 }

@@ -14,43 +14,40 @@ type ShowRow = {
   city: string | null;
   start_time: string | null;
   entry_time: string | null;
-
   contact_name?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;
   venue_address?: string | null;
-  schedule?: string | null;
-  technik?: string | null;
-  anreise?: string | null;
-  unterkunft?: string | null;
-
   internal_status?: string | null;
   billing_status?: string | null;
-
-  // 👉 HIER ERGÄNZEN
   contract_status?: string | null;
   checklist?: Record<string, boolean> | null;
-
   markus_included?: boolean | null;
-
-  show_files?: {
+  last_portal_update?: string | null;
+  last_reviewed_at?: string | null;
+  show_portal_submissions?: {
     id: string;
-    file_name?: string | null;
-    file_type?: string | null;
+    submitted_at?: string | null;
+    reviewed_at?: string | null;
   }[] | null;
 };
 
 type FilterKey =
-  | "alle"
-  | "aktiv"
   | "kommend"
-  | "entwurf"
-  | "vergangen_offen"
+  | "handlung"
+  | "portal"
   | "abrechnung"
-  | "markus"
-  | "fertig"
-  | "arbeit"
-  | "archiv";
+  | "archiv"
+  | "alle";
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "kommend", label: "Kommend" },
+  { key: "handlung", label: "Handlung nötig" },
+  { key: "portal", label: "Neue Infos" },
+  { key: "abrechnung", label: "Abrechnung" },
+  { key: "archiv", label: "Archiv" },
+  { key: "alle", label: "Alle" },
+];
 
 export default function AdminClient({
   shows,
@@ -59,14 +56,13 @@ export default function AdminClient({
   duplicateShowAction,
 }: {
   shows: ShowRow[];
-  createShowAction: (formData: FormData) => void | Promise<void>;
+  createShowAction: () => void | Promise<void>;
   deleteShowAction: (formData: FormData) => void | Promise<void>;
   duplicateShowAction: (formData: FormData) => void | Promise<void>;
 }) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<FilterKey>("alle");
+  const [filter, setFilter] = useState<FilterKey>("kommend");
   const [year, setYear] = useState("alle");
-  const [showCreate, setShowCreate] = useState(false);
 
   const today = startOfToday();
 
@@ -76,14 +72,16 @@ export default function AdminClient({
 
   const rows = useMemo(() => {
     return shows.filter((show) => {
-      const status = getStatus(show);
       const date = parseDate(show.show_date);
       const isPast = date ? date < today : false;
       const isFuture = date ? date >= today : true;
-      const isArchived =
-        show.internal_status === "abgeschlossen" ||
-        show.internal_status === "archiv" ||
-        show.internal_status === "archiviert";
+      const archived = isArchivedShow(show);
+      const actionNeeded = getActionItems(show).length > 0;
+      const newPortalInfo = hasNewPortalInfo(show);
+      const billingOpen =
+        isPast &&
+        show.billing_status !== "bezahlt" &&
+        show.billing_status !== "nicht_relevant";
 
       const text = [
         show.artist,
@@ -104,16 +102,11 @@ export default function AdminClient({
 
       const matchesFilter =
         filter === "alle" ||
-        (filter === "aktiv" && !isArchived) ||
-        (filter === "kommend" && isFuture && !isArchived) ||
-        (filter === "entwurf" && !show.show_date) ||
-        (filter === "vergangen_offen" && isPast && !isArchived) ||
-        (filter === "abrechnung" &&
-          isPast &&
-          show.billing_status !== "bezahlt") ||
-        (filter === "markus" && show.markus_included === true) ||
-        (filter === "archiv" && isArchived) ||
-        status.key === filter;
+        (filter === "kommend" && isFuture && !archived) ||
+        (filter === "handlung" && actionNeeded && !archived) ||
+        (filter === "portal" && newPortalInfo && !archived) ||
+        (filter === "abrechnung" && billingOpen && !archived) ||
+        (filter === "archiv" && archived);
 
       return matchesSearch && matchesYear && matchesFilter;
     });
@@ -126,8 +119,12 @@ export default function AdminClient({
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="relative overflow-hidden rounded-[2.4rem] bg-[#101014] p-10 text-white shadow-2xl shadow-black/10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(255,105,180,0.38),transparent_28%),radial-gradient(circle_at_35%_25%,rgba(255,145,60,0.28),transparent_35%),radial-gradient(circle_at_70%_95%,rgba(190,255,90,0.13),transparent_28%)]" />
-          <div className="absolute right-146 top-18 text-6xl text-pink-400">♕</div>
-          <div className="absolute top-8 right-24 text-5xl text-orange-300">★</div>
+          <div className="absolute right-146 top-10 text-7xl text-pink-400 rotate-6">
+            ♕
+          </div>
+          <div className="absolute right-54 top-18 text-5xl text-orange-300">
+            ✨
+          </div>
 
           <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div>
@@ -138,45 +135,20 @@ export default function AdminClient({
                 Alle Shows
               </h1>
               <p className="mt-4 max-w-xl text-white/70">
-                Shows verwalten, Akten öffnen und Portale verschicken.
+                Alle Shows im Überblick – alle Infos an einem Ort.
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowCreate((prev) => !prev)}
-              className="rounded-3xl bg-gradient-to-r from-pink-400 to-orange-400 px-6 py-4 font-black text-white shadow-xl transition hover:scale-[1.02]"
-            >
-              {showCreate ? "Schließen ×" : "Neue Show +"}
-            </button>
-          </div>
-        </header>
-
-        {showCreate && (
-          <section className="rounded-[2rem] bg-white p-6 shadow-xl shadow-black/5 ring-1 ring-black/5">
-            <h2 className="text-2xl font-black">Neue Show anlegen</h2>
-
-            <form
-              action={createShowAction}
-              className="mt-5 grid gap-4 md:grid-cols-4"
-            >
-              <Input name="artist" label="Artist" defaultValue="Sonja Gründemann" />
-              <Input name="program" label="Programm" placeholder="Jetzt mal Tacheles" />
-              <Input name="show_date" label="Datum" type="date" />
-              <Input name="venue" label="Location" placeholder="Schatzkistl" />
-              <Input name="city" label="Stadt" placeholder="Mannheim" />
-              <Input name="entry_time" label="Einlass" placeholder="19:00 Uhr" />
-              <Input name="start_time" label="Showbeginn" placeholder="20:00 Uhr" />
-
+            <form action={createShowAction}>
               <button
                 type="submit"
-                className="self-end rounded-2xl bg-zinc-950 px-5 py-4 font-black text-white shadow-lg"
+                className="rounded-3xl bg-gradient-to-r from-pink-400 to-orange-400 px-6 py-4 font-black text-white shadow-xl transition hover:scale-[1.02]"
               >
-                Erstellen →
+                Neue Show-Akte +
               </button>
             </form>
-          </section>
-        )}
+          </div>
+        </header>
 
         <section className="rounded-[2rem] bg-white p-5 shadow-xl shadow-black/5 ring-1 ring-black/5">
           <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
@@ -223,6 +195,14 @@ export default function AdminClient({
         {rows.length === 0 ? (
           <section className="rounded-[2rem] bg-white p-10 text-center shadow-xl shadow-black/5 ring-1 ring-black/5">
             <p className="font-black">Keine Shows gefunden.</p>
+            <form action={createShowAction} className="mt-5">
+              <button
+                type="submit"
+                className="rounded-2xl bg-zinc-950 px-5 py-3 text-sm font-black text-white"
+              >
+                Erste Show-Akte erstellen →
+              </button>
+            </form>
           </section>
         ) : (
           <section className="space-y-5">
@@ -234,7 +214,8 @@ export default function AdminClient({
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-2xl font-black">{month}</h2>
                   <span className="rounded-full bg-[#fbf7ef] px-3 py-1 text-xs font-black text-zinc-500">
-                    {monthShows.length} Show{monthShows.length === 1 ? "" : "s"}
+                    {monthShows.length} Show
+                    {monthShows.length === 1 ? "" : "s"}
                   </span>
                 </div>
 
@@ -267,12 +248,14 @@ function ShowCard({
   duplicateShowAction: (formData: FormData) => void | Promise<void>;
 }) {
   const status = getStatus(show);
+  const actions = getActionItems(show);
   const missing = getMissingFields(show);
   const isPast = isPastDate(show.show_date);
+  const newPortalInfo = hasNewPortalInfo(show);
 
   return (
     <article className="relative overflow-hidden rounded-3xl bg-[#fbf7ef] p-5 transition hover:-translate-y-0.5 hover:bg-[#f5ead9]">
-      <div className="grid gap-4 md:grid-cols-[130px_1fr_175px_170px] md:items-top">
+      <div className="grid gap-4 md:grid-cols-[130px_1fr_160px_190px] md:items-start">
         <div>
           <p className="text-lg font-black">{formatDate(show.show_date)}</p>
           <p className="mt-1 text-xs font-bold text-zinc-500">
@@ -286,22 +269,41 @@ function ShowCard({
         </div>
 
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-xl font-black">
-              {show.venue || "Location offen"}
-            </p>
-          </div>
+          <p className="truncate text-xl font-black">
+            {show.venue || "Location offen"}
+          </p>
 
-<p className="text-sm font-semibold text-zinc-500">
-  {show.city || "Ort offen"} · {show.program || "Programm offen"}
-  {show.markus_included && " · 🎹 Markus"}
-</p>
+          <p className="text-sm font-semibold text-zinc-500">
+            {show.city || "Ort offen"} · {show.program || "Programm offen"}
+            {show.markus_included && " · 🎹 Markus"}
+          </p>
 
-          <MissingSummary missing={missing} />
+          {(newPortalInfo || actions.length > 0 || missing.length > 0) && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {newPortalInfo && (
+                <Badge tone="pink">✨ Neue Infos</Badge>
+              )}
+
+              {actions.slice(0, 2).map((item) => (
+                <Badge key={item} tone="red">
+                  {item}
+                </Badge>
+              ))}
+
+              {actions.length === 0 && missing.length > 0 && (
+                <Badge tone="zinc">
+                  {missing.length} Info
+                  {missing.length === 1 ? "" : "s"} fehlen
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
 
         <div>
-          <span className={`rounded-full px-3 py-1 text-xs font-black ${status.className}`}>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-black ${status.className}`}
+          >
             {status.label}
           </span>
 
@@ -315,6 +317,10 @@ function ShowCard({
         <div className="relative z-10 flex flex-wrap justify-start gap-2 md:justify-end">
           <ActionLink href={`/admin/shows/${show.id}`} label="Akte öffnen">
             ✏️
+          </ActionLink>
+
+          <ActionLink href={`/show/${show.token}`} label="Formular öffnen">
+            🔗
           </ActionLink>
 
           <form action={duplicateShowAction}>
@@ -347,32 +353,23 @@ function ShowCard({
   );
 }
 
-function MissingSummary({ missing }: { missing: string[] }) {
-  if (missing.length === 0) {
-    return (
-      <div className="mt-3">
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-          Formular vollständig
-        </span>
-      </div>
-    );
-  }
+function Badge({
+  tone,
+  children,
+}: {
+  tone: "pink" | "red" | "zinc";
+  children: React.ReactNode;
+}) {
+  const className = {
+    pink: "bg-pink-100 text-pink-700",
+    red: "bg-red-100 text-red-700",
+    zinc: "bg-white text-zinc-600",
+  }[tone];
 
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
-      <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-zinc-600 shadow-sm">
-        {missing.length} Info{missing.length === 1 ? "" : "s"} fehlen
-      </span>
-
-      {missing.slice(0, 2).map((item) => (
-        <span
-          key={item}
-          className="rounded-full bg-white/70 px-3 py-1 text-xs font-semibold text-zinc-500"
-        >
-          {item}
-        </span>
-      ))}
-    </div>
+    <span className={`rounded-full px-3 py-1 text-xs font-black ${className}`}>
+      {children}
+    </span>
   );
 }
 
@@ -390,6 +387,7 @@ function ActionLink({
       href={href}
       title={label}
       aria-label={label}
+      target={href.startsWith("/show/") ? "_blank" : undefined}
       className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-950 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:scale-105"
     >
       {children}
@@ -426,18 +424,34 @@ function ActionButton({
   );
 }
 
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "alle", label: "Alle" },
-  { key: "aktiv", label: "Aktiv" },
-  { key: "kommend", label: "Kommend" },
-  { key: "entwurf", label: "Entwürfe" },
-  { key: "vergangen_offen", label: "Vergangen offen" },
-  { key: "abrechnung", label: "Abrechnung offen" },
-  { key: "markus", label: "Markus dabei" },
-  { key: "fertig", label: "Fertig" },
-  { key: "arbeit", label: "In Arbeit" },
-  { key: "archiv", label: "Archiv" },
-];
+function getActionItems(show: ShowRow) {
+  const items: string[] = [];
+  const isPast = isPastDate(show.show_date);
+
+  if (hasNewPortalInfo(show)) items.push("Neue Infos prüfen");
+
+  if (!isContractDone(show.contract_status)) {
+    items.push("Vertrag offen");
+  }
+
+  if (!show.contact_name || !show.contact_email) {
+    items.push("Kontakt fehlt");
+  }
+
+  if (!show.venue_address) {
+    items.push("Adresse fehlt");
+  }
+
+  if (!show.start_time) {
+    items.push("Beginn fehlt");
+  }
+
+  if (isPast && show.billing_status !== "bezahlt" && show.billing_status !== "nicht_relevant") {
+    items.push("Abrechnung offen");
+  }
+
+  return items;
+}
 
 function getMissingFields(show: ShowRow) {
   const missing: string[] = [];
@@ -449,32 +463,20 @@ function getMissingFields(show: ShowRow) {
   if (!show.contact_name) missing.push("Kontakt");
   if (!show.contact_email) missing.push("E-Mail");
   if (!show.venue_address) missing.push("Adresse");
-  if (!show.technik) missing.push("Technik");
 
   return missing;
 }
 
 function getStatus(show: ShowRow) {
-  const date = show.show_date ? new Date(show.show_date) : null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const isPast = date ? date < today : false;
-
-  // ✅ Abgeschlossen (nur manuell)
   if (show.internal_status === "abgeschlossen") {
     return {
-      key: "archiv",
+      key: "fertig",
       label: "✅ Abgeschlossen",
       className: "bg-emerald-100 text-emerald-700",
     };
   }
 
-  // 📦 Archiv
-  if (
-    show.internal_status === "archiv" ||
-    show.internal_status === "archiviert"
-  ) {
+  if (isArchivedShow(show)) {
     return {
       key: "archiv",
       label: "📦 Archiv",
@@ -482,39 +484,31 @@ function getStatus(show: ShowRow) {
     };
   }
 
-  // 💸 Abrechnung (nur nach Show!)
-  if (isPast && show.billing_status !== "bezahlt") {
+  if (
+    isPastDate(show.show_date) &&
+    show.billing_status !== "bezahlt" &&
+    show.billing_status !== "nicht_relevant"
+  ) {
     return {
-      key: "arbeit",
-      label: "💸 Abrechnung offen",
+      key: "abrechnung",
+      label: "💸 Abrechnung",
       className: "bg-orange-100 text-orange-700",
     };
   }
 
-  // 🔗 Vertrag
-  const contractDone = (() => {
-    const value = String(show.contract_status || "").toLowerCase();
-    return (
-      value.includes("liegt vor") ||
-      value.includes("unterschrieben")
-    );
-  })();
-
-  // 📋 Formular (aus checklist → gleiche Logik wie Akte!)
-  const formComplete =
-    show.checklist?.["Formular vollständig"] === true;
-
-  // 🟡 Bereit (NEU statt "Fertig")
-  if (formComplete && contractDone) {
+  if (show.internal_status === "fertig") {
     return {
-      key: "bereit",
-      label: "🟡 Bereit",
-      className: "bg-amber-100 text-amber-700",
+      key: "fertig",
+      label: "🟢 Fertig",
+      className: "bg-emerald-100 text-emerald-700",
     };
   }
 
-  // 🟠 In Arbeit
-  if (formComplete || contractDone) {
+  if (
+    show.internal_status === "in_arbeit" ||
+    show.internal_status === "wartet_auf_veranstalter" ||
+    show.internal_status === "wartet_auf_sonja"
+  ) {
     return {
       key: "arbeit",
       label: "🟠 In Arbeit",
@@ -522,7 +516,14 @@ function getStatus(show: ShowRow) {
     };
   }
 
-  // 🔴 Offen
+  if (show.internal_status === "neu") {
+    return {
+      key: "neu",
+      label: "🔴 Neu",
+      className: "bg-red-100 text-red-700",
+    };
+  }
+
   return {
     key: "offen",
     label: "🔴 Offen",
@@ -530,12 +531,55 @@ function getStatus(show: ShowRow) {
   };
 }
 
+function hasNewPortalInfo(show: ShowRow) {
+  const latestSubmission = getLatestSubmission(show);
+
+  if (!latestSubmission?.submitted_at) return false;
+  if (!show.last_reviewed_at) return true;
+
+  return (
+    new Date(latestSubmission.submitted_at).getTime() >
+    new Date(show.last_reviewed_at).getTime()
+  );
+}
+
+function getLatestSubmission(show: ShowRow) {
+  const submissions = show.show_portal_submissions || [];
+
+  return [...submissions].sort((a, b) => {
+    return (
+      new Date(b.submitted_at || "").getTime() -
+      new Date(a.submitted_at || "").getTime()
+    );
+  })[0];
+}
+
+function isContractDone(value?: string | null) {
+  const text = String(value || "").toLowerCase();
+
+  return (
+    text.includes("liegt vor") ||
+    text.includes("unterschrieben") ||
+    text.includes("erstellt")
+  );
+}
+
+function isArchivedShow(show: ShowRow) {
+  return (
+    show.internal_status === "abgeschlossen" ||
+    show.internal_status === "archiv" ||
+    show.internal_status === "archiviert"
+  );
+}
+
 function billingLabel(value?: string | null) {
   const labels: Record<string, string> = {
     offen: "offen",
+    rechnung_zu_schreiben: "zu schreiben",
     rechnung_geschrieben: "geschrieben",
     rechnung_verschickt: "verschickt",
     bezahlt: "bezahlt",
+    nicht_relevant: "nicht relevant",
   };
 
   return labels[value || ""] || value || "offen";
@@ -560,33 +604,6 @@ function monthLabel(date?: string | null) {
     month: "long",
     year: "numeric",
   });
-}
-
-function Input({
-  name,
-  label,
-  type = "text",
-  placeholder,
-  defaultValue,
-}: {
-  name: string;
-  label: string;
-  type?: string;
-  placeholder?: string;
-  defaultValue?: string;
-}) {
-  return (
-    <label className="grid gap-2 text-xs font-black text-zinc-700">
-      {label}
-      <input
-        name={name}
-        type={type}
-        placeholder={placeholder}
-        defaultValue={defaultValue}
-        className="h-14 rounded-2xl border border-zinc-200 bg-[#fbf7ef] px-4 text-sm font-semibold outline-none focus:border-pink-300 focus:ring-4 focus:ring-pink-100"
-      />
-    </label>
-  );
 }
 
 function formatDate(date?: string | null) {

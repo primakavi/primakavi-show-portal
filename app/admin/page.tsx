@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 
 export default async function AdminDashboardPage() {
   const { data: shows, error } = await supabaseAdmin
+    .schema("booking")
     .from("shows")
     .select(`
       id,
@@ -16,21 +17,51 @@ export default async function AdminDashboardPage() {
       start_time,
       entry_time,
       created_at,
+
       contact_name,
       contact_email,
       contact_phone,
+      emergency_phone,
       venue_address,
+
+      soundcheck_time,
       schedule,
+
+      sound_system,
+      lights,
+      piano,
+      epiano,
+      piano_notes,
+      tech_contact,
       technik,
+
       anreise,
       unterkunft,
+      travel_details,
+      accommodation_type,
+      accommodation_notes,
+      travel_options,
+
       promotion,
+      flyers_needed,
+      flyer_amount,
+      posters_needed,
+      poster_details,
+
       internal_status,
       billing_status,
       contract_status,
       markus_included,
-      portal_data,
-      checklist
+      checklist,
+
+      last_portal_update,
+      last_reviewed_at,
+
+      show_portal_submissions (
+        id,
+        submitted_at,
+        reviewed_at
+      )
     `)
     .order("show_date", { ascending: true });
 
@@ -47,36 +78,50 @@ export default async function AdminDashboardPage() {
   const allShows = shows || [];
   const today = startOfToday();
 
-  const upcoming = allShows.filter((show: any) => {
+  const enrichedShows = allShows.map((show: any) => {
+    const latestSubmission = getLatestSubmission(show);
+    const hasNewPortalInfo = hasUnreviewedPortalInfo(show, latestSubmission);
+
+    const formComplete = show.checklist?.["Formular vollständig"] === true;
+    const contractDone =
+      show.checklist?.["Vertrag geklärt"] === true ||
+      isContractCleared(show.contract_status);
+    const isPast = isPastDate(show.show_date);
+    const billingOpen =
+      isPast &&
+      show.billing_status !== "bezahlt" &&
+      show.billing_status !== "nicht_relevant";
+
+    const daysUntil = getDaysUntil(show.show_date);
+
+    const flags: string[] = [];
+
+    if (hasNewPortalInfo) flags.push("Neue Veranstalterinfos");
+    if (!formComplete) flags.push("Formular offen");
+    if (!contractDone) flags.push("Vertrag offen");
+    if (billingOpen) flags.push("Abrechnung offen");
+    if (daysUntil !== null && daysUntil >= 0 && daysUntil <= 21) {
+      flags.push(daysUntil === 0 ? "heute" : `in ${daysUntil} Tagen`);
+    }
+
+    return {
+      ...show,
+      flags,
+      latestSubmission,
+      hasNewPortalInfo,
+    };
+  });
+
+  const upcoming = enrichedShows.filter((show: any) => {
     const showDate = parseDate(show.show_date);
     return showDate ? showDate >= today : false;
   });
 
-  const openDrafts = allShows.filter((show: any) => !show.show_date);
+  const openDrafts = enrichedShows.filter((show: any) => !show.show_date);
 
-  const actionNeeded = allShows
-    .map((show: any) => {
-      const formComplete = show.checklist?.["Formular vollständig"] === true;
-      const contractDone = show.checklist?.["Vertrag geklärt"] === true;
-      const isPast = isPastDate(show.show_date);
-      const billingOpen = isPast && show.billing_status !== "bezahlt";
-      const daysUntil = getDaysUntil(show.show_date);
-
-      const flags: string[] = [];
-
-      if (!formComplete) flags.push("Formular offen");
-      if (!contractDone) flags.push("Vertrag offen");
-      if (billingOpen) flags.push("Abrechnung offen");
-      if (daysUntil !== null && daysUntil >= 0 && daysUntil <= 21) {
-        flags.push(`in ${daysUntil} Tagen`);
-      }
-
-      return {
-        ...show,
-        flags,
-      };
-    })
-    .filter((show: any) => show.flags.length > 0);
+  const actionNeeded = enrichedShows.filter(
+    (show: any) => show.flags.length > 0
+  );
 
   const urgentShows = actionNeeded.filter((show: any) => {
     const daysUntil = getDaysUntil(show.show_date);
@@ -85,6 +130,7 @@ export default async function AdminDashboardPage() {
     return (
       !show.show_date ||
       isPast ||
+      show.hasNewPortalInfo ||
       (daysUntil !== null && daysUntil <= 21) ||
       show.flags.includes("Formular offen") ||
       show.flags.includes("Vertrag offen")
@@ -95,7 +141,9 @@ export default async function AdminDashboardPage() {
     <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-[#171717]">
       <div className="mx-auto max-w-6xl space-y-6">
         <section className="relative overflow-hidden rounded-[2rem] bg-[#101014] p-10 text-white shadow-2xl">
-          <div className="absolute right-10 top-8 text-7xl text-pink-400">♕</div>
+          <div className="absolute right-10 top-8 text-7xl text-pink-400">
+            ♕
+          </div>
           <div className="absolute bottom-8 right-100 text-5xl text-orange-300">
             ★
           </div>
@@ -128,7 +176,7 @@ export default async function AdminDashboardPage() {
               <div>
                 <h2 className="text-2xl font-black">🔥 Handlung nötig</h2>
                 <p className="text-sm text-neutral-500">
-                  Shows mit offenem Formular, offenem Vertrag oder Abrechnung.
+                  Neue Veranstalterinfos, offene Formulare, Verträge oder Abrechnung.
                 </p>
               </div>
               <span className="rounded-full bg-red-100 px-4 py-2 text-sm font-black text-red-700">
@@ -176,6 +224,12 @@ export default async function AdminDashboardPage() {
                         {formatDate(show.show_date)} · {show.city || "—"} ·{" "}
                         {show.program || "—"}
                       </p>
+
+                      {show.hasNewPortalInfo && (
+                        <p className="mt-2 text-xs font-black text-pink-600">
+                          ✨ Neue Veranstalterinfos
+                        </p>
+                      )}
                     </div>
 
                     <div className="rounded-full bg-black px-4 py-2 text-sm font-bold text-white">
@@ -216,7 +270,11 @@ function ShowMiniCard({ show }: { show: any }) {
         {show.flags.slice(0, 5).map((item: string) => (
           <span
             key={item}
-            className="rounded-full bg-white px-3 py-1 text-xs font-black text-neutral-700 shadow-sm"
+            className={`rounded-full px-3 py-1 text-xs font-black shadow-sm ${
+              item === "Neue Veranstalterinfos"
+                ? "bg-pink-100 text-pink-700"
+                : "bg-white text-neutral-700"
+            }`}
           >
             {item}
           </span>
@@ -255,6 +313,38 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
+function getLatestSubmission(show: any) {
+  const submissions = show.show_portal_submissions || [];
+
+  return [...submissions].sort((a: any, b: any) => {
+    return (
+      new Date(b.submitted_at).getTime() -
+      new Date(a.submitted_at).getTime()
+    );
+  })[0];
+}
+
+function hasUnreviewedPortalInfo(show: any, latestSubmission: any) {
+  if (!latestSubmission) return false;
+  if (!latestSubmission.submitted_at) return false;
+  if (!show.last_reviewed_at) return true;
+
+  return (
+    new Date(latestSubmission.submitted_at).getTime() >
+    new Date(show.last_reviewed_at).getTime()
+  );
+}
+
+function isContractCleared(contractStatus?: string | null) {
+  const status = String(contractStatus || "").toLowerCase();
+
+  return (
+    status.includes("vertrag liegt vor") ||
+    status.includes("erstellt") ||
+    status.includes("unterschrieben")
+  );
+}
+
 function formatDate(date?: string | null) {
   if (!date) return "ohne Datum";
 
@@ -289,9 +379,7 @@ function getDaysUntil(date?: string | null) {
   const parsed = parseDate(date);
   if (!parsed) return null;
 
-  const diff = Math.ceil(
+  return Math.ceil(
     (parsed.getTime() - startOfToday().getTime()) / (1000 * 60 * 60 * 24)
   );
-
-  return diff;
 }

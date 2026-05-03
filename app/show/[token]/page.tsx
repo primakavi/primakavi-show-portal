@@ -9,9 +9,8 @@ import {
   type ReactNode,
 } from "react";
 
-type Show = Record<string, string | null | undefined>;
-
-type PortalForm = Record<string, string>;
+type Show = Record<string, string | boolean | null | undefined>;
+type PortalForm = Record<string, string | boolean>;
 
 type ShowFile = {
   id: string;
@@ -89,7 +88,7 @@ export default function ShowPortalPage({
         const data = await res.json();
 
         setShow(data.show || null);
-setForm(data.form || cleanShowForForm(data.show || {}));
+        setForm(data.form || cleanShowForForm(data.show || {}));
         setLoading(false);
         didLoad.current = true;
 
@@ -127,26 +126,19 @@ setForm(data.form || cleanShowForForm(data.show || {}));
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  function toggleListValue(field: string, value: string) {
-    const current = form[field]
-      ? form[field]
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : [];
-
-    const next = current.includes(value)
-      ? current.filter((item) => item !== value)
-      : [...current, value];
-
-    updateField(field, next.join(", "));
+  function toggleBooleanField(field: string) {
+    setSaved(false);
+    setDirty(true);
+    setError("");
+    setForm((prev) => ({ ...prev, [field]: !isCheckedValue(prev[field]) }));
   }
 
-  function hasListValue(field: string, value: string) {
-    return form[field]
-      ?.split(",")
-      .map((item) => item.trim())
-      .includes(value);
+  function isChecked(field: string) {
+    return isCheckedValue(form[field]);
+  }
+
+  function isCheckedValue(value: string | boolean | undefined) {
+    return value === true || value === "true" || value === "1";
   }
 
   async function save(mode: "manual" | "auto" = "manual") {
@@ -244,7 +236,11 @@ setForm(data.form || cleanShowForForm(data.show || {}));
       },
       {
         label: "Technik",
-        done: !!form.technik || !!form.tech_notes || !!form.sound_system,
+        done:
+          !!form.tech_sound_available ||
+          !!form.tech_lights_available ||
+          !!form.tech_notes ||
+          !!form.piano_type,
       },
       {
         label: "Vertrag / Finanzen",
@@ -260,11 +256,17 @@ setForm(data.form || cleanShowForForm(data.show || {}));
       },
       {
         label: "Backstage / Catering",
-        done: !!form.catering_status || !!form.backstage_equipment,
+        done:
+          !!form.catering_status ||
+          !!form.backstage_room_available ||
+          !!form.backstage_no_room,
       },
       {
         label: "Anreise / Unterkunft",
-        done: !!form.accommodation_type || !!form.travel_details || !!form.anreise,
+        done:
+          !!form.accommodation_type ||
+          !!form.travel_notes ||
+          !!form.parking_available,
       },
       {
         label: "Datei hochgeladen",
@@ -287,7 +289,7 @@ setForm(data.form || cleanShowForForm(data.show || {}));
     return "Ihr macht den Unterschied. 🙌";
   }, [dirty, error, lastSavedAt, saved, saving]);
 
-  const date = formatDate(form.show_date);
+  const date = formatDate(asString(form.show_date));
 
   if (loading) {
     return (
@@ -371,7 +373,7 @@ setForm(data.form || cleanShowForForm(data.show || {}));
               <div className="grid grid-cols-[100px_1fr] gap-5">
                 <div className="rounded-3xl border border-white/10 bg-white/15 p-4 text-center shadow-inner">
                   <p className="text-xs font-black uppercase text-zinc-300">
-                    {form.weekday || "SHOW"}
+                    {asString(form.weekday) || "SHOW"}
                   </p>
                   <p className="mt-1 text-5xl font-black">{date.day}</p>
                   <p className="text-sm font-black">{date.month}</p>
@@ -380,20 +382,20 @@ setForm(data.form || cleanShowForForm(data.show || {}));
 
                 <div>
                   <h2 className="text-xl font-black">
-                    {form.artist || "Sonja Gründemann"}
+                    {asString(form.artist) || "Sonja Gründemann"}
                   </h2>
                   <p className="mt-1 font-semibold text-zinc-300">
-                    {form.program || "Jetzt mal Tacheles"}
+                    {asString(form.program) || "Jetzt mal Tacheles"}
                   </p>
 
                   <div className="mt-5 space-y-2 text-sm">
                     <HeroPill>
-                      ◷ {form.start_time || "20:00 Uhr"} · Einlass{" "}
-                      {form.entry_time || "19:00 Uhr"}
+                      ◷ {asString(form.start_time) || "20:00 Uhr"} · Einlass{" "}
+                      {asString(form.entry_time) || "19:00 Uhr"}
                     </HeroPill>
                     <HeroPill>
-                      ⌖ {form.venue || "Location"},{" "}
-                      {form.city || "Ort offen"}
+                      ⌖ {asString(form.venue) || "Location"},{" "}
+                      {asString(form.city) || "Ort offen"}
                     </HeroPill>
                   </div>
                 </div>
@@ -513,8 +515,8 @@ setForm(data.form || cleanShowForForm(data.show || {}));
 
               <Textarea
                 label="Besonderheiten zum Ablauf"
-                value={form.schedule}
-                onChange={(v) => updateField("schedule", v)}
+                value={form.schedule_notes}
+                onChange={(v) => updateField("schedule_notes", v)}
                 placeholder="Gibt es Besonderheiten, Hinweise oder Wünsche zum Ablauf?"
               />
             </FormSection>
@@ -529,29 +531,27 @@ setForm(data.form || cleanShowForForm(data.show || {}));
               <CompactGrid>
                 <Checkbox
                   label="Ton vorhanden"
-                  checked={hasListValue("sound_system", "Ton vorhanden")}
-                  onChange={() =>
-                    toggleListValue("sound_system", "Ton vorhanden")
-                  }
+                  checked={isChecked("tech_sound_available")}
+                  onChange={() => toggleBooleanField("tech_sound_available")}
                 />
                 <Checkbox
                   label="Licht vorhanden"
-                  checked={hasListValue("lights", "Licht vorhanden")}
-                  onChange={() => toggleListValue("lights", "Licht vorhanden")}
+                  checked={isChecked("tech_lights_available")}
+                  onChange={() => toggleBooleanField("tech_lights_available")}
                 />
               </CompactGrid>
 
               <CompactGrid>
                 <Select
                   label="Ist ein Klavier oder Flügel vor Ort?"
-                  value={form.piano}
-                  onChange={(v) => updateField("piano", v)}
+                  value={form.piano_type}
+                  onChange={(v) => updateField("piano_type", v)}
                   options={["Klavier", "Flügel", "Nein", "Noch offen"]}
                 />
                 <Select
                   label="Ist ein E-Piano vor Ort?"
-                  value={form.epiano}
-                  onChange={(v) => updateField("epiano", v)}
+                  value={form.epiano_available}
+                  onChange={(v) => updateField("epiano_available", v)}
                   options={["Ja", "Nein", "Noch offen"]}
                 />
                 <Input
@@ -570,8 +570,8 @@ setForm(data.form || cleanShowForForm(data.show || {}));
 
               <Textarea
                 label="Besonderheiten zur Technik"
-                value={form.technik}
-                onChange={(v) => updateField("technik", v)}
+                value={form.tech_notes}
+                onChange={(v) => updateField("tech_notes", v)}
                 placeholder="Alles, was wir technisch wissen sollten."
               />
             </FormSection>
@@ -719,23 +719,43 @@ setForm(data.form || cleanShowForForm(data.show || {}));
 
               <BlockTitle>Garderobe / Backstage-Ausstattung</BlockTitle>
               <CompactGrid>
-                {[
-                  "Raum vorhanden",
-                  "Spiegel vorhanden",
-                  "Sitzgelegenheit",
-                  "Tisch",
-                  "Kein Backstage Raum vorhanden",
-                ].map((item) => (
-                  <Checkbox
-                    key={item}
-                    label={item}
-                    checked={hasListValue("backstage_equipment", item)}
-                    onChange={() =>
-                      toggleListValue("backstage_equipment", item)
-                    }
-                  />
-                ))}
+                <Checkbox
+                  label="Raum vorhanden"
+                  checked={isChecked("backstage_room_available")}
+                  onChange={() => toggleBooleanField("backstage_room_available")}
+                />
+                <Checkbox
+                  label="Spiegel vorhanden"
+                  checked={isChecked("backstage_mirror_available")}
+                  onChange={() =>
+                    toggleBooleanField("backstage_mirror_available")
+                  }
+                />
+                <Checkbox
+                  label="Sitzgelegenheit"
+                  checked={isChecked("backstage_seating_available")}
+                  onChange={() =>
+                    toggleBooleanField("backstage_seating_available")
+                  }
+                />
+                <Checkbox
+                  label="Tisch"
+                  checked={isChecked("backstage_table_available")}
+                  onChange={() => toggleBooleanField("backstage_table_available")}
+                />
+                <Checkbox
+                  label="Kein Backstage Raum vorhanden"
+                  checked={isChecked("backstage_no_room")}
+                  onChange={() => toggleBooleanField("backstage_no_room")}
+                />
               </CompactGrid>
+
+              <Textarea
+                label="Weitere Hinweise zu Backstage / Garderobe"
+                value={form.backstage_notes}
+                onChange={(v) => updateField("backstage_notes", v)}
+                placeholder="Alles, was wir zu Garderobe oder Backstage wissen sollten."
+              />
             </FormSection>
 
             <FormSection
@@ -757,35 +777,72 @@ setForm(data.form || cleanShowForForm(data.show || {}));
                 ]}
               />
 
+              <CompactGrid>
+                <Input
+                  label="Hotel / Unterkunft Name"
+                  value={form.accommodation_hotel_name}
+                  onChange={(v) => updateField("accommodation_hotel_name", v)}
+                  placeholder="Name der Unterkunft"
+                />
+                <Input
+                  label="Hotel-Buyout"
+                  value={form.accommodation_buyout}
+                  onChange={(v) => updateField("accommodation_buyout", v)}
+                  placeholder="z.B. 120 € netto"
+                />
+              </CompactGrid>
+
+              <Textarea
+                label="Adresse der Unterkunft"
+                value={form.accommodation_address}
+                onChange={(v) => updateField("accommodation_address", v)}
+                placeholder="Hotelname, Straße, PLZ Ort"
+              />
+
               <Textarea
                 label="Sonstiges zur Unterkunft"
-                value={form.unterkunft}
-                onChange={(v) => updateField("unterkunft", v)}
-                placeholder="Buyout-Betrag, Hotel, Sonderregelungen..."
+                value={form.accommodation_notes}
+                onChange={(v) => updateField("accommodation_notes", v)}
+                placeholder="Sonderregelungen, Check-in, Kostenübernahme, Ansprechpartner..."
               />
 
               <BlockTitle>Wie ist die Anreise organisiert?</BlockTitle>
               <CompactGrid>
-                {[
-                  "Parkplatz vor Ort vorhanden",
-                  "Ladezone / direkter Bühneneingang vorhanden",
-                  "Keine Parkmöglichkeit vor Ort",
-                  "Anreise mit öffentlichen Verkehrsmitteln empfohlen",
-                  "Sonstiges",
-                ].map((item) => (
-                  <Checkbox
-                    key={item}
-                    label={item}
-                    checked={hasListValue("travel_options", item)}
-                    onChange={() => toggleListValue("travel_options", item)}
-                  />
-                ))}
+                <Checkbox
+                  label="Parkplatz vor Ort vorhanden"
+                  checked={isChecked("parking_available")}
+                  onChange={() => toggleBooleanField("parking_available")}
+                />
+                <Checkbox
+                  label="Ladezone / direkter Bühneneingang vorhanden"
+                  checked={isChecked("loading_zone_available")}
+                  onChange={() => toggleBooleanField("loading_zone_available")}
+                />
+                <Checkbox
+                  label="Keine Parkmöglichkeit vor Ort"
+                  checked={isChecked("no_parking_available")}
+                  onChange={() => toggleBooleanField("no_parking_available")}
+                />
+                <Checkbox
+                  label="Anreise mit öffentlichen Verkehrsmitteln empfohlen"
+                  checked={isChecked("public_transport_recommended")}
+                  onChange={() =>
+                    toggleBooleanField("public_transport_recommended")
+                  }
+                />
               </CompactGrid>
+
+              <Input
+                label="Parkdetails"
+                value={form.parking_details}
+                onChange={(v) => updateField("parking_details", v)}
+                placeholder="Parkplatz, Parkhaus, Einfahrt, Durchfahrtshöhe..."
+              />
 
               <Textarea
                 label="Details zur Anreise"
-                value={form.anreise}
-                onChange={(v) => updateField("anreise", v)}
+                value={form.travel_notes}
+                onChange={(v) => updateField("travel_notes", v)}
                 placeholder="Parkhaus-Adresse, Einfahrt, Schranke, Klingel, Durchfahrtshöhe..."
               />
             </FormSection>
@@ -1086,11 +1143,15 @@ function cleanShowForForm(show: Show): PortalForm {
       typeof value === "number" ||
       typeof value === "boolean"
     ) {
-      result[key] = String(value);
+      result[key] = value;
     }
   });
 
   return result;
+}
+
+function asString(value: string | boolean | null | undefined) {
+  return typeof value === "string" ? value : "";
 }
 
 function HelpButton() {
@@ -1467,7 +1528,7 @@ function Input({
 }: {
   label: string;
   placeholder?: string;
-  value?: string;
+  value?: string | boolean;
   onChange: (value: string) => void;
   type?: string;
 }) {
@@ -1476,7 +1537,7 @@ function Input({
       {label}
       <input
         type={type}
-        value={value || ""}
+        value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={FIELD_CONTROL}
@@ -1493,7 +1554,7 @@ function Textarea({
 }: {
   label: string;
   placeholder?: string;
-  value?: string;
+  value?: string | boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -1501,7 +1562,7 @@ function Textarea({
       {label}
       <textarea
         rows={4}
-        value={value || ""}
+        value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={FIELD_TEXTAREA}
@@ -1517,7 +1578,7 @@ function Select({
   options = ["Ja", "Nein", "Noch offen", "Nicht relevant"],
 }: {
   label: string;
-  value?: string;
+  value?: string | boolean;
   onChange: (value: string) => void;
   options?: string[];
 }) {
@@ -1525,7 +1586,7 @@ function Select({
     <label className={FIELD_LABEL}>
       {label}
       <select
-        value={value || ""}
+        value={typeof value === "string" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
         className={FIELD_CONTROL}
       >

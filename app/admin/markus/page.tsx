@@ -3,6 +3,7 @@ import MarkusClient from "./MarkusClient";
 
 export default async function AdminMarkusPage() {
   const { data: shows, error } = await supabaseAdmin
+    .schema("booking")
     .from("shows")
     .select("*")
     .eq("markus_included", true)
