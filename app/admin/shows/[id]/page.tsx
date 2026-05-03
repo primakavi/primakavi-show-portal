@@ -85,6 +85,18 @@ export default async function ShowAktePage({
   const nextSteps = getNextSteps(show);
   const latestSubmission = getLatestSubmission(show);
   const newPortalInfo = hasNewPortalInfo(show);
+  const filesWithUrls = await Promise.all(
+  (show.show_files || []).map(async (file: any) => {
+    const { data } = await supabaseAdmin.storage
+      .from("show-files")
+      .createSignedUrl(file.storage_path, 60 * 60);
+
+    return {
+      ...file,
+      url: data?.signedUrl || null,
+    };
+  })
+);
 
   return (
     <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 pb-32 text-zinc-950">
@@ -544,40 +556,54 @@ export default async function ShowAktePage({
 <SideCard title="Dateien" tone="zinc">
   <FileUploadBox token={show.token} />
 
-  <div className="mt-5">
-    {show.show_files?.length ? (
-      <div className="space-y-3">
-        {show.show_files.map((file: any) => {
-          const fileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/show-files/${file.storage_path}`;
+<div className="mt-5">
+  {filesWithUrls.length ? (
+    <div className="space-y-3">
+      {filesWithUrls.map((file: any) => {
+        const fileUrl = file.url;
 
-          return (
-            <a
-              key={file.id}
-              href={fileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50"
-            >
-              <p className="font-black text-zinc-950">
-                {file.file_name || "Datei"}
-              </p>
-              <p className="mt-1 text-xs text-zinc-400">
-                {file.file_type || "Sonstiges"}
-              </p>
-              <p className="mt-2 text-xs font-black text-pink-500">
-                öffnen →
-              </p>
-            </a>
-          );
-        })}
-      </div>
-    ) : (
-      <p className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-500">
-        Noch keine Dateien hochgeladen.
-      </p>
-    )}
-  </div>
-</SideCard>            </aside>
+        return fileUrl ? (
+          <a
+            key={file.id}
+            href={fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50"
+          >
+            <p className="font-black text-zinc-950">
+              {file.file_name || "Datei"}
+            </p>
+            <p className="mt-1 text-xs text-zinc-400">
+              {file.file_type || "Sonstiges"}
+            </p>
+            <p className="mt-2 text-xs font-black text-pink-500">
+              öffnen →
+            </p>
+          </a>
+        ) : (
+          <div
+            key={file.id}
+            className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-700"
+          >
+            <p className="font-black text-zinc-950">
+              {file.file_name || "Datei"}
+            </p>
+            <p className="mt-1 text-xs text-red-500">
+              Datei-Link konnte nicht erstellt werden.
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  ) : (
+    <p className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-500">
+      Noch keine Dateien hochgeladen.
+    </p>
+  )}
+</div>
+
+</SideCard>  
+          </aside>
           </div>
         </div>
 
