@@ -30,12 +30,22 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  function redirectWithCookies(path: string) {
+    const redirectResponse = NextResponse.redirect(new URL(path, request.url));
+
+    response.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+
+    return redirectResponse;
+  }
+
   const isLogin = pathname === "/login";
   const isAdmin = pathname.startsWith("/admin");
   const isAdminMarkus = pathname.startsWith("/admin/markus");
 
   if (isAdmin && !user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return redirectWithCookies("/login");
   }
 
   if (isLogin && !user) {
@@ -46,10 +56,10 @@ export async function middleware(request: NextRequest) {
     const role = await getRole(supabase, user.id);
 
     if (role === "markus") {
-      return NextResponse.redirect(new URL("/admin/markus", request.url));
+      return redirectWithCookies("/admin/markus");
     }
 
-    return NextResponse.redirect(new URL("/admin", request.url));
+    return redirectWithCookies("/admin");
   }
 
   if (!isAdmin || !user) {
@@ -59,7 +69,7 @@ export async function middleware(request: NextRequest) {
   const role = await getRole(supabase, user.id);
 
   if (!role) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return redirectWithCookies("/login");
   }
 
   if (role === "markus") {
@@ -67,18 +77,14 @@ export async function middleware(request: NextRequest) {
       return response;
     }
 
-    return NextResponse.redirect(new URL("/admin/markus", request.url));
+    return redirectWithCookies("/admin/markus");
   }
 
-  if (role === "sonja") {
+  if (role === "sonja" || role === "admin") {
     return response;
   }
 
-  if (role === "admin") {
-    return response;
-  }
-
-  return NextResponse.redirect(new URL("/login", request.url));
+  return redirectWithCookies("/login");
 }
 
 async function getRole(supabase: any, userId: string) {
