@@ -114,83 +114,83 @@ export default function AdminClient({
 
   const grouped = groupByMonth(rows);
 
-  return (
-    <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
-      <div className="mx-auto max-w-6xl space-y-6">
-        <header className="relative overflow-hidden rounded-[2.4rem] bg-[#101014] p-10 text-white shadow-2xl shadow-black/10">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(255,105,180,0.38),transparent_28%),radial-gradient(circle_at_35%_25%,rgba(255,145,60,0.28),transparent_35%),radial-gradient(circle_at_70%_95%,rgba(190,255,90,0.13),transparent_28%)]" />
-          <div className="absolute right-146 top-10 text-7xl text-pink-400 rotate-6">
-            ♕
-          </div>
-          <div className="absolute right-54 top-18 text-5xl text-orange-300">
-            ✨
-          </div>
-
-          <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-sm font-bold uppercase tracking-widest text-white/50">
-                primakavi · show admin
-              </p>
-              <h1 className="mt-4 text-5xl font-black tracking-tight">
-                Alle Shows
-              </h1>
-              <p className="mt-4 max-w-xl text-white/70">
-                Alle Shows im Überblick – alle Infos an einem Ort.
-              </p>
+    return (
+      <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
+        <div className="mx-auto max-w-6xl space-y-6">
+          <header className="relative overflow-hidden rounded-[2.4rem] bg-[#101014] p-10 text-white shadow-2xl shadow-black/10">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(255,105,180,0.38),transparent_28%),radial-gradient(circle_at_35%_25%,rgba(255,145,60,0.28),transparent_35%),radial-gradient(circle_at_70%_95%,rgba(190,255,90,0.13),transparent_28%)]" />
+            <div className="absolute right-146 top-10 text-7xl text-pink-400 rotate-6">
+              ♕
+            </div>
+            <div className="absolute right-54 top-18 text-5xl text-orange-300">
+              ✨
             </div>
 
-            <form action={createShowAction}>
-              <button
-                type="submit"
-                className="rounded-3xl bg-gradient-to-r from-pink-400 to-orange-400 px-6 py-4 font-black text-white shadow-xl transition hover:scale-[1.02]"
+            <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-widest text-white/50">
+                  primakavi · show admin
+                </p>
+                <h1 className="mt-4 text-5xl font-black tracking-tight">
+                  Alle Shows
+                </h1>
+                <p className="mt-4 max-w-xl text-white/70">
+                  Alle Shows im Überblick – alle Infos an einem Ort.
+                </p>
+              </div>
+
+              <form action={createShowAction}>
+                <button
+                  type="submit"
+                  className="rounded-3xl bg-gradient-to-r from-pink-400 to-orange-400 px-6 py-4 font-black text-white shadow-xl transition hover:scale-[1.02]"
+                >
+                  Neue Show-Akte +
+                </button>
+              </form>
+            </div>
+          </header>
+
+          <section className="rounded-[2rem] bg-white p-5 shadow-xl shadow-black/5 ring-1 ring-black/5">
+            <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Suche nach Location, Stadt, Programm, Kontakt..."
+                className="h-14 rounded-2xl border border-zinc-200 bg-[#fbf7ef] px-5 text-sm font-semibold outline-none focus:border-pink-300 focus:ring-4 focus:ring-pink-100"
+              />
+
+              <select
+                value={year}
+                onChange={(event) => setYear(event.target.value)}
+                className="h-14 rounded-2xl border border-zinc-200 bg-[#fbf7ef] px-5 text-sm font-black outline-none"
               >
-                Neue Show-Akte +
-              </button>
-            </form>
-          </div>
-        </header>
+                <option value="alle">Alle Jahre</option>
+                {years.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <section className="rounded-[2rem] bg-white p-5 shadow-xl shadow-black/5 ring-1 ring-black/5">
-          <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Suche nach Location, Stadt, Programm, Kontakt..."
-              className="h-14 rounded-2xl border border-zinc-200 bg-[#fbf7ef] px-5 text-sm font-semibold outline-none focus:border-pink-300 focus:ring-4 focus:ring-pink-100"
-            />
-
-            <select
-              value={year}
-              onChange={(event) => setYear(event.target.value)}
-              className="h-14 rounded-2xl border border-zinc-200 bg-[#fbf7ef] px-5 text-sm font-black outline-none"
-            >
-              <option value="alle">Alle Jahre</option>
-              {years.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {FILTERS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setFilter(item.key)}
+                  className={[
+                    "rounded-full px-4 py-2 text-sm font-black transition",
+                    filter === item.key
+                      ? "bg-zinc-950 text-white shadow-lg shadow-black/10"
+                      : "bg-[#fbf7ef] text-zinc-700 hover:bg-[#f5ead9]",
+                  ].join(" ")}
+                >
+                  {item.label}
+                </button>
               ))}
-            </select>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {FILTERS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setFilter(item.key)}
-                className={[
-                  "rounded-full px-4 py-2 text-sm font-black transition",
-                  filter === item.key
-                    ? "bg-zinc-950 text-white shadow-lg shadow-black/10"
-                    : "bg-[#fbf7ef] text-zinc-700 hover:bg-[#f5ead9]",
-                ].join(" ")}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </section>
+            </div>
+          </section>
 
         {rows.length === 0 ? (
           <section className="rounded-[2rem] bg-white p-10 text-center shadow-xl shadow-black/5 ring-1 ring-black/5">

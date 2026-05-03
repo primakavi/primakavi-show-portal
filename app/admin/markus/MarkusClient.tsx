@@ -3,11 +3,11 @@
 import { useMemo, useState } from "react";
 import { formatDate } from "@/app/lib/show-workflow";
 
-type FilterKey = "alle" | "kommend" | "vergangen" | "offen" | "fertig";
+type FilterKey = "alle" | "kommend" | "vergangen" | "fertig";
 
 export default function MarkusClient({ shows }: { shows: any[] }) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<FilterKey>("alle");
+  const [filter, setFilter] = useState<FilterKey>("kommend");
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
 
   const today = new Date().toISOString().slice(0, 10);
@@ -53,7 +53,6 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
         filter === "alle" ||
         (filter === "kommend" && isFuture) ||
         (filter === "vergangen" && isPast) ||
-        (filter === "offen" && !isDone) ||
         (filter === "fertig" && isDone);
 
       return matchesSearch && matchesFilter;
@@ -124,7 +123,7 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
             <div className="mt-7 flex flex-wrap gap-2">
               <HeroBadge>🎹 Piano-Fokus</HeroBadge>
               <HeroBadge>Read only</HeroBadge>
-              <HeroBadge>Alle relevanten Shows</HeroBadge>
+              <HeroBadge>Kommende Shows</HeroBadge>
             </div>
           </div>
         </header>
@@ -140,19 +139,31 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
 
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-wrap gap-2">
-                <FilterButton active={filter === "alle"} onClick={() => setFilter("alle")}>
-                  Alle
-                </FilterButton>
-                <FilterButton active={filter === "kommend"} onClick={() => setFilter("kommend")}>
+                <FilterButton
+                  active={filter === "kommend"}
+                  onClick={() => setFilter("kommend")}
+                >
                   Kommend
                 </FilterButton>
-                <FilterButton active={filter === "vergangen"} onClick={() => setFilter("vergangen")}>
+
+                <FilterButton
+                  active={filter === "alle"}
+                  onClick={() => setFilter("alle")}
+                >
+                  Alle
+                </FilterButton>
+
+                <FilterButton
+                  active={filter === "vergangen"}
+                  onClick={() => setFilter("vergangen")}
+                >
                   Vergangen
                 </FilterButton>
-                <FilterButton active={filter === "offen"} onClick={() => setFilter("offen")}>
-                  Offen
-                </FilterButton>
-                <FilterButton active={filter === "fertig"} onClick={() => setFilter("fertig")}>
+
+                <FilterButton
+                  active={filter === "fertig"}
+                  onClick={() => setFilter("fertig")}
+                >
                   Fertig
                 </FilterButton>
               </div>
@@ -210,6 +221,11 @@ function MarkusAccordion({
         <div className="grid gap-4 lg:grid-cols-[145px_1fr_220px_40px] lg:items-center">
           <div>
             <p className="text-xl font-black">{formatDate(show.show_date)}</p>
+
+            <p className="mt-1 text-xs font-black text-pink-500">
+              {daysUntilText(show.show_date)}
+            </p>
+
             <p className="mt-1 text-sm font-bold text-zinc-500">
               {show.weekday || "—"}
             </p>
@@ -230,12 +246,6 @@ function MarkusAccordion({
                   vergangen
                 </span>
               )}
-
-              {show.internal_status && (
-                <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-orange-700">
-                  {show.internal_status}
-                </span>
-              )}
             </div>
 
             <p className="mt-1 text-sm font-bold text-zinc-500">
@@ -251,7 +261,9 @@ function MarkusAccordion({
             <p className="font-black text-zinc-950">
               Beginn: {show.start_time || "—"}
             </p>
-            <p className="mt-1 text-zinc-500">Einlass: {show.entry_time || "—"}</p>
+            <p className="mt-1 text-zinc-500">
+              Einlass: {show.entry_time || "—"}
+            </p>
           </div>
 
           <div className="text-right text-3xl font-black text-zinc-400">
@@ -268,7 +280,11 @@ function MarkusAccordion({
             <Info title="Piano / Technik" value={technikText(show)} highlight />
 
             {show.markus_notes && (
-              <Info title="Notizen für Markus" value={show.markus_notes} highlight />
+              <Info
+                title="Notizen für Markus"
+                value={show.markus_notes}
+                highlight
+              />
             )}
 
             <Info title="Anreise" value={travelText(show)} />
@@ -367,7 +383,7 @@ function technikText(show: any) {
     show.tech_sound_available ? "Ton vorhanden" : null,
     show.tech_lights_available ? "Licht vorhanden" : null,
     show.piano_type ? `Klavier / Flügel: ${show.piano_type}` : null,
-    show.epiano_available ? `E-Piano: ${show.epiano_available}` : null,
+    show.epiano_available ? "E-Piano vorhanden" : null,
     show.piano_notes ? `Modell: ${show.piano_notes}` : null,
     show.tech_contact ? `Technik-Kontakt: ${show.tech_contact}` : null,
     show.tech_notes,
@@ -415,6 +431,7 @@ function accommodationText(show: any) {
 
   return values.filter(Boolean).join("\n") || null;
 }
+
 function scheduleText(show: any) {
   const values = [
     show.arrival_time ? `Ankunft: ${show.arrival_time}` : null,
@@ -425,4 +442,25 @@ function scheduleText(show: any) {
   ];
 
   return values.filter(Boolean).join("\n") || null;
+}
+
+function daysUntilText(date: string | null) {
+  if (!date) return "ohne Datum";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const showDate = new Date(date);
+  showDate.setHours(0, 0, 0, 0);
+
+  const diffDays = Math.round(
+    (showDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays === 0) return "heute";
+  if (diffDays === 1) return "morgen";
+  if (diffDays > 1) return `in ${diffDays} Tagen`;
+  if (diffDays === -1) return "gestern";
+
+  return `vor ${Math.abs(diffDays)} Tagen`;
 }
