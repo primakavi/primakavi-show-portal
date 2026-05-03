@@ -34,29 +34,6 @@ export default function Image() {
           }}
         />
 
-        <div
-          style={{
-            position: "absolute",
-            right: 92,
-            top: 78,
-            fontSize: 42,
-            color: "rgba(236,72,153,0.75)",
-          }}
-        >
-          ⬦
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            left: 155,
-            bottom: 92,
-            fontSize: 34,
-            color: "rgba(221,242,26,0.52)",
-          }}
-        >
-          ☆
-        </div>
 
         <div
           style={{
@@ -89,7 +66,7 @@ export default function Image() {
                   borderRadius: 13,
                   backgroundImage:
                     "url(https://booking.primakavi.de/logo-primakavi.png)",
-                  backgroundSize: "cover",
+                  backgroundSize: "82%",
                   backgroundPosition: "center",
                 }}
               />
