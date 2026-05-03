@@ -117,12 +117,13 @@ export default function AdminSidebar({
             </p>
           )}
 
-          <Link
-            href="/logout"
-            className="mt-4 flex h-11 items-center justify-center rounded-2xl bg-zinc-950 text-sm font-black text-white transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/15"
-          >
-            Logout
-          </Link>
+<a
+  href="/logout"
+  className="mt-4 flex h-11 items-center justify-center rounded-2xl bg-zinc-950 text-sm font-black text-white transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/15"
+>
+  Logout
+</a>
+
         </div>
       </div>
     </aside>
