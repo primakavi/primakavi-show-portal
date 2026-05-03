@@ -1,4 +1,5 @@
 import AdminSidebar from "./AdminSidebar";
+import AdminMobileNav from "./AdminMobileNav";
 import { createClient } from "@/app/lib/supabase/server";
 
 export default async function AdminLayout({
@@ -26,10 +27,14 @@ export default async function AdminLayout({
 
   return (
     <div className="min-h-screen bg-[#fbf7ef]">
-      <div className="flex min-h-screen">
+      <AdminMobileNav user={user} role={role} />
+
+      <div className="min-h-screen lg:flex">
         <AdminSidebar user={user} role={role} />
 
-        <div className="min-w-0 flex-1">{children}</div>
+        <main className="min-w-0 flex-1 px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+          <div className="mx-auto w-full max-w-7xl">{children}</div>
+        </main>
       </div>
     </div>
   );
