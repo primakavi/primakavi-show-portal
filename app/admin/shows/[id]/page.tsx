@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 import CopyMailButtons from "./CopyMailButtons";
+import FileUploadBox from "./FileUploadBox";
 
 const CHECKLIST_GROUPS = [
   {
@@ -540,7 +541,43 @@ export default async function ShowAktePage({
                   <CopyMailButtons show={show} portalUrl={portalUrl} />
                 </div>
               </SideCard>
-            </aside>
+<SideCard title="Dateien" tone="zinc">
+  <FileUploadBox token={show.token} />
+
+  <div className="mt-5">
+    {show.show_files?.length ? (
+      <div className="space-y-3">
+        {show.show_files.map((file: any) => {
+          const fileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/show-files/${file.storage_path}`;
+
+          return (
+            <a
+              key={file.id}
+              href={fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50"
+            >
+              <p className="font-black text-zinc-950">
+                {file.file_name || "Datei"}
+              </p>
+              <p className="mt-1 text-xs text-zinc-400">
+                {file.file_type || "Sonstiges"}
+              </p>
+              <p className="mt-2 text-xs font-black text-pink-500">
+                öffnen →
+              </p>
+            </a>
+          );
+        })}
+      </div>
+    ) : (
+      <p className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-500">
+        Noch keine Dateien hochgeladen.
+      </p>
+    )}
+  </div>
+</SideCard>            </aside>
           </div>
         </div>
 
