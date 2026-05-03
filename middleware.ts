@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -26,19 +28,74 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = request.nextUrl.pathname;
   const isLogin = pathname === "/login";
   const isAdmin = pathname.startsWith("/admin");
+  const isMarkusArea = pathname.startsWith("/admin/markus");
+
+  function redirectWithCookies(path: string) {
+    const redirectResponse = NextResponse.redirect(new URL(path, request.url));
+
+    response.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+
+    return redirectResponse;
+  }
 
   if (isAdmin && !user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return redirectWithCookies("/login");
   }
+
+  if (isLogin && !user) {
+    return response;
+  }
+
+  if (!user) {
+    return response;
+  }
+
+  const role = await getRole(supabase, user.id);
 
   if (isLogin && user) {
-    return NextResponse.redirect(new URL("/admin", request.url));
+    if (role === "markus") {
+      return redirectWithCookies("/admin/markus");
+    }
+
+    return redirectWithCookies("/admin");
   }
 
-  return response;
+  if (!isAdmin) {
+    return response;
+  }
+
+  if (role === "markus") {
+    if (isMarkusArea) {
+      return response;
+    }
+
+    return redirectWithCookies("/admin/markus");
+  }
+
+  if (role === "admin" || role === "sonja") {
+    return response;
+  }
+
+  return redirectWithCookies("/login");
+}
+
+async function getRole(supabase: any, userId: string) {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Role lookup failed:", error.message);
+    return null;
+  }
+
+  return data?.role || null;
 }
 
 export const config = {
