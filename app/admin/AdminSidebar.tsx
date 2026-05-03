@@ -17,7 +17,10 @@ export default function AdminSidebar({
 
   return (
     <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-black/5 bg-[#fffdf8] px-6 py-6 shadow-[20px_0_60px_rgba(0,0,0,0.04)] lg:flex lg:flex-col">
-      <Link href={isMarkusRole ? "/admin/markus" : "/admin"} className="mb-10 block">
+      <Link
+        href={isMarkusRole ? "/admin/markus" : "/admin"}
+        className="mb-10 block"
+      >
         <div className="flex items-center gap-4">
           <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl bg-[#d9ff00] ring-1 ring-black/10">
             <Image
@@ -40,7 +43,7 @@ export default function AdminSidebar({
               </span>
               <span className="h-1 w-1 rounded-full bg-zinc-300" />
               <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-                V.1.02
+                V.1.03
               </span>
             </div>
           </div>
@@ -74,24 +77,42 @@ export default function AdminSidebar({
                 active={pathname.startsWith("/admin/tourkarte")}
               />
             </NavSection>
+
+            <NavSection title="Ansichten">
+              <SidebarLink
+                href="/admin/markus"
+                label="Markus-Ansicht"
+                icon="🎹"
+                active={pathname === "/admin/markus"}
+              />
+
+              <SidebarLink
+                href="/admin/markus/tourkarte"
+                label="Markus-Karte"
+                icon="🗺️"
+                active={pathname.startsWith("/admin/markus/tourkarte")}
+              />
+            </NavSection>
           </>
         )}
 
-        <NavSection title={isMarkusRole ? "Dein Bereich" : "Perspektiven"}>
-          <SidebarLink
-            href="/admin/markus"
-            label="Markus-Ansicht"
-            icon="🎹"
-            active={pathname === "/admin/markus"}
-          />
+        {isMarkusRole && (
+          <NavSection title="Dein Bereich">
+            <SidebarLink
+              href="/admin/markus"
+              label="Meine Shows"
+              icon="🎹"
+              active={pathname === "/admin/markus"}
+            />
 
-          <SidebarLink
-            href="/admin/markus/tourkarte"
-            label="Markus-Karte"
-            icon="🗺️"
-            active={pathname.startsWith("/admin/markus/tourkarte")}
-          />
-        </NavSection>
+            <SidebarLink
+              href="/admin/markus/tourkarte"
+              label="Meine Karte"
+              icon="🗺️"
+              active={pathname.startsWith("/admin/markus/tourkarte")}
+            />
+          </NavSection>
+        )}
       </nav>
 
       <div className="mt-auto space-y-4">
@@ -117,6 +138,28 @@ export default function AdminSidebar({
               : "Shows, Akten, Tourplanung und interne Steuerung an einem Ort."}
           </p>
         </div>
+
+        {!isMarkusRole && (
+          <div className="px-1">
+            <Link
+              href="/admin/help"
+              className={[
+                "flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-black transition",
+                pathname.startsWith("/admin/help")
+                  ? "bg-[#fbf7ef] text-zinc-950 ring-1 ring-black/5"
+                  : "text-zinc-400 hover:bg-[#fbf7ef] hover:text-zinc-800",
+              ].join(" ")}
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-base">?</span>
+                Hilfe
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-300">
+                Guide
+              </span>
+            </Link>
+          </div>
+        )}
 
         <div className="border-t border-black/5 pt-5">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-400">
@@ -153,12 +196,12 @@ function NavSection({
   children: React.ReactNode;
 }) {
   return (
-    <div>
+    <section>
       <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-400">
         {title}
       </p>
       <div className="space-y-1">{children}</div>
-    </div>
+    </section>
   );
 }
 
