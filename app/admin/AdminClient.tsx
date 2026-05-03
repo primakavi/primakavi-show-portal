@@ -115,14 +115,13 @@ export default function AdminClient({
   const grouped = groupByMonth(rows);
 
     return (
-      <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
-        <div className="mx-auto max-w-6xl space-y-6">
+  <div className="space-y-5 text-zinc-950 sm:space-y-6">
           <header className="relative overflow-hidden rounded-[2.4rem] bg-[#101014] p-10 text-white shadow-2xl shadow-black/10">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(255,105,180,0.38),transparent_28%),radial-gradient(circle_at_35%_25%,rgba(255,145,60,0.28),transparent_35%),radial-gradient(circle_at_70%_95%,rgba(190,255,90,0.13),transparent_28%)]" />
             <div className="absolute right-146 top-10 text-7xl text-pink-400 rotate-6">
               ♕
             </div>
-            <div className="absolute right-54 top-18 text-5xl text-orange-300">
+            <div className="absolute right-20 top-18 text-5xl text-orange-300">
               ✨
             </div>
 
@@ -173,24 +172,32 @@ export default function AdminClient({
               </select>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              {FILTERS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setFilter(item.key)}
-                  className={[
-                    "rounded-full px-4 py-2 text-sm font-black transition",
-                    filter === item.key
-                      ? "bg-zinc-950 text-white shadow-lg shadow-black/10"
-                      : "bg-[#fbf7ef] text-zinc-700 hover:bg-[#f5ead9]",
-                  ].join(" ")}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </section>
+<div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+  {FILTERS.map((item) => {
+    const isActive = filter === item.key;
+
+    return (
+      <button
+        key={item.key}
+        type="button"
+        onClick={() => setFilter(item.key)}
+        className={[
+          "shrink-0 flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-black transition sm:px-4 sm:text-sm",
+          isActive
+            ? "bg-zinc-950 text-white shadow-md ring-2 ring-zinc-950/10"
+            : "bg-[#fbf7ef] text-zinc-700 hover:bg-[#f5ead9]",
+        ].join(" ")}
+      >
+        {isActive && (
+          <span className="h-2 w-2 rounded-full bg-white" />
+        )}
+        <span>{item.label}</span>
+      </button>
+    );
+  })}
+</div>
+
+</section>
 
         {rows.length === 0 ? (
           <section className="rounded-[2rem] bg-white p-10 text-center shadow-xl shadow-black/5 ring-1 ring-black/5">
@@ -234,7 +241,6 @@ export default function AdminClient({
           </section>
         )}
       </div>
-    </main>
   );
 }
 
