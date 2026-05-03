@@ -43,7 +43,7 @@ export default function Image() {
             color: "rgba(236,72,153,0.75)",
           }}
         >
-          ✦
+          ⬦
         </div>
 
         <div
@@ -55,7 +55,7 @@ export default function Image() {
             color: "rgba(221,242,26,0.52)",
           }}
         >
-          ✧
+          ☆
         </div>
 
         <div
