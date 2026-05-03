@@ -66,7 +66,7 @@ export default function Image() {
                   borderRadius: 13,
                   backgroundImage:
                     "url(https://booking.primakavi.de/logo-primakavi.png)",
-                  backgroundSize: "82%",
+                  backgroundSize: "contain",
                   backgroundPosition: "center",
                 }}
               />
