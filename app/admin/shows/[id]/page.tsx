@@ -153,21 +153,23 @@ export default async function ShowAktePage({
 
               <div className="rounded-[2rem] border border-white/15 bg-white/15 p-5 shadow-2xl backdrop-blur-2xl">
                 <div className="grid grid-cols-[100px_1fr] gap-5">
-                  <div className="rounded-3xl border border-white/10 bg-white/15 p-4 text-center shadow-inner">
-                    <p className="text-xs font-black uppercase text-zinc-300">
-                      {show.weekday || "SHOW"}
-                    </p>
-                    <p className="mt-1 text-5xl font-black">
-                      {formatDateParts(show.show_date).day}
-                    </p>
-                    <p className="text-sm font-black">
-                      {formatDateParts(show.show_date).month}
-                    </p>
-                    <p className="text-xs text-zinc-300">
-                      {formatDateParts(show.show_date).year}
-                    </p>
-                  </div>
+<div className="flex min-h-[140px] flex-col items-center justify-center rounded-3xl border border-white/10 bg-white/15 p-4 text-center shadow-inner">
+  <p className="text-xs font-black uppercase text-zinc-300">
+    {show.weekday || "Datum"}
+  </p>
 
+  <p className="mt-2 text-5xl font-black leading-none">
+    {formatDateParts(show.show_date).day}
+  </p>
+
+  <p className="mt-2 text-sm font-black uppercase leading-none">
+    {formatDateParts(show.show_date).month}
+  </p>
+
+  <p className="mt-1 text-xs text-zinc-300">
+    {formatDateParts(show.show_date).year}
+  </p>
+</div>
                   <div className="self-center">
                     <div className="space-y-3 text-sm">
                       <div className="rounded-2xl bg-white/10 px-4 py-3 font-semibold text-zinc-100">

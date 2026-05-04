@@ -369,38 +369,42 @@ export default function ShowPortalPage({
               </p>
             </div>
 
-            <div className="self-center rounded-[2rem] border border-white/15 bg-white/15 p-5 shadow-2xl backdrop-blur-2xl">
-              <div className="grid grid-cols-[100px_1fr] gap-5">
-                <div className="rounded-3xl border border-white/10 bg-white/15 p-4 text-center shadow-inner">
-                  <p className="text-xs font-black uppercase text-zinc-300">
-                    {asString(form.weekday) || "SHOW"}
-                  </p>
-                  <p className="mt-1 text-5xl font-black">{date.day}</p>
-                  <p className="text-sm font-black">{date.month}</p>
-                  <p className="text-xs text-zinc-300">{date.year}</p>
-                </div>
+<div className="self-center rounded-[2rem] border border-white/15 bg-white/15 p-5 shadow-2xl backdrop-blur-2xl">
+  <div className="grid grid-cols-[100px_1fr] gap-5">
+    <div className="flex min-h-[155px] flex-col items-center justify-center rounded-3xl border border-white/10 bg-white/15 p-4 text-center shadow-inner">
+      <p className="text-xs font-black uppercase text-zinc-300">
+        {asString(form.weekday) || "Datum"}
+      </p>
 
-                <div>
-                  <h2 className="text-xl font-black">
-                    {asString(form.artist) || "Sonja Gründemann"}
-                  </h2>
-                  <p className="mt-1 font-semibold text-zinc-300">
-                    {asString(form.program) || "Jetzt mal Tacheles"}
-                  </p>
+      <p className="mt-2 text-5xl font-black leading-none">
+        {date.day}
+      </p>
 
-                  <div className="mt-5 space-y-2 text-sm">
-                    <HeroPill>
-                      ◷ {asString(form.start_time) || "20:00 Uhr"} · Einlass{" "}
-                      {asString(form.entry_time) || "19:00 Uhr"}
-                    </HeroPill>
-                    <HeroPill>
-                      ⌖ {asString(form.venue) || "Location"},{" "}
-                      {asString(form.city) || "Ort offen"}
-                    </HeroPill>
-                  </div>
-                </div>
-              </div>
-            </div>
+      <p className="mt-2 text-sm font-black uppercase">
+        {date.month}
+      </p>
+
+      <p className="text-xs text-zinc-300">
+        {date.year}
+      </p>
+    </div>
+
+    <div>
+      <h2 className="text-xl font-black">
+        {asString(form.artist) || "Sonja Gründemann"}
+      </h2>
+
+      <p className="mt-1 font-semibold text-zinc-300">
+        {asString(form.program) || "Programm offen"}
+      </p>
+
+      <div className="mt-5 space-y-2 text-sm">
+        <HeroPill>◷ {getHeroTime(form)}</HeroPill>
+        <HeroPill>⌖ {getHeroLocation(form)}</HeroPill>
+      </div>
+    </div>
+  </div>
+</div>
           </div>
         </section>
 
@@ -1153,6 +1157,27 @@ function cleanShowForForm(show: Show): PortalForm {
 function asString(value: string | boolean | null | undefined) {
   return typeof value === "string" ? value : "";
 }
+function getHeroTime(form: PortalForm) {
+  const start = asString(form.start_time);
+  const entry = asString(form.entry_time);
+
+  if (start && entry) return `${start} · Einlass ${entry}`;
+  if (start) return `${start} · Einlass offen`;
+  if (entry) return `Beginn offen · Einlass ${entry}`;
+
+  return "Beginn & Einlass offen";
+}
+
+function getHeroLocation(form: PortalForm) {
+  const venue = asString(form.venue);
+  const city = asString(form.city);
+
+  if (venue && city) return `${venue}, ${city}`;
+  if (venue) return `${venue}, Ort offen`;
+  if (city) return `Location offen, ${city}`;
+
+  return "Location & Ort offen";
+}
 
 function HelpButton() {
   const [open, setOpen] = useState(false);
@@ -1426,11 +1451,12 @@ function sectionDescription(title: string) {
 }
 
 function formatDate(date?: string) {
-  if (!date) return { day: "24", month: "APR", year: "2026" };
+  if (!date) return { day: "—", month: "", year: "" };
 
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime()))
-    return { day: "24", month: "APR", year: "2026" };
+  const d = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(d.getTime())) {
+    return { day: "—", month: "", year: "" };
+  }
 
   return {
     day: String(d.getDate()).padStart(2, "0"),
