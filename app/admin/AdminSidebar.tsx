@@ -16,13 +16,13 @@ export default function AdminSidebar({
   const isMarkusRole = role === "markus";
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 border-r border-black/5 bg-[#fffdf8] px-6 py-6 shadow-[20px_0_60px_rgba(0,0,0,0.04)] lg:flex lg:flex-col">
+    <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 border-r border-black/5 bg-[#fffdf8] px-5 py-5 shadow-[20px_0_60px_rgba(0,0,0,0.035)] lg:flex lg:flex-col">
       <Link
         href={isMarkusRole ? "/admin/markus" : "/admin"}
-        className="mb-10 block"
+        className="mb-8 block"
       >
-        <div className="flex items-center gap-4">
-          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl bg-[#d9ff00] ring-1 ring-black/10">
+        <div className="flex items-center gap-3">
+          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-[#d9ff00] ring-1 ring-black/10">
             <Image
               src="/logo-primakavi.png"
               alt="primakavi"
@@ -32,17 +32,17 @@ export default function AdminSidebar({
             />
           </div>
 
-          <div>
-            <div className="text-xl font-black tracking-tight text-zinc-950">
+          <div className="min-w-0">
+            <div className="truncate text-lg font-black tracking-tight text-zinc-950">
               primakavi
             </div>
 
-            <div className="mt-1 flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className="text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">
                 Show Portal
               </span>
               <span className="h-1 w-1 rounded-full bg-zinc-300" />
-              <span className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
+              <span className="text-[9px] font-black uppercase tracking-[0.14em] text-zinc-400">
                 V.1.03
               </span>
             </div>
@@ -50,7 +50,7 @@ export default function AdminSidebar({
         </div>
       </Link>
 
-      <nav className="space-y-6">
+      <nav className="space-y-5">
         {!isMarkusRole && (
           <>
             <NavSection title="Überblick">
@@ -75,6 +75,13 @@ export default function AdminSidebar({
                 label="Tourkarte"
                 icon="🗺️"
                 active={pathname.startsWith("/admin/tourkarte")}
+              />
+
+              <SidebarLink
+                href="/admin/insights"
+                label="Auswertung"
+                icon="📊"
+                active={pathname.startsWith("/admin/insights")}
               />
             </NavSection>
 
@@ -118,67 +125,67 @@ export default function AdminSidebar({
       <div className="mt-auto space-y-4">
         <div
           className={[
-            "rounded-3xl px-5 py-4 text-zinc-900 shadow-[0_10px_30px_rgba(0,0,0,0.05)] ring-1 ring-black/5",
+            "rounded-2xl px-4 py-3 text-zinc-900 shadow-[0_10px_30px_rgba(0,0,0,0.04)] ring-1 ring-black/5",
             isMarkusView
-              ? "bg-gradient-to-br from-lime-200 via-green-100 to-white"
-              : "bg-gradient-to-br from-[#fff2c8] via-[#ffe1cf] to-white",
+              ? "bg-gradient-to-br from-lime-100 via-green-50 to-white"
+              : "bg-gradient-to-br from-[#fff4d4] via-[#ffe8dc] to-white",
           ].join(" ")}
         >
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-zinc-500">
             {isMarkusView ? "Markus-Modus" : "Booking"}
           </p>
 
-          <p className="mt-3 text-sm font-black text-zinc-950">
-            {isMarkusView ? "Reduzierte Ansicht aktiv" : "Show-Zentrale aktiv"}
+          <p className="mt-2 text-[13px] font-black text-zinc-950">
+            {isMarkusView ? "Reduzierte Ansicht" : "Show-Zentrale aktiv"}
           </p>
 
-          <p className="mt-2 text-xs leading-relaxed text-zinc-600">
+          <p className="mt-1.5 text-[11px] font-medium leading-relaxed text-zinc-600">
             {isMarkusView
-              ? "Fokus auf Termine, Karte, Ablauf und Piano-relevante Infos."
-              : "Shows, Akten, Tourplanung und interne Steuerung an einem Ort."}
+              ? "Termine, Karte, Ablauf und Piano-relevante Infos."
+              : "Shows, Akten, Tourplanung und interne Steuerung."}
           </p>
         </div>
 
         {!isMarkusRole && (
-          <div className="px-1">
+          <div>
             <Link
               href="/admin/help"
               className={[
-                "flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-black transition",
+                "flex items-center justify-between rounded-xl px-3 py-2 text-[13px] font-bold transition",
                 pathname.startsWith("/admin/help")
-                  ? "bg-[#fbf7ef] text-zinc-950 ring-1 ring-black/5"
-                  : "text-zinc-400 hover:bg-[#fbf7ef] hover:text-zinc-800",
+                  ? "bg-[#f7f3eb] text-zinc-950 ring-1 ring-black/5"
+                  : "text-zinc-400 hover:bg-[#f7f3eb] hover:text-zinc-800",
               ].join(" ")}
             >
               <span className="flex items-center gap-2">
-                <span className="text-base">?</span>
+                <span className="text-sm">?</span>
                 Hilfe
               </span>
-              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-300">
+              <span className="text-[9px] font-black uppercase tracking-[0.12em] text-zinc-300">
                 Guide
               </span>
             </Link>
           </div>
         )}
 
-        <div className="border-t border-black/5 pt-5">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-400">
+        <div className="border-t border-black/5 pt-4">
+          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-zinc-400">
             Eingeloggt
           </p>
 
-          <p className="mt-2 truncate text-sm font-black text-zinc-900">
+          <p className="mt-2 truncate text-[13px] font-black text-zinc-900">
             {user?.email || "—"}
           </p>
 
           {role && (
-            <p className="mt-1 text-xs font-bold text-zinc-400">
+            <p className="mt-1 text-[11px] font-bold text-zinc-400">
               Rolle: {role}
             </p>
           )}
 
           <a
             href="/logout"
-            className="mt-4 flex h-11 items-center justify-center rounded-2xl bg-zinc-950 text-sm font-black text-white transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/15"
+            className="mt-3 flex h-10 items-center justify-center rounded-xl bg-zinc-950 text-[13px] font-black text-white transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/15"
           >
             Logout
           </a>
@@ -197,7 +204,7 @@ function NavSection({
 }) {
   return (
     <section>
-      <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-400">
+      <p className="mb-2 px-3 text-[9px] font-black uppercase tracking-[0.16em] text-zinc-400">
         {title}
       </p>
       <div className="space-y-1">{children}</div>
@@ -220,22 +227,24 @@ function SidebarLink({
     <Link
       href={href}
       className={[
-        "flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-black transition",
+        "group flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-bold transition-all",
         active
-          ? "bg-zinc-950 text-white shadow-lg shadow-black/10"
-          : "text-zinc-600 hover:bg-[#fbf7ef] hover:text-zinc-950",
+          ? "bg-zinc-950 text-white shadow-md shadow-black/5"
+          : "text-zinc-500 hover:bg-[#f7f3eb] hover:text-zinc-950",
       ].join(" ")}
     >
       <span
         className={[
-          "flex h-9 w-9 items-center justify-center rounded-xl text-lg transition",
-          active ? "bg-white/15" : "bg-white/70",
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[15px] transition",
+          active
+            ? "bg-white/10"
+            : "bg-white ring-1 ring-black/5 group-hover:bg-[#fffdf8]",
         ].join(" ")}
       >
         {icon}
       </span>
 
-      <span>{label}</span>
+      <span className="truncate">{label}</span>
     </Link>
   );
 }

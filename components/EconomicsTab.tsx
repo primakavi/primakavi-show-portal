@@ -458,36 +458,6 @@ async function save() {
         </BusinessCard>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-        <BusinessCard title="Vergleich" eyebrow="Show vs. Durchschnitt">
-          <div className="space-y-3">
-            <CompareRow label="Einnahmen" value={revenue} average={benchmark?.avgRevenue} />
-            <CompareRow label="Kosten" value={totalCosts} average={benchmark?.avgCosts} invert />
-            <CompareRow label="Gewinn" value={profit} average={benchmark?.avgProfit} />
-            <CompareRow label="Marge" value={margin} average={benchmark?.avgMargin} suffix="%" />
-          </div>
-        </BusinessCard>
-
-        <BusinessCard title="Smart Hinweise" eyebrow="Intelligence Layer">
-          <div className="space-y-3">
-            {insights.length ? (
-              insights.map((insight) => (
-                <div
-                  key={insight}
-                  className="rounded-2xl bg-[#fbf7ef] px-4 py-3 text-sm font-bold leading-6 text-zinc-700"
-                >
-                  {insight}
-                </div>
-              ))
-            ) : (
-              <p className="rounded-2xl bg-[#fbf7ef] px-4 py-3 text-sm font-bold text-zinc-500">
-                Noch keine Hinweise. Trage Zahlen und Bewertungen ein.
-              </p>
-            )}
-          </div>
-        </BusinessCard>
-      </section>
-
 <div className="sticky bottom-5 z-20 mt-8 rounded-[1.75rem] bg-zinc-950 p-4 text-white shadow-2xl">
   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
     <div>

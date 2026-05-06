@@ -92,7 +92,21 @@ export default function HelpPage() {
           ]}
           important="Änderungen sind erst sicher gespeichert, wenn du die Akte speicherst."
         />
-
+<Topic
+  icon="💰"
+  title="Economics & Nachbereitung"
+  what="Economics ist der Bereich für die wirtschaftliche Nachbereitung einer einzelnen Show."
+  useFor="Nutze ihn, um Einnahmen, Kosten, Ticketzahlen, Bewertung und Learnings nach der Show sauber zu dokumentieren."
+  steps={[
+    "Show öffnen und den Bereich Economics/Nachbereitung aufrufen.",
+    "Einnahmen und Kosten als einzelne Positionen eintragen.",
+    "Ticketzahlen und relevante Zusatzinfos ergänzen.",
+    "Gewinn, Kosten und Marge prüfen.",
+    "Bewertung, Learnings und Fazit zur Show festhalten.",
+    "Am Ende speichern.",
+  ]}
+  important="Economics bewertet immer diese eine Show. Die große Auswertungsseite für Trends, Regionen, Venues und Programme kommt später separat."
+/>
         <Topic
           icon="📨"
           title="Veranstalterformular"
@@ -158,6 +172,14 @@ export default function HelpPage() {
               question="Warum sieht Markus weniger?"
               answer="Absicht. Markus bekommt nur seinen Tourplan und keine Bearbeitungsrechte."
             />
+            <FAQ
+  question="Wofür ist Economics gedacht?"
+  answer="Für die Nachbereitung einer einzelnen Show: Einnahmen, Kosten, Gewinn, Marge, Bewertung und Learnings."
+/>
+<FAQ
+  question="Wo kommen spätere Auswertungen hin?"
+  answer="Nicht in die einzelne Show. Dafür ist später eine eigene Insights- oder Analytics-Seite geplant."
+/>
           </div>
         </section>
       </div>
