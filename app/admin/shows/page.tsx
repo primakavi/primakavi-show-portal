@@ -89,7 +89,7 @@ async function createShowAction() {
 
   revalidateAll();
 
-  redirect(`/admin/shows/${data.id}`);
+  return { id: data.id };
 }
 
 async function duplicateShowAction(formData: FormData) {

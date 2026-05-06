@@ -1,10 +1,10 @@
 import Link from "next/link";
 
 const wrappedCards = [
-  ["Beste Show", "Schatzkistl Mannheim", "+1.840 € Gewinn"],
-  ["Top Venue", "Hasper Hammer", "stärkste Marge"],
-  ["Beste Region", "NRW / Rhein-Ruhr", "hohes Potenzial"],
-  ["Kostenfalle", "Hotel & Reise", "prüfen vor Buchung"],
+  ["Beste Show", "XY", "+1.840 € Gewinn"],
+  ["Top Venue", "XY", "stärkste Marge"],
+  ["Beste Region", "XY", "hohes Potenzial"],
+  ["Kostenfalle", "XY", "prüfen vor Buchung"],
 ];
 
 const insightCards = [

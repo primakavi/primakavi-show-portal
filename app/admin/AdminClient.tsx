@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 type ShowRow = {
@@ -56,10 +57,12 @@ export default function AdminClient({
   duplicateShowAction,
 }: {
   shows: ShowRow[];
-  createShowAction: () => void | Promise<void>;
+  createShowAction: () => Promise<{ id: string }>;
   deleteShowAction: (formData: FormData) => void | Promise<void>;
   duplicateShowAction: (formData: FormData) => void | Promise<void>;
 }) {
+  const router = useRouter();
+
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("kommend");
   const [year, setYear] = useState("alle");
@@ -78,14 +81,22 @@ export default function AdminClient({
 
   async function handleCreateShow() {
     if (existingEmptyShow) {
-      window.location.href = `/admin/shows/${existingEmptyShow.id}`;
+      setShowCreateConfirm(false);
+      router.push(`/admin/shows/${existingEmptyShow.id}`);
       return;
     }
 
     setIsCreating(true);
 
     try {
-      await createShowAction();
+      const result = await createShowAction();
+
+      if (!result?.id) {
+        throw new Error("Keine Show-ID zurückgegeben.");
+      }
+
+      setShowCreateConfirm(false);
+      router.push(`/admin/shows/${result.id}`);
     } catch (error) {
       console.error("Fehler beim Anlegen der Show:", error);
       alert("Die Show konnte nicht angelegt werden.");
