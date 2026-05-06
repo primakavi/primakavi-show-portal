@@ -4,6 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 import CopyMailButtons from "./CopyMailButtons";
 import FileUploadBox from "./FileUploadBox";
+import EconomicsTab from "@/components/EconomicsTab";
+import Link from "next/link";
 
 const CHECKLIST_GROUPS = [
   {
@@ -50,6 +52,13 @@ export default async function ShowAktePage({
   searchParams: Promise<{ saved?: string; reviewed?: string }>;
 }) {
   const { id } = await params;
+  
+  const { data: economics } = await supabaseAdmin
+  .schema("booking")
+  .from("show_economics")
+  .select("revenue_total, profit")
+  .eq("show_id", id)
+  .maybeSingle();
   const { saved, reviewed } = await searchParams;
 
   const wasSaved = saved === "1";
@@ -449,7 +458,6 @@ export default async function ShowAktePage({
                   </div>
                 )}
               </SideCard>
-
               <SideCard title="Interne Steuerung" tone="zinc">
                 <div className="space-y-4">
                   <Select
@@ -605,6 +613,65 @@ export default async function ShowAktePage({
 </div>
 
 </SideCard>  
+<SideCard title="Nachbereitung" tone="zinc">
+  <div className="space-y-3">
+    {economics ? (
+      <div className="rounded-2xl bg-[#fbf7ef] p-4">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
+          Wirtschaftlichkeit
+        </p>
+
+        <p
+          className={`mt-2 text-3xl font-black ${
+            Number(economics.profit) > 0
+              ? "text-emerald-600"
+              : Number(economics.profit) < 0
+              ? "text-rose-600"
+              : "text-zinc-700"
+          }`}
+        >
+          {formatEuro(Number(economics.profit) || 0)}
+        </p>
+
+        {/* Mini-Bar */}
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-rose-200">
+          <div
+            className="h-2 rounded-full bg-emerald-400"
+            style={{
+              width: `${Math.max(
+                0,
+                Math.min(
+                  100,
+                  ((Number(economics.revenue_total) || 0) -
+                    Math.abs(Number(economics.profit) || 0)) /
+                    Math.max(Number(economics.revenue_total) || 1, 1) *
+                    100
+                )
+              )}%`,
+            }}
+          />
+        </div>
+
+        <p className="mt-2 text-xs font-bold text-zinc-500">
+          Einnahmen: {formatEuro(Number(economics.revenue_total) || 0)}
+        </p>
+      </div>
+    ) : (
+      <p className="rounded-2xl bg-[#fbf7ef] px-4 py-3 text-sm font-bold text-zinc-500">
+        Noch keine Wirtschaftlichkeit erfasst.
+      </p>
+    )}
+
+    <Link
+      href={`/admin/shows/${show.id}/economics`}
+      className="flex items-center justify-between rounded-2xl bg-[#fbf7ef] px-4 py-3 text-sm font-black text-zinc-700 transition hover:bg-[#f5ead9] hover:text-zinc-950"
+    >
+      <span>💸 Wirtschaftlichkeit öffnen</span>
+      <span>→</span>
+    </Link>
+  </div>
+</SideCard>
+
           </aside>
           </div>
         </div>
@@ -1577,4 +1644,13 @@ function startOfToday() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return today;
+}
+
+function formatEuro(value: number) {
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
