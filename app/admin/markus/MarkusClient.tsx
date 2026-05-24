@@ -45,15 +45,17 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
       const isPast = show.show_date && show.show_date < today;
       const isFuture = !show.show_date || show.show_date >= today;
 
-      const isDone =
-        show.internal_status === "fertig" ||
-        show.internal_status === "abgeschlossen";
+    const isDone =
+  show.internal_status === "fertig" ||
+  show.internal_status === "abgeschlossen";
+
+const isCancelled = show.internal_status === "abgesagt";
 
       const matchesFilter =
-        filter === "alle" ||
-        (filter === "kommend" && isFuture) ||
-        (filter === "vergangen" && isPast) ||
-        (filter === "fertig" && isDone);
+  filter === "alle" ||
+  (filter === "kommend" && isFuture && !isCancelled) ||
+  (filter === "vergangen" && (isPast || isCancelled)) ||
+  (filter === "fertig" && isDone);
 
       return matchesSearch && matchesFilter;
     });
@@ -161,11 +163,11 @@ export default function MarkusClient({ shows }: { shows: any[] }) {
                 </FilterButton>
 
                 <FilterButton
-                  active={filter === "fertig"}
-                  onClick={() => setFilter("fertig")}
-                >
-                  Fertig
-                </FilterButton>
+  active={filter === "fertig"}
+  onClick={() => setFilter("fertig")}
+>
+  🎭 Spielbereit
+</FilterButton>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -240,7 +242,17 @@ function MarkusAccordion({
               <span className="rounded-full bg-lime-100 px-3 py-1 text-xs font-black text-lime-800">
                 🎹 Markus
               </span>
+{show.internal_status === "abgesagt" && (
+  <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-700">
+    ❌ Abgesagt
+  </span>
+)}
 
+{show.internal_status === "fertig" && (
+  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">
+    🎭 Spielbereit
+  </span>
+)}
               {isPast && (
                 <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-black text-zinc-500">
                   vergangen

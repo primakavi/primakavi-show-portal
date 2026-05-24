@@ -27,6 +27,7 @@ export default async function ShowsPage() {
       internal_status,
       billing_status,
       contract_status,
+      follow_up_date,
       markus_included,
 
       checklist,

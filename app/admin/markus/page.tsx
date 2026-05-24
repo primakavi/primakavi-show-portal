@@ -20,11 +20,13 @@ export default async function AdminMarkusPage() {
   }
 
   const visibleShows = (shows ?? []).filter((show) => {
-    return (
-      show.internal_status !== "archiv" &&
-      show.internal_status !== "archiviert"
-    );
-  });
+  return (
+    show.internal_status !== "archiv" &&
+    show.internal_status !== "archiviert" &&
+    show.internal_status !== "abgeschlossen" &&
+    show.internal_status !== "option"
+  );
+});
 
   return <MarkusClient shows={visibleShows} />;
 }

@@ -14,6 +14,8 @@ const CHECKLIST_GROUPS = [
     items: [
       "Formular vollständig",
       "Vertrag geklärt",
+      "Ticketlink vorhanden",
+      "Termin auf Homepage",
       "Technik geprüft",
       "Ablauf geprüft",
       "Hotel/Anreise geklärt",
@@ -395,8 +397,9 @@ export default async function ShowAktePage({
 
                         <div className="grid gap-3 md:grid-cols-2">
                           {group.items.map((item) => {
-                            const checked = isChecklistChecked(show, item);
-                            const auto = isAutoChecklistItem(item);
+                          const checked = isChecklistChecked(show, item);
+                          const auto = isAutoChecklistItem(item);
+                          const allowManualOverride = item === "Vertrag geklärt";
 
                             return (
                               <label
@@ -412,13 +415,13 @@ export default async function ShowAktePage({
                                     type="checkbox"
                                     name={`checklist_${item}`}
                                     defaultChecked={checked}
-                                    disabled={auto}
+                                    disabled={auto && !allowManualOverride}
                                     className="h-5 w-5"
                                   />
                                   {item}
                                 </span>
 
-                                {auto && checked && (
+                                {auto && !allowManualOverride && checked && (
                                   <span className="text-xs font-black opacity-70">
                                     auto
                                   </span>
@@ -437,10 +440,22 @@ export default async function ShowAktePage({
             <aside className="space-y-6 lg:top-8 lg:self-start">
               <SideCard title="Was ist jetzt zu tun?" tone="amber">
                 {nextSteps.length === 0 ? (
-                  <p className="rounded-2xl bg-emerald-100 px-4 py-3 text-sm font-black text-emerald-700">
-                    Keine offenen Punkte. Diese Show ist spielbereit 🎉
-                  </p>
-                ) : (
+  <div
+  className={`rounded-[1.5rem] px-6 py-5 ${
+    show.internal_status === "abgesagt"
+      ? "bg-red-100 text-red-700"
+      : "bg-emerald-100 text-emerald-800"
+  }`}
+>
+  <div className="flex min-h-[72px] items-center">
+    <p className="text-lg font-black leading-tight">
+      {show.internal_status === "abgesagt"
+        ? "❌ Diese Show ist abgesagt."
+        : "Keine offenen Punkte. Diese Show ist spielbereit 🎉"}
+    </p>
+  </div>
+</div>
+) : (
                   <div className="space-y-3">
                     {nextSteps.map((task) => (
                       <div
@@ -460,21 +475,23 @@ export default async function ShowAktePage({
               </SideCard>
               <SideCard title="Interne Steuerung" tone="zinc">
                 <div className="space-y-4">
-                  <Select
-                    name="internal_status"
-                    label="Status intern"
-                    defaultValue={show.internal_status}
-                    options={[
-                      ["neu", "Neu"],
-                      ["offen", "Offen"],
-                      ["in_arbeit", "In Arbeit"],
-                      ["wartet_auf_veranstalter", "Wartet auf Veranstalter"],
-                      ["wartet_auf_sonja", "Wartet auf Sonja"],
-                      ["fertig", "Fertig"],
-                      ["abgeschlossen", "Abgeschlossen"],
-                      ["archiv", "Archiv"],
-                    ]}
-                  />
+                 <Select
+  name="internal_status"
+  label="Status intern"
+  defaultValue={show.internal_status}
+  options={[
+    ["neu", "🔴 Neu"],
+    ["offen", "⚪ Offen"],
+    ["option", "🟣 Option"],
+    ["in_arbeit", "🟠 In Arbeit"],
+    ["wartet_auf_veranstalter", "⏳ Wartet auf Veranstalter"],
+    ["wartet_auf_sonja", "💬 Wartet auf Sonja"],
+    ["fertig", "🎭 Spielbereit"],
+    ["abgeschlossen", "✅ Abgeschlossen"],
+    ["abgesagt", "❌ Abgesagt"],
+    ["archiv", "📦 Archiv"],
+  ]}
+/>
 
                   <Select
                     name="billing_status"
@@ -917,21 +934,27 @@ function buildChecklist(formData: FormData) {
 
   for (const group of CHECKLIST_GROUPS) {
     for (const item of group.items) {
-      if (isAutoChecklistItem(item)) continue;
+      if (item === "Formular vollständig") continue;
+      if (item === "Ticketlink vorhanden") continue;
+
       checklist[item] = formData.get(`checklist_${item}`) === "on";
     }
   }
 
   checklist["Formular vollständig"] = isPortalCompleteFromForm(formData);
+  checklist["Ticketlink vorhanden"] = Boolean(value(formData, "ticket_link"));
 
   const contractStatus = String(
     value(formData, "contract_status") || ""
   ).toLowerCase();
 
-  checklist["Vertrag geklärt"] =
+  const contractAutoCleared =
     contractStatus.includes("vertrag liegt vor") ||
     contractStatus.includes("erstellt") ||
     contractStatus.includes("unterschrieben");
+
+  checklist["Vertrag geklärt"] =
+    checklist["Vertrag geklärt"] || contractAutoCleared;
 
   const billingStatus = value(formData, "billing_status");
 
@@ -1048,6 +1071,35 @@ function getShowHealth(show: any) {
 
 function getNextSteps(show: any) {
   const tasks: { label: string; critical?: boolean }[] = [];
+
+  if (show.internal_status === "abgesagt") {
+  return [
+    {
+      label: "Diese Show ist abgesagt.",
+      critical: true,
+    },
+  ];
+}
+
+  if (
+  show.internal_status === "fertig" ||
+  show.internal_status === "archiv" ||
+  show.internal_status === "archiviert" ||
+  show.internal_status === "abgeschlossen"
+) {
+  return [];
+}
+
+  if (show.internal_status === "option") {
+    if (show.follow_up_date) {
+      tasks.push({ label: "Option auf Wiedervorlage", critical: false });
+    } else {
+      tasks.push({ label: "Option nachfassen / Termin sichern", critical: true });
+    }
+
+    return tasks;
+  }
+
   const showDate = parseDateOnly(show.show_date);
   const today = startOfToday();
   const isPast = showDate && showDate < today;
@@ -1097,8 +1149,20 @@ function getNextSteps(show: any) {
     tasks.push({ label: "Technik prüfen", critical: true });
   }
 
-  if (!isContractCleared(show)) {
+  if (!isChecklistChecked(show, "Vertrag geklärt")) {
     tasks.push({ label: "Vertrag klären", critical: true });
+  }
+
+  const nextWeek = new Date(today);
+  nextWeek.setDate(nextWeek.getDate() + 7);
+
+  const isSoon = showDate && showDate >= today && showDate <= nextWeek;
+
+  if (isSoon && !show.checklist?.["Finalcheck erledigt"]) {
+    tasks.push({
+      label: "Finalcheck: Ist die Show spielbereit?",
+      critical: true,
+    });
   }
 
   if (
@@ -1286,7 +1350,10 @@ function isContractCleared(show: any) {
 }
 
 function isAutoChecklistItem(item: string) {
-  return item === "Formular vollständig" || item === "Vertrag geklärt";
+  return (
+    item === "Formular vollständig" ||
+    item === "Ticketlink vorhanden"
+  );
 }
 
 function isChecklistChecked(show: any, item: string) {
@@ -1295,7 +1362,11 @@ function isChecklistChecked(show: any, item: string) {
   }
 
   if (item === "Vertrag geklärt") {
-    return isContractCleared(show);
+    return Boolean(show.checklist?.["Vertrag geklärt"]) || isContractCleared(show);
+  }
+
+  if (item === "Ticketlink vorhanden") {
+    return Boolean(show.ticket_link);
   }
 
   return !!show.checklist?.[item];

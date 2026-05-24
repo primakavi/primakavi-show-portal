@@ -22,6 +22,7 @@ type ShowRow = {
   internal_status?: string | null;
   billing_status?: string | null;
   contract_status?: string | null;
+  follow_up_date?: string | null;   // <-- NEU
   checklist?: Record<string, boolean> | null;
   markus_included?: boolean | null;
   last_portal_update?: string | null;
@@ -38,6 +39,8 @@ type FilterKey =
   | "handlung"
   | "portal"
   | "abrechnung"
+  | "option"
+  | "abgesagt"
   | "archiv"
   | "alle";
 
@@ -46,6 +49,8 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "handlung", label: "Handlung nötig" },
   { key: "portal", label: "Neue Infos" },
   { key: "abrechnung", label: "Abrechnung" },
+  { key: "option", label: "Optionen" },
+  { key: "abgesagt", label: "Abgesagt" },
   { key: "archiv", label: "Archiv" },
   { key: "alle", label: "Alle" },
 ];
@@ -141,6 +146,8 @@ export default function AdminClient({
         (filter === "handlung" && actionNeeded && !archived) ||
         (filter === "portal" && newPortalInfo && !archived) ||
         (filter === "abrechnung" && billingOpen && !archived) ||
+        (filter === "option" && show.internal_status === "option") ||
+        (filter === "abgesagt" && show.internal_status === "abgesagt") ||
         (filter === "archiv" && archived);
 
       return matchesSearch && matchesYear && matchesFilter;
@@ -365,6 +372,8 @@ function ShowCard({
   const actions = getActionItems(show);
   const missing = getMissingFields(show);
   const isPast = isPastDate(show.show_date);
+  const hasFutureFollowUp = hasFollowUpInFuture(show.follow_up_date);
+  const isSoon = isWithinNextDays(show.show_date, 7);
   const newPortalInfo = hasNewPortalInfo(show);
 
   return (
@@ -396,11 +405,21 @@ function ShowCard({
             <div className="mt-3 flex flex-wrap gap-2">
               {newPortalInfo && <Badge tone="pink">✨ Neue Infos</Badge>}
 
-              {actions.slice(0, 2).map((item) => (
-                <Badge key={item} tone="red">
-                  {item}
-                </Badge>
-              ))}
+           {actions.slice(0, 2).map((item) => {
+  let tone: "red" | "green" | "blue" | "purple" | "zinc" = "red";
+
+  if (item.includes("WVL")) tone = "blue";
+  else if (item === "Spielbereit") tone = "green";
+  else if (item === "Abgesagt") tone = "red";
+  else if (item === "Abrechnung offen") tone = "purple";
+  else if (item === "Offene Punkte vorhanden") tone = "zinc";
+
+  return (
+    <Badge key={item} tone={tone}>
+      {item}
+    </Badge>
+  );
+})}
 
               {actions.length === 0 && missing.length > 0 && (
                 <Badge tone="zinc">
@@ -418,12 +437,14 @@ function ShowCard({
           >
             {status.label}
           </span>
-
-          {show.billing_status && (
-            <p className="mt-2 text-xs font-bold text-zinc-500">
-              Abrechnung: {billingLabel(show.billing_status)}
-            </p>
-          )}
+{isPast &&
+  show.billing_status &&
+  show.internal_status !== "abgesagt" &&
+  show.internal_status !== "option" && (
+    <p className="mt-2 text-xs font-bold text-zinc-500">
+      Abrechnung: {billingLabel(show.billing_status)}
+    </p>
+)}
         </div>
 
         <div className="relative z-10 flex flex-wrap justify-start gap-2 md:justify-end">
@@ -469,13 +490,16 @@ function Badge({
   tone,
   children,
 }: {
-  tone: "pink" | "red" | "zinc";
+  tone: "pink" | "red" | "zinc" | "green" | "blue" | "purple";
   children: React.ReactNode;
 }) {
   const className = {
     pink: "bg-pink-100 text-pink-700",
     red: "bg-red-100 text-red-700",
     zinc: "bg-white text-zinc-600",
+    green: "bg-emerald-100 text-emerald-700",
+    blue: "bg-sky-100 text-sky-700",
+    purple: "bg-purple-100 text-purple-700",
   }[tone];
 
   return (
@@ -553,10 +577,45 @@ function isEmptyShowAkte(show: ShowRow) {
 function getActionItems(show: ShowRow) {
   const items: string[] = [];
   const isPast = isPastDate(show.show_date);
+  const isSoon = isWithinNextDays(show.show_date, 7);
+  const hasFutureFollowUp = hasFollowUpInFuture(show.follow_up_date);
 
-  if (hasNewPortalInfo(show)) items.push("Neue Infos prüfen");
+  if (show.internal_status === "abgesagt") {
+    items.push("Abgesagt");
+    return items;
+  }
 
-  if (!isContractDone(show.contract_status)) {
+  if (
+    show.internal_status === "archiv" ||
+    show.internal_status === "archiviert" ||
+    show.internal_status === "abgeschlossen" ||
+    show.internal_status === "option"
+  ) {
+    return items;
+  }
+
+  if (
+    isPast &&
+    show.billing_status !== "bezahlt" &&
+    show.billing_status !== "nicht_relevant"
+  ) {
+    items.push("Abrechnung offen");
+    return items;
+  }
+
+  if (hasFutureFollowUp && !isSoon && !isPast) {
+    items.push(`WVL ${formatDate(show.follow_up_date)}`);
+    return items;
+  }
+
+  if (hasNewPortalInfo(show)) {
+    items.push("Neue Infos prüfen");
+  }
+
+  if (
+    !isContractDone(show.contract_status) &&
+    !show.checklist?.["Vertrag geklärt"]
+  ) {
     items.push("Vertrag offen");
   }
 
@@ -572,12 +631,16 @@ function getActionItems(show: ShowRow) {
     items.push("Beginn fehlt");
   }
 
-  if (
-    isPast &&
-    show.billing_status !== "bezahlt" &&
-    show.billing_status !== "nicht_relevant"
-  ) {
-    items.push("Abrechnung offen");
+  if (isSoon && show.internal_status !== "fertig") {
+    items.push("Finalcheck");
+  }
+
+  if (items.length === 0 && show.internal_status === "fertig") {
+    items.push("Spielbereit");
+  }
+
+  if (items.length === 0) {
+    items.push("Offene Punkte vorhanden");
   }
 
   return items;
@@ -606,11 +669,38 @@ function getStatus(show: ShowRow) {
     };
   }
 
+  if (show.internal_status === "abgesagt") {
+    return {
+      key: "abgesagt",
+      label: "❌ Abgesagt",
+      className: "bg-red-100 text-red-700",
+    };
+  }
+
+  if (show.internal_status === "option") {
+    return {
+      key: "option",
+      label: "🟣 Option",
+      className: "bg-purple-100 text-purple-700",
+    };
+  }
+
   if (isArchivedShow(show)) {
     return {
       key: "archiv",
       label: "📦 Archiv",
       className: "bg-zinc-200 text-zinc-700",
+    };
+  }
+
+  if (
+    isWithinNextDays(show.show_date, 7) &&
+    !isPastDate(show.show_date)
+  ) {
+    return {
+      key: "finalcheck",
+      label: "🧭 Finalcheck",
+      className: "bg-sky-100 text-sky-700",
     };
   }
 
@@ -626,13 +716,13 @@ function getStatus(show: ShowRow) {
     };
   }
 
-  if (show.internal_status === "fertig") {
-    return {
-      key: "fertig",
-      label: "🟢 Fertig",
-      className: "bg-emerald-100 text-emerald-700",
-    };
-  }
+ if (show.internal_status === "fertig") {
+  return {
+    key: "fertig",
+    label: "🎭 Spielbereit",
+    className: "bg-emerald-100 text-emerald-700",
+  };
+}
 
   if (
     show.internal_status === "in_arbeit" ||
@@ -698,7 +788,8 @@ function isArchivedShow(show: ShowRow) {
   return (
     show.internal_status === "abgeschlossen" ||
     show.internal_status === "archiv" ||
-    show.internal_status === "archiviert"
+    show.internal_status === "archiviert" ||
+    show.internal_status === "abgesagt"
   );
 }
 
@@ -765,4 +856,22 @@ function isPastDate(date?: string | null) {
   const parsed = parseDate(date);
   if (!parsed) return false;
   return parsed < startOfToday();
+}
+
+function hasFollowUpInFuture(date?: string | null) {
+  const parsed = parseDate(date);
+  if (!parsed) return false;
+
+  return parsed > startOfToday();
+}
+
+function isWithinNextDays(date?: string | null, days = 7) {
+  const parsed = parseDate(date);
+  if (!parsed) return false;
+
+  const today = startOfToday();
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + days);
+
+  return parsed >= today && parsed <= limit;
 }
