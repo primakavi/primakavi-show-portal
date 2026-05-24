@@ -55,8 +55,7 @@ const isCancelled = show.internal_status === "abgesagt";
   filter === "alle" ||
   (filter === "kommend" && isFuture && !isCancelled) ||
   (filter === "vergangen" && (isPast || isCancelled)) ||
-  (filter === "fertig" && isDone);
-
+(filter === "fertig" && isCancelled)
       return matchesSearch && matchesFilter;
     });
   }, [shows, query, filter, today]);
@@ -162,11 +161,11 @@ const isCancelled = show.internal_status === "abgesagt";
                   Vergangen
                 </FilterButton>
 
-                <FilterButton
+               <FilterButton
   active={filter === "fertig"}
   onClick={() => setFilter("fertig")}
 >
-  🎭 Spielbereit
+  ❌ Abgesagt
 </FilterButton>
               </div>
 
