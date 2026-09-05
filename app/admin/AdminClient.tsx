@@ -75,7 +75,34 @@ export default function AdminClient({
   const [isCreating, setIsCreating] = useState(false);
 
   const today = startOfToday();
+const currentYear = String(new Date().getFullYear());
 
+const upcomingShows = shows.filter((show) => {
+  const date = parseDate(show.show_date);
+
+  return (
+    date &&
+    date >= today &&
+    !isArchivedShow(show)
+  );
+});
+
+const showsThisYear = shows.filter((show) => {
+  return (
+    show.show_date?.startsWith(currentYear) &&
+    !isArchivedShow(show)
+  );
+});
+
+const locationsThisYear = new Set(
+  showsThisYear
+    .map((show) => show.venue?.trim())
+    .filter(Boolean)
+).size;
+
+const optionsCount = shows.filter((show) => {
+  return show.internal_status === "option";
+}).length;
   const years = Array.from(
     new Set(shows.map((show) => show.show_date?.slice(0, 4)).filter(Boolean))
   ).sort();
@@ -158,37 +185,55 @@ export default function AdminClient({
 
   return (
     <div className="space-y-5 text-zinc-950 sm:space-y-6">
-      <header className="relative overflow-hidden rounded-[2.4rem] bg-[#101014] p-10 text-white shadow-2xl shadow-black/10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(255,105,180,0.38),transparent_28%),radial-gradient(circle_at_35%_25%,rgba(255,145,60,0.28),transparent_35%),radial-gradient(circle_at_70%_95%,rgba(190,255,90,0.13),transparent_28%)]" />
-        <div className="absolute right-146 top-10 rotate-6 text-7xl text-pink-400">
-          ♕
-        </div>
-        <div className="absolute right-20 top-18 text-5xl text-orange-300">
-          ✨
-        </div>
+     <header className="flex flex-col gap-5 px-1 py-3 md:flex-row md:items-end md:justify-between">
+  <div>
+    <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-400">
+      PRIMAKAVI · BOOKING CRM
+    </p>
 
-        <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-widest text-white/50">
-              primakavi · show admin
-            </p>
-            <h1 className="mt-4 text-5xl font-black tracking-tight">
-              Alle Shows
-            </h1>
-            <p className="mt-4 max-w-xl text-white/70">
-              Alle Shows im Überblick – alle Infos an einem Ort.
-            </p>
-          </div>
+    <h1 className="mt-2 text-5xl font-black tracking-tight text-zinc-950">
+      Alle Shows
+    </h1>
 
-          <button
-            type="button"
-            onClick={() => setShowCreateConfirm(true)}
-            className="rounded-3xl bg-gradient-to-r from-pink-400 to-orange-400 px-6 py-4 font-black text-white shadow-xl transition hover:scale-[1.02]"
-          >
-            Neue Show-Akte erstellen
-          </button>
-        </div>
-      </header>
+    <p className="mt-2 text-sm font-semibold text-zinc-500">
+      Termine, Optionen und gebuchte Shows im Überblick.
+    </p>
+  </div>
+
+  <button
+    type="button"
+    onClick={() => setShowCreateConfirm(true)}
+    className="inline-flex items-center justify-center rounded-full bg-lime-300 px-5 py-3 text-sm font-black text-zinc-950 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+  >
+    + Neue Show-Akte
+  </button>
+</header>
+
+<section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+  <ShowStat
+    icon="🎭"
+    value={upcomingShows.length}
+    label="Kommende Shows"
+  />
+
+  <ShowStat
+    icon="📅"
+    value={showsThisYear.length}
+    label="Shows dieses Jahr"
+  />
+
+  <ShowStat
+    icon="🏛️"
+    value={locationsThisYear}
+    label="Locations dieses Jahr"
+  />
+
+  <ShowStat
+    icon="🟣"
+    value={optionsCount}
+    label="Optionen"
+  />
+</section>
 
       <section className="rounded-[2rem] bg-white p-5 shadow-xl shadow-black/5 ring-1 ring-black/5">
         <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
@@ -559,7 +604,33 @@ function ActionButton({
     </button>
   );
 }
+function ShowStat({
+  icon,
+  value,
+  label,
+}: {
+  icon: string;
+  value: number;
+  label: string;
+}) {
+  return (
+    <div className="flex min-h-[110px] items-center gap-5 rounded-[1.7rem] bg-white px-6 py-5 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
+      <div className="text-3xl">
+        {icon}
+      </div>
 
+      <div>
+        <p className="text-3xl font-black leading-none text-zinc-950">
+          {value}
+        </p>
+
+        <p className="mt-2 text-sm font-bold text-zinc-400">
+          {label}
+        </p>
+      </div>
+    </div>
+  );
+}
 function isEmptyShowAkte(show: ShowRow) {
   if (isArchivedShow(show)) return false;
 
@@ -868,7 +939,6 @@ function hasFollowUpInFuture(date?: string | null) {
 function isWithinNextDays(date?: string | null, days = 7) {
   const parsed = parseDate(date);
   if (!parsed) return false;
-
   const today = startOfToday();
   const limit = new Date(today);
   limit.setDate(limit.getDate() + days);

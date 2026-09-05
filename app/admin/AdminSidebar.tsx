@@ -18,7 +18,7 @@ export default function AdminSidebar({
   return (
     <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 border-r border-black/5 bg-[#fffdf8] px-5 py-5 shadow-[20px_0_60px_rgba(0,0,0,0.035)] lg:flex lg:flex-col">
       <Link
-        href={isMarkusRole ? "/admin/markus" : "/admin"}
+        href={isMarkusRole ? "/admin/markus" : "/admin/shows"}
         className="mb-8 block"
       >
         <div className="flex items-center gap-3">
@@ -53,12 +53,19 @@ export default function AdminSidebar({
       <nav className="space-y-5">
         {!isMarkusRole && (
           <>
-            <NavSection title="Überblick">
+            <NavSection title="Akquise">
               <SidebarLink
-                href="/admin"
-                label="Dashboard"
-                icon="✨"
-                active={pathname === "/admin"}
+                href="/admin/acquisition"
+                label="Akquise"
+                icon="🎯"
+                active={pathname.startsWith("/admin/acquisition")}
+              />
+
+              <SidebarLink
+                href="/admin/locations"
+                label="Locations"
+                icon="🏛️"
+                active={pathname.startsWith("/admin/locations")}
               />
             </NavSection>
 
@@ -142,7 +149,7 @@ export default function AdminSidebar({
           <p className="mt-1.5 text-[11px] font-medium leading-relaxed text-zinc-600">
             {isMarkusView
               ? "Termine, Karte, Ablauf und Piano-relevante Infos."
-              : "Shows, Akten, Tourplanung und interne Steuerung."}
+              : "Akquise, Shows, Tourplanung und interne Steuerung."}
           </p>
         </div>
 

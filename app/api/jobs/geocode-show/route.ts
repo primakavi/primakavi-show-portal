@@ -13,6 +13,7 @@ export async function GET() {
     .from("shows")
     .select("*")
     .eq("geocoding_status", "pending")
+    .neq("internal_status", "option")
     .limit(10);
 
   if (selectError) {
