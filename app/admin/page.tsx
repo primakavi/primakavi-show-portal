@@ -1,1 +1,5 @@
-git push origin main
+import { redirect } from "next/navigation";
+
+export default function AdminPage() {
+  redirect("/admin/shows");
+}
