@@ -101,10 +101,222 @@ export default async function AcquisitionDetailPage({
     .maybeSingle();
 
   // ------------------------------------------------------------
+  // KONTAKT-HISTORIE LADEN
+  // ------------------------------------------------------------
+
+  const {
+    data: activities,
+    error: activitiesError,
+  } = await supabaseAdmin
+    .from("acquisition_activities")
+    .select(`
+      id,
+      acquisition_id,
+      activity_date,
+      activity_type,
+      channel,
+      note,
+      response,
+      next_step,
+      follow_up_at,
+      status_after,
+      interest_after,
+      created_at
+    `)
+    .eq("acquisition_id", acquisition.id)
+    .order("activity_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (activitiesError) {
+    console.error(
+      "Kontakt-Historie konnte nicht geladen werden:",
+      activitiesError
+    );
+  }
+
+  // ------------------------------------------------------------
+  // KONTAKT ZUR HISTORIE HINZUFÜGEN
+  // ------------------------------------------------------------
+
+  async function addActivity(formData: FormData) {
+    "use server";
+
+    const acquisitionId = String(
+      formData.get("acquisition_id") || ""
+    );
+
+    if (!acquisitionId) {
+      throw new Error("Akquise-ID fehlt.");
+    }
+
+    // ----------------------------------------------------------
+    // NUR BEI AKTIVER AKQUISE-RUNDE ERLAUBEN
+    // ----------------------------------------------------------
+
+    const {
+      data: activityAcquisition,
+      error: activityAcquisitionError,
+    } = await supabaseAdmin
+      .from("acquisition")
+      .select("archived_at")
+      .eq("id", acquisitionId)
+      .single();
+
+    if (
+      activityAcquisitionError ||
+      !activityAcquisition
+    ) {
+      throw new Error(
+        activityAcquisitionError?.message ||
+          "Akquise-Vorgang konnte nicht geladen werden."
+      );
+    }
+
+    if (activityAcquisition.archived_at) {
+      throw new Error(
+        "Diese Akquise ist abgeschlossen. Neue Einträge sind nicht mehr möglich."
+      );
+    }
+
+    const activityDate =
+      clean(formData.get("activity_date")) ||
+      new Date().toISOString().slice(0, 10);
+
+    const channel = clean(
+      formData.get("channel")
+    );
+
+    const note = clean(
+      formData.get("note")
+    );
+
+    const response = clean(
+      formData.get("response")
+    );
+
+    const nextStep = clean(
+      formData.get("next_step")
+    );
+
+    const followUpAt = clean(
+      formData.get("follow_up_at")
+    );
+
+    const activityType =
+      clean(formData.get("activity_type")) ||
+      "Kontakt";
+
+    if (!note && !response && !nextStep) {
+      throw new Error(
+        "Bitte eine Notiz oder Rückmeldung eintragen."
+      );
+    }
+
+    const { error: insertError } =
+      await supabaseAdmin
+        .from("acquisition_activities")
+        .insert({
+          acquisition_id: acquisitionId,
+          activity_date: activityDate,
+          activity_type: activityType,
+          channel,
+          note,
+          response,
+          next_step: nextStep,
+          follow_up_at: followUpAt,
+        });
+
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
+
+    // Den aktuellen Akquise-Stand sinnvoll mitziehen:
+    // letzter Kontakt + Kontaktweg.
+    // Bestehende Notizen/Antworten werden NICHT überschrieben.
+
+    const { error: updateError } =
+      await supabaseAdmin
+        .from("acquisition")
+        .update({
+          last_contact_at: activityDate,
+          ...(channel
+            ? { contact_channel: channel }
+            : {}),
+          ...(note ? { contact_note: note } : {}),
+          ...(response ? { response } : {}),
+          ...(nextStep ? { next_step: nextStep } : {}),
+          ...(followUpAt
+            ? { next_follow_up_at: followUpAt }
+            : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", acquisitionId);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    revalidatePath(
+      `/admin/acquisition/${acquisitionId}`
+    );
+
+    revalidatePath("/admin/acquisition");
+
+    redirect(
+      `/admin/acquisition/${acquisitionId}?saved=activity`
+    );
+  }
+
+  // ------------------------------------------------------------
+  // HISTORIEN-EINTRAG LÖSCHEN
+  // ------------------------------------------------------------
+
+  async function deleteActivity(formData: FormData) {
+    "use server";
+
+    const acquisitionId = String(
+      formData.get("acquisition_id") || ""
+    );
+
+    const activityId = String(
+      formData.get("activity_id") || ""
+    );
+
+    if (!acquisitionId || !activityId) {
+      throw new Error(
+        "Akquise-ID oder Historien-Eintrag fehlt."
+      );
+    }
+
+    const { error: deleteError } =
+      await supabaseAdmin
+        .from("acquisition_activities")
+        .delete()
+        .eq("id", activityId)
+        .eq("acquisition_id", acquisitionId);
+
+    if (deleteError) {
+      throw new Error(deleteError.message);
+    }
+
+    revalidatePath(
+      `/admin/acquisition/${acquisitionId}`
+    );
+
+    revalidatePath("/admin/acquisition");
+
+    redirect(
+      `/admin/acquisition/${acquisitionId}?saved=deleted`
+    );
+  }
+
+  // ------------------------------------------------------------
   // AKQUISE SPEICHERN
   // ------------------------------------------------------------
 
-  async function saveAcquisition(formData: FormData) {
+  async function saveAcquisition(
+    formData: FormData
+  ) {
     "use server";
 
     const acquisitionId = String(
@@ -118,7 +330,9 @@ export default async function AcquisitionDetailPage({
     const { error } = await supabaseAdmin
       .from("acquisition")
       .update({
-        program: clean(formData.get("program")),
+        program: clean(
+          formData.get("program")
+        ),
 
         status:
           clean(formData.get("status")) ||
@@ -199,7 +413,77 @@ export default async function AcquisitionDetailPage({
   }
 
   // ------------------------------------------------------------
-  // ARCHIVIEREN
+  // AKQUISE KOMPLETT LÖSCHEN
+  // ------------------------------------------------------------
+
+  async function deleteAcquisition(
+    formData: FormData
+  ) {
+    "use server";
+
+    const acquisitionId = String(
+      formData.get("id") || ""
+    );
+
+    if (!acquisitionId) {
+      throw new Error("Akquise-ID fehlt.");
+    }
+
+    const { data: current, error: currentError } =
+      await supabaseAdmin
+        .from("acquisition")
+        .select("id, venue_id")
+        .eq("id", acquisitionId)
+        .single();
+
+    if (currentError || !current) {
+      throw new Error(
+        currentError?.message ||
+          "Akquise konnte nicht geladen werden."
+      );
+    }
+
+    const { data: show } = await supabaseAdmin
+      .schema("booking")
+      .from("shows")
+      .select("id")
+      .eq("acquisition_id", acquisitionId)
+      .maybeSingle();
+
+    if (show) {
+      throw new Error(
+        "Zu dieser Akquise existiert bereits eine Show-Akte. Die Akquise kann deshalb nicht gelöscht werden."
+      );
+    }
+
+    const { error: activitiesDeleteError } =
+      await supabaseAdmin
+        .from("acquisition_activities")
+        .delete()
+        .eq("acquisition_id", acquisitionId);
+
+    if (activitiesDeleteError) {
+      throw new Error(activitiesDeleteError.message);
+    }
+
+    const { error: deleteError } =
+      await supabaseAdmin
+        .from("acquisition")
+        .delete()
+        .eq("id", acquisitionId);
+
+    if (deleteError) {
+      throw new Error(deleteError.message);
+    }
+
+    revalidatePath("/admin/acquisition");
+    revalidatePath(`/admin/locations/${current.venue_id}`);
+
+    redirect(`/admin/locations/${current.venue_id}`);
+  }
+
+  // ------------------------------------------------------------
+  // AKQUISE ABSCHLIESSEN
   // ------------------------------------------------------------
 
   async function archiveAcquisition(
@@ -211,7 +495,9 @@ export default async function AcquisitionDetailPage({
       formData.get("id") || ""
     );
 
-    if (!acquisitionId) return;
+    if (!acquisitionId) {
+      return;
+    }
 
     const { error } = await supabaseAdmin
       .from("acquisition")
@@ -228,41 +514,8 @@ export default async function AcquisitionDetailPage({
     }
 
     revalidatePath(
-      "/admin/acquisition"
-    );
-
-    redirect(
       `/admin/acquisition/${acquisitionId}`
     );
-  }
-
-  // ------------------------------------------------------------
-  // REAKTIVIEREN
-  // ------------------------------------------------------------
-
-  async function restoreAcquisition(
-    formData: FormData
-  ) {
-    "use server";
-
-    const acquisitionId = String(
-      formData.get("id") || ""
-    );
-
-    if (!acquisitionId) return;
-
-    const { error } = await supabaseAdmin
-      .from("acquisition")
-      .update({
-        archived_at: null,
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq("id", acquisitionId);
-
-    if (error) {
-      throw new Error(error.message);
-    }
 
     revalidatePath(
       "/admin/acquisition"
@@ -293,6 +546,7 @@ export default async function AcquisitionDetailPage({
     }
 
     // Schon eine Show vorhanden?
+
     const { data: existingShow } =
       await supabaseAdmin
         .schema("booking")
@@ -514,14 +768,26 @@ export default async function AcquisitionDetailPage({
         linkedShow?.id || null
       }
       wasSaved={saved === "1"}
+      activityWasSaved={
+        saved === "activity"
+      }
+      activities={
+        activities || []
+      }
+      addActivity={
+        addActivity
+      }
+      deleteActivity={
+        deleteActivity
+      }
+      deleteAcquisition={
+        deleteAcquisition
+      }
       saveAcquisition={
         saveAcquisition
       }
       archiveAcquisition={
         archiveAcquisition
-      }
-      restoreAcquisition={
-        restoreAcquisition
       }
       createShowFromAcquisition={
         createShowFromAcquisition
@@ -546,6 +812,7 @@ function clean(
 
   return stringValue || null;
 }
+
 
 function createToken(
   date: string,
@@ -586,10 +853,13 @@ function createToken(
   return `${cleanDate}-${cleanVenue}-${random}`;
 }
 
+
 function getWeekday(
   date?: string | null
 ) {
-  if (!date) return null;
+  if (!date) {
+    return null;
+  }
 
   const [
     year,

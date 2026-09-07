@@ -1,129 +1,75 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 type Venue = {
   id: string;
   legacy_id: string | null;
   name: string;
-
   street: string | null;
   postal_code: string | null;
   city: string | null;
   state: string | null;
   country: string | null;
-
   website: string | null;
-
   capacity: number | null;
   venue_type: string | null;
-
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
-
   contact_name_2: string | null;
   contact_email_2: string | null;
   contact_phone_2: string | null;
-
   booking_email: string | null;
+  relationship_status: string | null;
+};
 
-  relationship_status:
-    | string
-    | null;
+type AcquisitionActivity = {
+  id: string;
+  acquisition_id: string;
+  activity_date: string;
+  activity_type: string | null;
+  channel: string | null;
+  note: string | null;
+  response: string | null;
+  next_step: string | null;
+  follow_up_at: string | null;
+  status_after: string | null;
+  interest_after: string | null;
+  created_at: string | null;
 };
 
 type Acquisition = {
   id: string;
   venue_id: string;
-
   program: string | null;
   status: string | null;
   priority: string | null;
-
-  last_contact_at:
-    | string
-    | null;
-
-  next_follow_up_at:
-    | string
-    | null;
-
-  contact_channel:
-    | string
-    | null;
-
-  contact_note:
-    | string
-    | null;
-
-  response:
-    | string
-    | null;
-
-  next_step:
-    | string
-    | null;
-
-  rejection_reason:
-    | string
-    | null;
-
-  interest:
-    | string
-    | null;
-
-  notes:
-    | string
-    | null;
-
-  action_type:
-    | string
-    | null;
-
-  context:
-    | string
-    | null;
-
-  converted_to_show:
-    boolean;
-
-  show_date:
-    | string
-    | null;
-
-  archived_at:
-    | string
-    | null;
-
-  created_at:
-    | string
-    | null;
-
-  updated_at:
-    | string
-    | null;
+  last_contact_at: string | null;
+  next_follow_up_at: string | null;
+  contact_channel: string | null;
+  contact_note: string | null;
+  response: string | null;
+  next_step: string | null;
+  rejection_reason: string | null;
+  interest: string | null;
+  notes: string | null;
+  action_type: string | null;
+  context: string | null;
+  converted_to_show: boolean;
+  show_date: string | null;
+  archived_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 const STATUS_OPTIONS = [
-  "Neu",
-  "Vorqualifiziert",
-  "Insta",
-  "Kontaktiert",
-  "Follow-up 1",
-  "Follow-up 2",
-  "Interesse",
-  "Verhandlung",
-  "Gebucht 🎉",
-  "Abgesagt",
+  "Neu", "Vorqualifiziert", "Insta", "Kontaktiert", "Follow-up 1",
+  "Follow-up 2", "Interesse", "Verhandlung", "Gebucht 🎉", "Abgesagt",
 ];
 
-const PRIORITY_OPTIONS = [
-  "Niedrig",
-  "Normal",
-  "Hoch",
-];
+const PRIORITY_OPTIONS = ["Niedrig", "Normal", "Hoch"];
 
 const PROGRAM_OPTIONS = [
   "Jetzt mal Tacheles",
@@ -131,619 +77,539 @@ const PROGRAM_OPTIONS = [
   "TYPisch FRAU?!",
 ];
 
+const INTEREST_OPTIONS = [
+  "", "Kein Interesse", "Offen", "Grundsätzliches Interesse",
+  "Konkretes Interesse", "Sehr interessiert",
+];
+
 export default function AcquisitionDetailClient({
   acquisition,
   venue,
   linkedShowId,
   wasSaved,
+  activityWasSaved,
+  activities = [],
+  addActivity,
+  deleteActivity,
+  deleteAcquisition,
   saveAcquisition,
   archiveAcquisition,
-  restoreAcquisition,
   createShowFromAcquisition,
 }: {
   acquisition: Acquisition;
   venue: Venue;
   linkedShowId: string | null;
   wasSaved: boolean;
-
-  saveAcquisition: (
-    formData: FormData
-  ) => Promise<void>;
-
-  archiveAcquisition: (
-    formData: FormData
-  ) => Promise<void>;
-
-  restoreAcquisition: (
-    formData: FormData
-  ) => Promise<void>;
-
-  createShowFromAcquisition: (
-    formData: FormData
-  ) => Promise<void>;
+  activityWasSaved: boolean;
+  activities: AcquisitionActivity[];
+  addActivity: (formData: FormData) => Promise<void>;
+  deleteActivity: (formData: FormData) => Promise<void>;
+  deleteAcquisition: (formData: FormData) => Promise<void>;
+  saveAcquisition: (formData: FormData) => Promise<void>;
+  archiveAcquisition: (formData: FormData) => Promise<void>;
+  createShowFromAcquisition: (formData: FormData) => Promise<void>;
 }) {
+  const [showActivityForm, setShowActivityForm] = useState(false);
+
+  const isArchived = Boolean(acquisition.archived_at);
+  const locationLine = [venue.city, venue.state].filter(Boolean).join(", ");
   const address = [
     venue.street,
-    [
-      venue.postal_code,
-      venue.city,
-    ]
-      .filter(Boolean)
-      .join(" "),
-  ]
-    .filter(Boolean)
-    .join(", ");
+    [venue.postal_code, venue.city].filter(Boolean).join(" "),
+    venue.country,
+  ].filter(Boolean);
 
   return (
-    <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 pb-28 text-zinc-950">
-      <div className="mx-auto max-w-7xl space-y-5">
+    <main className="min-h-screen bg-[#fbf7ef] px-5 py-6 pb-20 text-zinc-950 md:px-8">
+      <div className="mx-auto max-w-[1500px]">
+        <p className="text-xs font-black uppercase tracking-[0.28em] text-zinc-500">
+          primakavi · booking crm
+        </p>
 
-        {/* HEADER */}
+        <div className="mt-5">
+          <Link
+            href="/admin/acquisition"
+            className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white px-4 py-2.5 text-sm font-black shadow-sm transition hover:bg-zinc-50"
+          >
+            ← Zur Akquise
+          </Link>
+        </div>
 
-        <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <header className="mt-4 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-400">
-              primakavi · booking crm
-            </p>
-
-            <h1 className="mt-2 text-5xl font-black tracking-tight">
+            <h1 className="text-4xl font-black tracking-tight md:text-5xl">
               {venue.name}
             </h1>
 
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-zinc-500">
-              <span>
-                🎯 Akquise
-              </span>
-
-              <span>·</span>
-
-              <span>
-                {acquisition.program ||
-                  "Programm offen"}
-              </span>
-
-              {acquisition.archived_at && (
-                <>
-                  <span>·</span>
-
-                  <span className="font-bold text-zinc-400">
-                    📦 Archiv
-                  </span>
-                </>
-              )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge>⌖ {locationLine || "Ort offen"}</Badge>
+              <Badge>◉ Akquise</Badge>
+              <Badge>
+                Letztes Update: {formatDateTime(acquisition.updated_at || acquisition.created_at)}
+              </Badge>
+              {isArchived && <Badge>📦 Akquise abgeschlossen</Badge>}
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/admin/acquisition"
-              className="inline-flex items-center justify-center rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black text-zinc-700 shadow-sm transition hover:bg-[#f8f3e9]"
-            >
-              ← Akquise
-            </Link>
-
             {linkedShowId ? (
               <Link
                 href={`/admin/shows/${linkedShowId}`}
-                className="inline-flex items-center justify-center rounded-full bg-lime-300 px-5 py-3 text-sm font-black text-zinc-950 shadow-sm transition hover:-translate-y-0.5"
+                className="rounded-xl bg-lime-300 px-6 py-3 text-sm font-black shadow-sm transition hover:-translate-y-0.5"
               >
                 🎉 Show-Akte öffnen
               </Link>
             ) : (
-              <form
-                action={
-                  createShowFromAcquisition
-                }
-              >
-                <input
-                  type="hidden"
-                  name="acquisition_id"
-                  value={acquisition.id}
-                />
-
+              <form action={createShowFromAcquisition}>
+                <input type="hidden" name="acquisition_id" value={acquisition.id} />
                 <button
                   type="submit"
-                  className="inline-flex items-center justify-center rounded-full bg-lime-300 px-5 py-3 text-sm font-black text-zinc-950 shadow-sm transition hover:-translate-y-0.5"
+                  className="rounded-xl bg-lime-300 px-6 py-3 text-sm font-black shadow-sm transition hover:-translate-y-0.5"
                 >
                   🎉 Show-Akte anlegen
                 </button>
               </form>
             )}
-          </div>
-        </header>
-
-        {/* STATUS */}
-
-        {wasSaved && (
-          <div className="rounded-[1.3rem] bg-lime-100 px-5 py-4 text-sm font-black text-lime-800 ring-1 ring-lime-200">
-            ✓ Änderungen gespeichert
-          </div>
-        )}
-
-        {/* LOCATION */}
-
-        <section className="rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
-                Location
-              </p>
-
-              <h2 className="mt-1 text-xl font-black">
-                {venue.name}
-              </h2>
-
-              <p className="mt-2 text-sm font-semibold text-zinc-500">
-                {address || "Adresse nicht hinterlegt"}
-              </p>
-            </div>
 
             <Link
               href={`/admin/locations/${venue.id}`}
-              className="text-sm font-black text-zinc-500 transition hover:text-zinc-950"
+              title="Location öffnen"
+              className="grid h-12 w-12 place-items-center rounded-xl border border-black/10 bg-white text-lg font-black shadow-sm"
             >
-              Location öffnen →
+              …
             </Link>
           </div>
+        </header>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-
-            <Info
-              label="Ansprechpartner"
-              value={
-                venue.contact_name ||
-                "—"
-              }
-            />
-
-            <Info
-              label="E-Mail"
-              value={
-                venue.contact_email ||
-                venue.booking_email ||
-                "—"
-              }
-            />
-
-            <Info
-              label="Telefon"
-              value={
-                venue.contact_phone ||
-                "—"
-              }
-            />
-
-            <Info
-              label="Beziehung"
-              value={
-                venue.relationship_status ||
-                "—"
-              }
-            />
+        {(wasSaved || activityWasSaved) && (
+          <div className="mt-5 rounded-xl bg-lime-100 px-5 py-3 text-sm font-black text-lime-800 ring-1 ring-lime-200">
+            ✓ {activityWasSaved ? "Akquise-Eintrag gespeichert" : "Änderungen gespeichert"}
           </div>
-        </section>
+        )}
 
-        {/* EDIT FORM */}
+        <form action={saveAcquisition} className="mt-5 space-y-5">
+          <input type="hidden" name="id" value={acquisition.id} />
 
-        <form
-          action={saveAcquisition}
-          className="space-y-5"
-        >
-          <input
-            type="hidden"
-            name="id"
-            value={acquisition.id}
-          />
+          <div className="grid gap-5 xl:grid-cols-[1fr_1.05fr]">
+            <Card>
+              <div className="grid gap-6 md:grid-cols-2 md:divide-x md:divide-black/10">
+                <div className="md:pr-6">
+                  <CardTitle icon="▦">Location</CardTitle>
+                  <p className="mt-4 text-lg font-black">{venue.name}</p>
+                  <div className="mt-1 text-sm font-semibold leading-6 text-zinc-600">
+                    {address.length ? address.map((line) => <div key={line}>{line}</div>) : "Adresse nicht hinterlegt"}
+                  </div>
+                  {venue.website && (
+                    <a
+                      href={normalizeUrl(venue.website)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-5 inline-block text-sm font-bold text-blue-700 underline underline-offset-4"
+                    >
+                      🔗 {venue.website}
+                    </a>
+                  )}
+                </div>
 
-          {/* STEUERUNG */}
+                <div className="md:pl-6">
+                  <CardTitle icon="♙">Ansprechpartner</CardTitle>
+                  <p className="mt-4 text-lg font-black">{venue.contact_name || "Noch offen"}</p>
+                  {venue.contact_email || venue.booking_email ? (
+                    <a
+                      href={`mailto:${venue.contact_email || venue.booking_email}`}
+                      className="mt-4 block text-sm font-bold text-blue-700"
+                    >
+                      ✉ {venue.contact_email || venue.booking_email}
+                    </a>
+                  ) : null}
+                  {venue.contact_phone && (
+                    <a href={`tel:${venue.contact_phone}`} className="mt-2 block text-sm font-bold">
+                      ☎ {venue.contact_phone}
+                    </a>
+                  )}
+                  {venue.contact_name_2 && (
+                    <p className="mt-4 text-sm font-bold text-zinc-500">
+                      Weitere Kontakte (1): {venue.contact_name_2}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </Card>
 
-          <section className="rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-            <SectionTitle
-              eyebrow="Vorgang"
-              title="Akquise steuern"
-            />
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-
-              <Field label="Programm">
-                <select
-                  name="program"
-                  defaultValue={
-                    acquisition.program || ""
-                  }
-                  className={inputClass}
-                >
-                  <option value="">
-                    Programm auswählen
-                  </option>
-
-                  {!PROGRAM_OPTIONS.includes(
-                    acquisition.program || ""
-                  ) &&
-                    acquisition.program && (
-                      <option
-                        value={
-                          acquisition.program
-                        }
-                      >
-                        {
-                          acquisition.program
-                        }
-                      </option>
+            <Card>
+              <CardTitle icon="◎">Akquise-Status</CardTitle>
+              <div className="mt-5 grid gap-4 md:grid-cols-3">
+                <Field label="Akquise-Runde">
+                  <select name="program" defaultValue={acquisition.program || ""} className={inputClass}>
+                    <option value="">Runde auswählen</option>
+                    {!PROGRAM_OPTIONS.includes(acquisition.program || "") && acquisition.program && (
+                      <option value={acquisition.program}>{acquisition.program}</option>
                     )}
+                    {PROGRAM_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                  </select>
+                </Field>
 
-                  {PROGRAM_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={option}
-                        value={option}
-                      >
-                        {option}
+                <Field label="Status">
+                  <select name="status" defaultValue={acquisition.status || "Neu"} className={statusClass}>
+                    {STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                  </select>
+                </Field>
+
+                <Field label="Priorität">
+                  <select name="priority" defaultValue={acquisition.priority || "Normal"} className={priorityClass}>
+                    {PRIORITY_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                  </select>
+                </Field>
+
+                <Field label="Nächstes Follow-up">
+                  <input type="date" name="next_follow_up_at" defaultValue={acquisition.next_follow_up_at || ""} className={inputClass} />
+                </Field>
+
+                <Field label="Interesse">
+                  <select name="interest" defaultValue={acquisition.interest || ""} className={interestClass}>
+                    {!INTEREST_OPTIONS.includes(acquisition.interest || "") && acquisition.interest && (
+                      <option value={acquisition.interest}>{acquisition.interest}</option>
+                    )}
+                    {INTEREST_OPTIONS.map((option) => (
+                      <option key={option || "empty"} value={option}>
+                        {option || "Interesse offen"}
                       </option>
-                    )
-                  )}
-                </select>
-              </Field>
+                    ))}
+                  </select>
+                </Field>
 
-              <Field label="Status">
-                <select
-                  name="status"
-                  defaultValue={
-                    acquisition.status ||
-                    "Neu"
-                  }
-                  className={inputClass}
+                <Field label="Show-Datum">
+                  <input type="date" name="show_date" defaultValue={acquisition.show_date || ""} className={inputClass} />
+                </Field>
+              </div>
+
+              {/* Hidden legacy/current summary fields kept so saving this compact form
+                  does not accidentally wipe fields that are not shown in the top card. */}
+              <input type="hidden" name="last_contact_at" value={acquisition.last_contact_at || ""} />
+              <input type="hidden" name="contact_channel" value={acquisition.contact_channel || ""} />
+              <input type="hidden" name="contact_note" value={acquisition.contact_note || ""} />
+              <input type="hidden" name="response" value={acquisition.response || ""} />
+              <input type="hidden" name="next_step" value={acquisition.next_step || ""} />
+              <input type="hidden" name="rejection_reason" value={acquisition.rejection_reason || ""} />
+              <input type="hidden" name="action_type" value={acquisition.action_type || ""} />
+            </Card>
+          </div>
+
+          <Card>
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle icon="◌">Akquise-Verlauf</CardTitle>
+                <p className="mt-1 text-sm font-semibold text-zinc-500">
+                  Alle Kontakte, Gespräche und wichtigen Schritte auf einen Blick.
+                </p>
+              </div>
+              {!isArchived && (
+                <button
+                  type="button"
+                  onClick={() => setShowActivityForm((open) => !open)}
+                  className="rounded-xl bg-lime-300 px-5 py-3 text-sm font-black shadow-sm transition hover:-translate-y-0.5"
                 >
-                  {STATUS_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={option}
-                        value={option}
-                      >
-                        {option}
-                      </option>
-                    )
-                  )}
-                </select>
-              </Field>
+                  {showActivityForm ? "× Eingabe schließen" : "＋ Eintrag hinzufügen"}
+                </button>
+              )}
+            </div>
 
-              <Field label="Priorität">
-                <select
-                  name="priority"
-                  defaultValue={
-                    acquisition.priority ||
-                    "Normal"
-                  }
-                  className={inputClass}
+            <div className="relative mt-6 space-y-3 md:pl-10">
+              {activities.length > 0 && (
+                <div className="absolute bottom-6 left-[13px] top-6 hidden border-l border-dashed border-zinc-300 md:block" />
+              )}
+
+              {activities.length === 0 ? (
+                <div className="rounded-xl bg-[#fbf7ef] px-5 py-5 text-sm font-semibold text-zinc-400">
+                  Noch keine Kontakte in der Historie.
+                </div>
+              ) : (
+                activities.map((activity, index) => (
+                  <div key={activity.id} className="relative">
+                    <div className={`absolute -left-[39px] top-5 hidden h-4 w-4 rounded-full ring-4 ring-white md:block ${dotClass(index)}`} />
+                    <div className="grid gap-3 rounded-xl border border-black/[0.06] bg-white px-4 py-3 shadow-sm lg:grid-cols-[130px_125px_minmax(280px,1fr)_230px_38px] lg:items-center">
+                      <div>
+                        <p className="text-sm font-black">{formatDate(activity.activity_date)}</p>
+                        <p className="mt-1 text-xs font-semibold text-zinc-400">
+                          {formatCreatedTime(activity.created_at)}
+                        </p>
+                      </div>
+
+                      <div className="text-sm font-black">
+                        {channelIcon(activity.channel)} {activity.channel || activity.activity_type || "Notiz"}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold leading-6 text-zinc-800">
+                          {activity.note || "—"}
+                        </p>
+                        {activity.response && (
+                          <p className="mt-1 text-sm leading-6 text-zinc-500">{activity.response}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        {(activity.next_step || activity.follow_up_at) && (
+                          <div className="rounded-lg bg-[#fff7df] px-3 py-2 text-xs font-bold leading-5 text-zinc-700">
+                            {activity.next_step || "Follow-up"}
+                            {activity.follow_up_at ? ` · ${formatDate(activity.follow_up_at)}` : ""}
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        title="Eintrag löschen"
+                        onClick={async () => {
+                          const confirmed = window.confirm(
+                            "Diesen Akquise-Eintrag wirklich löschen?"
+                          );
+
+                          if (!confirmed) return;
+
+                          const formData = new FormData();
+                          formData.set("acquisition_id", acquisition.id);
+                          formData.set("activity_id", activity.id);
+
+                          await deleteActivity(formData);
+                        }}
+                        className="grid h-9 w-9 place-items-center rounded-lg text-red-500 transition hover:bg-red-50"
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {!isArchived && showActivityForm ? (
+              <div id="neuer-eintrag" className="mt-6 rounded-xl border border-black/[0.06] bg-[#fffdf8] p-5 shadow-inner shadow-black/[0.015]">
+                <h3 className="text-lg font-black">Neuen Akquise-Eintrag hinzufügen</h3>
+                <div className="mt-4">
+                  {/* Fields use formAction so this section can live inside the main save form
+                      without invalid nested forms. */}
+                  <input type="hidden" name="acquisition_id" value={acquisition.id} />
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[130px_160px_1.15fr_1fr_1fr]">
+                    <Field label="Datum">
+                      <input type="date" name="activity_date" defaultValue={today()} className={inputClass} />
+                    </Field>
+                    <Field label="Kontaktweg">
+                      <select name="channel" defaultValue="" className={inputClass}>
+                        <option value="">Bitte wählen …</option>
+                        <option>E-Mail</option>
+                        <option>Telefon</option>
+                        <option>Instagram</option>
+                        <option>Persönlich</option>
+                        <option>Notiz</option>
+                      </select>
+                    </Field>
+                    <Field label="Was ist passiert?">
+                      <textarea name="note" rows={3} placeholder="z. B. Programm vorgestellt, Rückruf erhalten …" className={textareaClass} />
+                    </Field>
+                    <Field label="Rückmeldung">
+                      <textarea name="response" rows={3} placeholder="z. B. grundsätzliches Interesse, noch offen …" className={textareaClass} />
+                    </Field>
+                    <Field label="Nächster Schritt">
+                      <textarea name="next_step" rows={3} placeholder="z. B. in 2 Wochen nachfassen …" className={textareaClass} />
+                    </Field>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+                    <Field label="Wiedervorlage">
+                      <input type="date" name="follow_up_at" className={inputClass} />
+                    </Field>
+                    <button
+                      type="submit"
+                      formAction={addActivity}
+                      className="rounded-xl bg-lime-300 px-6 py-3 text-sm font-black shadow-sm transition hover:-translate-y-0.5"
+                    >
+                      ＋ Eintrag speichern
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : isArchived ? (
+              <div className="mt-6 rounded-xl bg-zinc-100 px-5 py-4 text-sm font-bold text-zinc-500">
+                📦 Diese Akquise ist abgeschlossen. Neue Einträge sind nicht mehr möglich.
+              </div>
+            ) : null}
+          </Card>
+
+          <div className="grid gap-5 xl:grid-cols-[1.7fr_0.9fr]">
+            <Card>
+              <CardTitle icon="▤">Interne Notizen / Kontext</CardTitle>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <Field label="Interne Notizen">
+                  <textarea
+                    name="notes"
+                    rows={5}
+                    defaultValue={acquisition.notes || ""}
+                    placeholder="Besonderheiten, interne Absprachen, Hintergrundinfos …"
+                    className={textareaClass}
+                  />
+                </Field>
+                <Field label="Kontext">
+                  <textarea
+                    name="context"
+                    rows={5}
+                    defaultValue={acquisition.context || ""}
+                    placeholder="Weitere Einordnung zur Akquise …"
+                    className={textareaClass}
+                  />
+                </Field>
+              </div>
+            </Card>
+
+            <Card>
+              <CardTitle icon="⚙">Optionen</CardTitle>
+              <div className="mt-5 space-y-3">
+                {!isArchived ? (
+                  <>
+                    <input
+                      type="hidden"
+                      name="id"
+                      value={acquisition.id}
+                    />
+                    <button
+                      type="submit"
+                      formAction={archiveAcquisition}
+                      className="w-full rounded-xl border border-red-200 bg-red-50 px-5 py-3 text-sm font-black text-red-700 transition hover:bg-red-100"
+                    >
+                      ✓ Akquise abschließen
+                    </button>
+                  </>
+                ) : (
+                  <div className="rounded-xl bg-zinc-100 px-5 py-3 text-center text-sm font-black text-zinc-500">
+                    📦 Akquise abgeschlossen
+                  </div>
+                )}
+
+                {!linkedShowId && (
+                  <button
+                    type="submit"
+                    formAction={deleteAcquisition}
+                    onClick={(event) => {
+                      if (!window.confirm("Diese Akquise inklusive aller Kontakteinträge wirklich löschen?")) {
+                        event.preventDefault();
+                      }
+                    }}
+                    className="w-full rounded-xl border border-black/10 bg-white px-5 py-3 text-sm font-black text-zinc-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                  >
+                    🗑 Akquise löschen
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full rounded-xl bg-zinc-950 px-5 py-3 text-sm font-black text-white"
                 >
-                  {PRIORITY_OPTIONS.map(
-                    (option) => (
-                      <option
-                        key={option}
-                        value={option}
-                      >
-                        {option}
-                      </option>
-                    )
-                  )}
-                </select>
-              </Field>
-
-              <Field label="Interesse">
-                <input
-                  name="interest"
-                  defaultValue={
-                    acquisition.interest ||
-                    ""
-                  }
-                  placeholder="z. B. hoch, grundsätzlich …"
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-          </section>
-
-          {/* KONTAKT */}
-
-          <section className="rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-            <SectionTitle
-              eyebrow="Kontakt"
-              title="Verlauf & Wiedervorlage"
-            />
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-
-              <Field label="Letzter Kontakt">
-                <input
-                  type="date"
-                  name="last_contact_at"
-                  defaultValue={
-                    acquisition.last_contact_at ||
-                    ""
-                  }
-                  className={inputClass}
-                />
-              </Field>
-
-              <Field label="Nächstes Follow-up">
-                <input
-                  type="date"
-                  name="next_follow_up_at"
-                  defaultValue={
-                    acquisition.next_follow_up_at ||
-                    ""
-                  }
-                  className={inputClass}
-                />
-              </Field>
-
-              <Field label="Kontaktweg">
-                <input
-                  name="contact_channel"
-                  defaultValue={
-                    acquisition.contact_channel ||
-                    ""
-                  }
-                  placeholder="Mail, Telefon, Insta …"
-                  className={inputClass}
-                />
-              </Field>
-
-              <Field label="Aktion">
-                <input
-                  name="action_type"
-                  defaultValue={
-                    acquisition.action_type ||
-                    ""
-                  }
-                  placeholder="z. B. Nachfassen"
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-
-              <Field label="Kontakt-Notiz">
-                <textarea
-                  name="contact_note"
-                  rows={4}
-                  defaultValue={
-                    acquisition.contact_note ||
-                    ""
-                  }
-                  className={textareaClass}
-                />
-              </Field>
-
-              <Field label="Antwort">
-                <textarea
-                  name="response"
-                  rows={4}
-                  defaultValue={
-                    acquisition.response ||
-                    ""
-                  }
-                  className={textareaClass}
-                />
-              </Field>
-            </div>
-          </section>
-
-          {/* NÄCHSTE SCHRITTE */}
-
-          <section className="rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-            <SectionTitle
-              eyebrow="Planung"
-              title="Wie geht es weiter?"
-            />
-
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-
-              <Field label="Nächster Schritt">
-                <textarea
-                  name="next_step"
-                  rows={4}
-                  defaultValue={
-                    acquisition.next_step ||
-                    ""
-                  }
-                  placeholder="Was ist als Nächstes zu tun?"
-                  className={textareaClass}
-                />
-              </Field>
-
-              <Field label="Kontext">
-                <textarea
-                  name="context"
-                  rows={4}
-                  defaultValue={
-                    acquisition.context ||
-                    ""
-                  }
-                  className={textareaClass}
-                />
-              </Field>
-
-              <Field label="Notizen">
-                <textarea
-                  name="notes"
-                  rows={5}
-                  defaultValue={
-                    acquisition.notes ||
-                    ""
-                  }
-                  className={textareaClass}
-                />
-              </Field>
-
-              <Field label="Absagegrund">
-                <textarea
-                  name="rejection_reason"
-                  rows={5}
-                  defaultValue={
-                    acquisition.rejection_reason ||
-                    ""
-                  }
-                  className={textareaClass}
-                />
-              </Field>
-            </div>
-          </section>
-
-          {/* SHOW */}
-
-          <section className="rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-            <SectionTitle
-              eyebrow="Buchung"
-              title="Termin"
-            />
-
-            <div className="mt-5 max-w-sm">
-              <Field label="Show-Datum">
-                <input
-                  type="date"
-                  name="show_date"
-                  defaultValue={
-                    acquisition.show_date ||
-                    ""
-                  }
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-
-            <p className="mt-3 text-xs leading-5 text-zinc-400">
-              Wenn du anschließend eine Show-Akte erzeugst, wird dieser Termin direkt übernommen.
-            </p>
-          </section>
-
-          {/* SAVE */}
-
-          <div className="sticky bottom-5 z-20 flex justify-end">
-            <button
-              type="submit"
-              className="rounded-full bg-zinc-950 px-7 py-3.5 text-sm font-black text-white shadow-xl transition hover:-translate-y-0.5"
-            >
-              Änderungen speichern
-            </button>
+                  Änderungen speichern
+                </button>
+              </div>
+            </Card>
           </div>
         </form>
 
-        {/* ARCHIVE */}
-
-        <section className="flex justify-end border-t border-black/5 pt-5">
-          {acquisition.archived_at ? (
-            <form
-              action={
-                restoreAcquisition
-              }
-            >
-              <input
-                type="hidden"
-                name="id"
-                value={acquisition.id}
-              />
-
-              <button
-                type="submit"
-                className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black text-zinc-600 transition hover:bg-[#f8f3e9]"
-              >
-                ↩️ Vorgang reaktivieren
-              </button>
-            </form>
-          ) : (
-            <form
-              action={
-                archiveAcquisition
-              }
-            >
-              <input
-                type="hidden"
-                name="id"
-                value={acquisition.id}
-              />
-
-              <button
-                type="submit"
-                className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black text-zinc-500 transition hover:bg-zinc-100"
-              >
-                📦 Vorgang archivieren
-              </button>
-            </form>
-          )}
-        </section>
+        <footer className="mt-5 flex flex-wrap justify-between gap-3 text-xs font-semibold text-zinc-400">
+          <span>
+            Erstellt am {formatDate(acquisition.created_at?.slice(0, 10))} · Zuletzt aktualisiert am{" "}
+            {formatDate(acquisition.updated_at?.slice(0, 10))}
+          </span>
+          <span className="font-medium italic text-zinc-600">Mehr Kultur auf die Bühne. ♡</span>
+        </footer>
       </div>
     </main>
   );
 }
 
-
-// ============================================================
-// COMPONENTS
-// ============================================================
-
 const inputClass =
-  "h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10";
-
+  "h-11 w-full rounded-lg border border-black/10 bg-white px-3 text-sm font-semibold outline-none transition focus:border-zinc-400";
+const statusClass =
+  "h-11 w-full rounded-lg border border-amber-200 bg-amber-50 px-3 text-sm font-semibold outline-none";
+const priorityClass =
+  "h-11 w-full rounded-lg border border-red-200 bg-red-50 px-3 text-sm font-semibold outline-none";
+const interestClass =
+  "h-11 w-full rounded-lg border border-green-200 bg-green-50 px-3 text-sm font-semibold outline-none";
 const textareaClass =
-  "w-full resize-y rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-semibold leading-6 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10";
+  "w-full resize-y rounded-lg border border-black/10 bg-white px-3 py-2.5 text-sm font-semibold leading-5 outline-none transition focus:border-zinc-400";
 
-function SectionTitle({
-  eyebrow,
-  title,
-}: {
-  eyebrow: string;
-  title: string;
-}) {
+function Card({ children }: { children: ReactNode }) {
   return (
-    <div>
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
-        {eyebrow}
-      </p>
-
-      <h2 className="mt-1 text-xl font-black">
-        {title}
-      </h2>
-    </div>
+    <section className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm md:p-6">
+      {children}
+    </section>
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function CardTitle({ icon, children }: { icon: string; children: ReactNode }) {
   return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-zinc-400">
-        {label}
-      </span>
+    <h2 className="flex items-center gap-3 text-xl font-black">
+      <span className="text-2xl">{icon}</span>
+      {children}
+    </h2>
+  );
+}
 
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block min-w-0">
+      <span className="mb-1.5 block text-xs font-black text-zinc-700">{label}</span>
       {children}
     </label>
   );
 }
 
-function Info({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function Badge({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-xl bg-[#fbf7ef] px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-400">
-        {label}
-      </p>
-
-      <p className="mt-1 break-words text-sm font-bold text-zinc-800">
-        {value}
-      </p>
-    </div>
+    <span className="rounded-full border border-black/5 bg-white/70 px-3 py-1.5 text-xs font-black text-zinc-600">
+      {children}
+    </span>
   );
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "—";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${day}.${month}.${year}`;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatCreatedTime(value?: string | null) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("de-DE", {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function normalizeUrl(value: string) {
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
+function channelIcon(channel?: string | null) {
+  const value = (channel || "").toLowerCase();
+  if (value.includes("telefon")) return "📞";
+  if (value.includes("mail")) return "✉️";
+  if (value.includes("insta")) return "📸";
+  if (value.includes("persön")) return "🤝";
+  return "▣";
+}
+
+function dotClass(index: number) {
+  const classes = ["bg-lime-400", "bg-blue-700", "bg-red-500", "bg-zinc-400"];
+  return classes[index % classes.length];
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
 }

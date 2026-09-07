@@ -171,8 +171,7 @@ const pendingGeocodingCount = planningShows.filter(
   );
 
   return (
-    <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="space-y-5 text-zinc-950 sm:space-y-6">
 
         {/* HERO */}
 
@@ -333,8 +332,7 @@ const pendingGeocodingCount = planningShows.filter(
             <TourMap shows={tourStops} />
           </section>
         </div>
-      </div>
-    </main>
+    </div>
   );
 }
 

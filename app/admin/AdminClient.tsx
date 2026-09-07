@@ -195,7 +195,7 @@ const optionsCount = shows.filter((show) => {
       Alle Shows
     </h1>
 
-    <p className="mt-2 text-sm font-semibold text-zinc-500">
+    <p className="mt-2 text-zinc-500">
       Termine, Optionen und gebuchte Shows im Überblick.
     </p>
   </div>
@@ -209,7 +209,7 @@ const optionsCount = shows.filter((show) => {
   </button>
 </header>
 
-<section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+<section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
   <ShowStat
     icon="🎭"
     value={upcomingShows.length}
@@ -235,19 +235,49 @@ const optionsCount = shows.filter((show) => {
   />
 </section>
 
-      <section className="rounded-[2rem] bg-white p-5 shadow-xl shadow-black/5 ring-1 ring-black/5">
-        <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Suche nach Location, Stadt, Programm, Kontakt..."
-            className="h-14 rounded-2xl border border-zinc-200 bg-[#fbf7ef] px-5 text-sm font-semibold outline-none focus:border-pink-300 focus:ring-4 focus:ring-pink-100"
-          />
+      <section className="rounded-[1.7rem] bg-white p-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
+        <div className="flex flex-col gap-3 xl:grid xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)_auto] xl:items-center">
+          <div className="relative min-w-0">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
+              🔎
+            </span>
+
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Location, Stadt, Programm, Kontakt …"
+              className="h-12 w-full rounded-xl bg-[#fbf7ef] pl-10 pr-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+            />
+          </div>
+
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto px-0.5 pb-1 pr-4 xl:pb-0">
+            {FILTERS.map((item) => {
+              const isActive = filter === item.key;
+
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setFilter(item.key)}
+                  className={[
+                    "flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-black transition",
+                    isActive
+                      ? "bg-zinc-950 text-white shadow-sm"
+                      : "bg-[#fbf7ef] text-zinc-600 ring-1 ring-black/[0.04] hover:bg-[#f5ead9] hover:text-zinc-950",
+                  ].join(" ")}
+                >
+                  {isActive && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
 
           <select
             value={year}
             onChange={(event) => setYear(event.target.value)}
-            className="h-14 rounded-2xl border border-zinc-200 bg-[#fbf7ef] px-5 text-sm font-black outline-none"
+            aria-label="Jahr auswählen"
+            className="h-12 shrink-0 rounded-full bg-[#fbf7ef] px-4 text-xs font-black text-zinc-700 outline-none ring-1 ring-black/[0.05] transition hover:bg-[#f5ead9]"
           >
             <option value="alle">Alle Jahre</option>
             {years.map((item) => (
@@ -256,29 +286,6 @@ const optionsCount = shows.filter((show) => {
               </option>
             ))}
           </select>
-        </div>
-
-        <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-          {FILTERS.map((item) => {
-            const isActive = filter === item.key;
-
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setFilter(item.key)}
-                className={[
-                  "flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-xs font-black transition sm:px-4 sm:text-sm",
-                  isActive
-                    ? "bg-zinc-950 text-white shadow-md ring-2 ring-zinc-950/10"
-                    : "bg-[#fbf7ef] text-zinc-700 hover:bg-[#f5ead9]",
-                ].join(" ")}
-              >
-                {isActive && <span className="h-2 w-2 rounded-full bg-white" />}
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
         </div>
       </section>
 
@@ -296,27 +303,35 @@ const optionsCount = shows.filter((show) => {
       ) : (
         <section className="space-y-5">
           {Object.entries(grouped).map(([month, monthShows]) => (
-            <div
-              key={month}
-              className="rounded-[2rem] bg-white p-5 shadow-xl shadow-black/5 ring-1 ring-black/5"
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-black">{month}</h2>
-                <span className="rounded-full bg-[#fbf7ef] px-3 py-1 text-xs font-black text-zinc-500">
+            <div key={month} className="space-y-3">
+              <div className="flex items-center justify-between px-1">
+                <h2 className="text-xl font-black">{month}</h2>
+                <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-zinc-500 ring-1 ring-black/5">
                   {monthShows.length} Show
                   {monthShows.length === 1 ? "" : "s"}
                 </span>
               </div>
 
-              <div className="space-y-3">
-                {monthShows.map((show) => (
-                  <ShowCard
-                    key={show.id}
-                    show={show}
-                    deleteShowAction={deleteShowAction}
-                    duplicateShowAction={duplicateShowAction}
-                  />
-                ))}
+              <div className="overflow-hidden rounded-[1.7rem] bg-white shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
+                <div className="hidden gap-3 border-b border-black/5 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-400 md:grid md:grid-cols-[125px_minmax(220px,1.35fr)_minmax(210px,1fr)_145px_minmax(180px,1fr)_130px]">
+                  <span>Datum</span>
+                  <span>Location</span>
+                  <span>Ort / Programm</span>
+                  <span>Status</span>
+                  <span>Offene Punkte</span>
+                  <span className="text-right">Aktionen</span>
+                </div>
+
+                <div>
+                  {monthShows.map((show) => (
+                    <ShowCard
+                      key={show.id}
+                      show={show}
+                      deleteShowAction={deleteShowAction}
+                      duplicateShowAction={duplicateShowAction}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           ))}
@@ -413,121 +428,140 @@ function ShowCard({
   deleteShowAction: (formData: FormData) => void | Promise<void>;
   duplicateShowAction: (formData: FormData) => void | Promise<void>;
 }) {
+  const router = useRouter();
   const status = getStatus(show);
   const actions = getActionItems(show);
   const missing = getMissingFields(show);
   const isPast = isPastDate(show.show_date);
-  const hasFutureFollowUp = hasFollowUpInFuture(show.follow_up_date);
-  const isSoon = isWithinNextDays(show.show_date, 7);
   const newPortalInfo = hasNewPortalInfo(show);
 
   return (
-    <article className="relative overflow-hidden rounded-3xl bg-[#fbf7ef] p-5 transition hover:-translate-y-0.5 hover:bg-[#f5ead9]">
-      <div className="grid gap-4 md:grid-cols-[130px_1fr_160px_190px] md:items-start">
-        <div>
-          <p className="text-lg font-black">{formatDate(show.show_date)}</p>
-          <p className="mt-1 text-xs font-bold text-zinc-500">
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={() => router.push(`/admin/shows/${show.id}`)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          router.push(`/admin/shows/${show.id}`);
+        }
+      }}
+      className="grid cursor-pointer gap-3 border-t border-black/5 px-5 py-4 transition first:border-t-0 hover:bg-[#f7f3eb] focus:bg-[#f7f3eb] focus:outline-none md:grid-cols-[125px_minmax(220px,1.35fr)_minmax(210px,1fr)_145px_minmax(180px,1fr)_130px] md:items-center"
+    >
+      <div>
+        <p className="text-sm font-black text-zinc-950">
+          {formatDate(show.show_date)}
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-semibold text-zinc-400">
             {show.start_time || "Uhrzeit offen"}
-          </p>
-          {isPast && (
-            <p className="mt-2 inline-flex rounded-full bg-white px-2 py-1 text-[11px] font-black text-zinc-500">
-              vergangen
-            </p>
-          )}
-        </div>
-
-        <div className="min-w-0">
-          <p className="truncate text-xl font-black">
-            {show.venue || "Location offen"}
-          </p>
-
-          <p className="text-sm font-semibold text-zinc-500">
-            {show.city || "Ort offen"} · {show.program || "Programm offen"}
-            {show.markus_included && " · 🎹 Markus"}
-          </p>
-
-          {(newPortalInfo || actions.length > 0 || missing.length > 0) && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {newPortalInfo && <Badge tone="pink">✨ Neue Infos</Badge>}
-
-           {actions.slice(0, 2).map((item) => {
-  let tone: "red" | "green" | "blue" | "purple" | "zinc" = "red";
-
-  if (item.includes("WVL")) tone = "blue";
-  else if (item === "Spielbereit") tone = "green";
-  else if (item === "Abgesagt") tone = "red";
-  else if (item === "Abrechnung offen") tone = "purple";
-  else if (item === "Offene Punkte vorhanden") tone = "zinc";
-
-  return (
-    <Badge key={item} tone={tone}>
-      {item}
-    </Badge>
-  );
-})}
-
-              {actions.length === 0 && missing.length > 0 && (
-                <Badge tone="zinc">
-                  {missing.length} Info
-                  {missing.length === 1 ? "" : "s"} fehlen
-                </Badge>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div>
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-black ${status.className}`}
-          >
-            {status.label}
           </span>
-{isPast &&
-  show.billing_status &&
-  show.internal_status !== "abgesagt" &&
-  show.internal_status !== "option" && (
-    <p className="mt-2 text-xs font-bold text-zinc-500">
-      Abrechnung: {billingLabel(show.billing_status)}
-    </p>
-)}
-        </div>
-
-        <div className="relative z-10 flex flex-wrap justify-start gap-2 md:justify-end">
-          <ActionLink href={`/admin/shows/${show.id}`} label="Akte öffnen">
-            ✏️
-          </ActionLink>
-
-          <ActionLink href={`/show/${show.token}`} label="Formular öffnen">
-            🔗
-          </ActionLink>
-
-          <form action={duplicateShowAction}>
-            <input type="hidden" name="show_id" value={show.id} />
-            <ActionButton label="Show duplizieren" tone="purple">
-              ⧉
-            </ActionButton>
-          </form>
-
-          <form
-            action={deleteShowAction}
-            onSubmit={(event) => {
-              const ok = window.confirm(
-                `Bist du sicher, dass du die Show "${
-                  show.venue || "ohne Location"
-                }" löschen möchtest?`
-              );
-
-              if (!ok) event.preventDefault();
-            }}
-          >
-            <input type="hidden" name="show_id" value={show.id} />
-            <ActionButton label="Show löschen" tone="red">
-              🗑️
-            </ActionButton>
-          </form>
+          {isPast && (
+            <span className="rounded-full bg-[#fbf7ef] px-2 py-0.5 text-[10px] font-black text-zinc-500">
+              vergangen
+            </span>
+          )}
         </div>
       </div>
-    </article>
+
+      <div className="min-w-0">
+        <p className="truncate text-[15px] font-black text-zinc-950">
+          {show.venue || "Location offen"}
+        </p>
+
+        {newPortalInfo && (
+          <div className="mt-1">
+            <Badge tone="pink">✨ Neue Infos</Badge>
+          </div>
+        )}
+      </div>
+
+      <div className="min-w-0">
+        <p className="truncate text-sm font-bold text-zinc-700">
+          {show.city || "Ort offen"}
+        </p>
+        <p className="mt-1 truncate text-[11px] font-semibold text-zinc-400">
+          {show.program || "Programm offen"}
+          {show.markus_included && " · 🎹 Markus"}
+        </p>
+      </div>
+
+      <div>
+        <span
+          className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${status.className}`}
+        >
+          {status.label}
+        </span>
+
+        {isPast &&
+          show.billing_status &&
+          show.internal_status !== "abgesagt" &&
+          show.internal_status !== "option" && (
+            <p className="mt-1 text-[10px] font-bold text-zinc-400">
+              Abrechnung: {billingLabel(show.billing_status)}
+            </p>
+          )}
+      </div>
+
+      <div className="flex min-w-0 flex-wrap gap-1.5">
+        {actions.slice(0, 2).map((item) => {
+          let tone: "red" | "green" | "blue" | "purple" | "zinc" = "red";
+
+          if (item.includes("WVL")) tone = "blue";
+          else if (item === "Spielbereit") tone = "green";
+          else if (item === "Abgesagt") tone = "red";
+          else if (item === "Abrechnung offen") tone = "purple";
+          else if (item === "Offene Punkte vorhanden") tone = "zinc";
+
+          return (
+            <Badge key={item} tone={tone}>
+              {item}
+            </Badge>
+          );
+        })}
+
+        {actions.length === 0 && missing.length > 0 && (
+          <Badge tone="zinc">
+            {missing.length} Info{missing.length === 1 ? "" : "s"} fehlen
+          </Badge>
+        )}
+      </div>
+
+      <div
+        className="relative z-10 flex flex-wrap justify-start gap-1.5 md:justify-end"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <ActionLink href={`/show/${show.token}`} label="Formular öffnen">
+          🔗
+        </ActionLink>
+
+        <form action={duplicateShowAction}>
+          <input type="hidden" name="show_id" value={show.id} />
+          <ActionButton label="Show duplizieren" tone="purple">
+            ⧉
+          </ActionButton>
+        </form>
+
+        <form
+          action={deleteShowAction}
+          onSubmit={(event) => {
+            const ok = window.confirm(
+              `Bist du sicher, dass du die Show "${
+                show.venue || "ohne Location"
+              }" löschen möchtest?`
+            );
+
+            if (!ok) event.preventDefault();
+          }}
+        >
+          <input type="hidden" name="show_id" value={show.id} />
+          <ActionButton label="Show löschen" tone="red">
+            🗑️
+          </ActionButton>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -569,7 +603,7 @@ function ActionLink({
       title={label}
       aria-label={label}
       target={href.startsWith("/show/") ? "_blank" : undefined}
-      className="flex h-10 w-10 items-center justify-center rounded-full bg-zinc-950 text-sm font-black text-white shadow-lg shadow-black/10 transition hover:scale-105"
+      className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-[11px] font-black text-zinc-500 ring-1 ring-black/[0.07] transition hover:bg-[#fbf7ef] hover:text-zinc-950"
     >
       {children}
     </Link>
@@ -587,8 +621,8 @@ function ActionButton({
 }) {
   const className =
     tone === "purple"
-      ? "bg-purple-100 text-purple-700"
-      : "bg-red-100 text-red-700";
+      ? "bg-white text-zinc-500 ring-1 ring-black/[0.07] hover:bg-[#fbf7ef] hover:text-zinc-950"
+      : "bg-white text-zinc-400 ring-1 ring-black/[0.07] hover:bg-red-50 hover:text-red-600 hover:ring-red-100";
 
   return (
     <button
@@ -596,7 +630,7 @@ function ActionButton({
       title={label}
       aria-label={label}
       className={[
-        "flex h-10 w-10 items-center justify-center rounded-full text-sm font-black transition hover:scale-105",
+        "flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-black transition",
         className,
       ].join(" ")}
     >
@@ -614,23 +648,26 @@ function ShowStat({
   label: string;
 }) {
   return (
-    <div className="flex min-h-[110px] items-center gap-5 rounded-[1.7rem] bg-white px-6 py-5 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-      <div className="text-3xl">
-        {icon}
-      </div>
+    <div className="h-[70px] rounded-[20px] bg-white px-[18px] shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
+      <div className="flex h-full items-center gap-3">
+        <div className="shrink-0 text-[24px] leading-none">
+          {icon}
+        </div>
 
-      <div>
-        <p className="text-3xl font-black leading-none text-zinc-950">
-          {value}
-        </p>
+        <div className="min-w-0">
+          <p className="text-[20px] font-black leading-none text-zinc-950">
+            {value}
+          </p>
 
-        <p className="mt-2 text-sm font-bold text-zinc-400">
-          {label}
-        </p>
+          <p className="mt-1 truncate text-[11px] font-semibold leading-none text-zinc-400">
+            {label}
+          </p>
+        </div>
       </div>
     </div>
   );
 }
+
 function isEmptyShowAkte(show: ShowRow) {
   if (isArchivedShow(show)) return false;
 

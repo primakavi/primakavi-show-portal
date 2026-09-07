@@ -337,12 +337,11 @@ const venueB = b.venue?.[0] ?? null;
   // ------------------------------------------------------------
 
   return (
-    <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
-      <div className="mx-auto max-w-7xl space-y-5">
+    <div className="space-y-5 text-zinc-950 sm:space-y-6">
 
         {/* HEADER */}
 
-        <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <header className="flex flex-col gap-5 px-1 py-3 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-400">
               primakavi · booking crm
@@ -831,8 +830,7 @@ const venueB = b.venue?.[0] ?? null;
               📦 Archivierte Vorgänge bleiben vollständig erhalten.
             </p>
           )}
-      </div>
-    </main>
+    </div>
   );
 }
 

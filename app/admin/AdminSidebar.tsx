@@ -18,7 +18,7 @@ export default function AdminSidebar({
   return (
     <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 border-r border-black/5 bg-[#fffdf8] px-5 py-5 shadow-[20px_0_60px_rgba(0,0,0,0.035)] lg:flex lg:flex-col">
       <Link
-        href={isMarkusRole ? "/admin/markus" : "/admin/shows"}
+        href={isMarkusRole ? "/admin/markus" : "/admin"}
         className="mb-8 block"
       >
         <div className="flex items-center gap-3">
@@ -53,6 +53,15 @@ export default function AdminSidebar({
       <nav className="space-y-5">
         {!isMarkusRole && (
           <>
+            <NavSection title="Übersicht">
+              <SidebarLink
+                href="/admin"
+                label="Dashboard"
+                icon="◎"
+                active={pathname === "/admin"}
+              />
+            </NavSection>
+
             <NavSection title="Akquise">
               <SidebarLink
                 href="/admin/acquisition"
@@ -65,7 +74,18 @@ export default function AdminSidebar({
                 href="/admin/locations"
                 label="Locations"
                 icon="🏛️"
-                active={pathname.startsWith("/admin/locations")}
+                active={
+                  pathname === "/admin/locations" ||
+                  (pathname.startsWith("/admin/locations/") &&
+                    !pathname.startsWith("/admin/locations/discover"))
+                }
+              />
+
+              <SidebarLink
+                href="/admin/locations/discover"
+                label="Locations entdecken"
+                icon="✨"
+                active={pathname.startsWith("/admin/locations/discover")}
               />
             </NavSection>
 
@@ -236,7 +256,7 @@ function SidebarLink({
       className={[
         "group flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-bold transition-all",
         active
-          ? "bg-zinc-950 text-white shadow-md shadow-black/5"
+          ? "bg-[#f1eee7] text-zinc-950 ring-1 ring-black/5"
           : "text-zinc-500 hover:bg-[#f7f3eb] hover:text-zinc-950",
       ].join(" ")}
     >
@@ -244,7 +264,7 @@ function SidebarLink({
         className={[
           "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[15px] transition",
           active
-            ? "bg-white/10"
+            ? "bg-[#d9ff00] text-zinc-950 ring-1 ring-black/10"
             : "bg-white ring-1 ring-black/5 group-hover:bg-[#fffdf8]",
         ].join(" ")}
       >
