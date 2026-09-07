@@ -83,27 +83,46 @@ export default async function AdminDashboardPage() {
     venues.map((venue: any) => [venue.id, venue])
   );
 
-  const activeAcquisition = acquisition.filter(
-    (item: any) => !item.archived_at
+  const activeAcquisition = acquisition.filter((item: any) => {
+    if (item.archived_at) return false;
+
+    const status = String(item.status || "").toLowerCase();
+
+    return ![
+      "abgesagt",
+      "gebucht",
+      "abgeschlossen",
+      "archiv",
+      "archiviert",
+    ].some((value) => status.includes(value));
+  });
+
+  const overdueAcquisition = activeAcquisition.filter((item: any) => {
+    if (!item.next_follow_up_at) return false;
+    return item.next_follow_up_at < today;
+  });
+
+  const todayAcquisition = activeAcquisition.filter(
+    (item: any) => item.next_follow_up_at === today
   );
 
-  const dueAcquisition = activeAcquisition.filter((item: any) => {
-    if (!item.next_follow_up_at) return false;
-    return item.next_follow_up_at <= today;
-  });
+  const nextSevenDays = dateOnly(addDays(new Date(), 7));
+
+  const upcomingFollowUps = activeAcquisition
+    .filter((item: any) => {
+      if (!item.next_follow_up_at) return false;
+      return item.next_follow_up_at > today && item.next_follow_up_at <= nextSevenDays;
+    })
+    .sort((a: any, b: any) =>
+      String(a.next_follow_up_at).localeCompare(String(b.next_follow_up_at))
+    );
+
+  const dueAcquisition = [...overdueAcquisition, ...todayAcquisition];
 
   const unlinkedShows = shows.filter((show: any) => !show.venue_id);
 
   const upcomingShows = shows
     .filter((show: any) => show.show_date && show.show_date >= today)
-    .slice(0, 5);
-
-  const nextAcquisition = [...activeAcquisition]
-    .sort((a: any, b: any) => {
-      const aDate = a.next_follow_up_at || "9999-12-31";
-      const bDate = b.next_follow_up_at || "9999-12-31";
-      return aDate.localeCompare(bDate);
-    })
     .slice(0, 5);
 
   const attentionItems = buildAttentionItems(shows, activeAcquisition, today).slice(0, 5);
@@ -307,8 +326,8 @@ export default async function AdminDashboardPage() {
 
       <section className={`grid gap-6 ${isAdmin ? "xl:grid-cols-2" : ""}`}>
         <DashboardCard
-          title="Akquise – als Nächstes"
-          icon="🎯"
+          title="Akquise-Wiedervorlagen"
+          icon="⏰"
           action={
             <Link
               href="/admin/acquisition"
@@ -318,64 +337,42 @@ export default async function AdminDashboardPage() {
             </Link>
           }
         >
-          {nextAcquisition.length ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[620px] text-left text-sm">
-                <thead className="border-b border-black/5 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-                  <tr>
-                    <th className="pb-3 pr-4">Location</th>
-                    <th className="pb-3 pr-4">Letzte Aktivität</th>
-                    <th className="pb-3 pr-4">Wiedervorlage</th>
-                    <th className="pb-3">Status</th>
-                  </tr>
-                </thead>
+          {overdueAcquisition.length ||
+          todayAcquisition.length ||
+          upcomingFollowUps.length ? (
+            <div className="space-y-5">
+              <FollowUpSection
+                title="Überfällig"
+                icon="🔥"
+                items={overdueAcquisition}
+                venueMap={venueMap}
+                today={today}
+                emptyText="Nichts überfällig."
+                critical
+              />
 
-                <tbody className="divide-y divide-zinc-100">
-                  {nextAcquisition.map((item: any) => {
-                    const venue = venueMap.get(item.venue_id);
+              <FollowUpSection
+                title="Heute"
+                icon="📅"
+                items={todayAcquisition}
+                venueMap={venueMap}
+                today={today}
+                emptyText="Heute nichts fällig."
+              />
 
-                    return (
-                      <tr key={item.id}>
-                        <td className="py-3 pr-4">
-                          <Link
-                            href={`/admin/acquisition/${item.id}`}
-                            className="font-black text-zinc-950 hover:underline"
-                          >
-                            {venue?.name || "Location"}
-                          </Link>
-                          {venue?.city && (
-                            <p className="mt-0.5 text-xs font-semibold text-zinc-400">
-                              {venue.city}
-                            </p>
-                          )}
-                        </td>
-
-                        <td className="py-3 pr-4 font-semibold text-zinc-600">
-                          {formatDate(item.last_contact_at)}
-                        </td>
-
-                        <td
-                          className={`py-3 pr-4 font-black ${
-                            item.next_follow_up_at &&
-                            item.next_follow_up_at <= today
-                              ? "text-red-500"
-                              : "text-zinc-700"
-                          }`}
-                        >
-                          {formatDate(item.next_follow_up_at)}
-                        </td>
-
-                        <td className="py-3">
-                          <AcquisitionStatusBadge status={item.status} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <FollowUpSection
+                title="Nächste 7 Tage"
+                icon="⏭"
+                items={upcomingFollowUps}
+                venueMap={venueMap}
+                today={today}
+                emptyText="In den nächsten 7 Tagen nichts geplant."
+              />
             </div>
           ) : (
-            <EmptyState text="Aktuell keine offene Akquise." />
+            <div className="rounded-2xl bg-emerald-50 px-5 py-4 text-sm font-black text-emerald-700">
+              ✓ Keine Akquise-Wiedervorlagen offen.
+            </div>
           )}
         </DashboardCard>
 
@@ -612,6 +609,100 @@ function AcquisitionStatusBadge({ status }: { status?: string | null }) {
   );
 }
 
+function FollowUpSection({
+  title,
+  icon,
+  items,
+  venueMap,
+  today,
+  emptyText,
+  critical = false,
+}: {
+  title: string;
+  icon: string;
+  items: any[];
+  venueMap: Map<any, any>;
+  today: string;
+  emptyText: string;
+  critical?: boolean;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{icon}</span>
+          <h3 className="text-sm font-black text-zinc-900">{title}</h3>
+        </div>
+
+        <span
+          className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
+            critical && items.length
+              ? "bg-red-50 text-red-500"
+              : "bg-zinc-100 text-zinc-500"
+          }`}
+        >
+          {items.length}
+        </span>
+      </div>
+
+      {items.length ? (
+        <div className="divide-y divide-zinc-100 rounded-[1.15rem] ring-1 ring-black/5">
+          {items.map((item: any) => {
+            const venue = venueMap.get(item.venue_id);
+            const isOverdue =
+              item.next_follow_up_at && item.next_follow_up_at < today;
+
+            return (
+              <Link
+                key={item.id}
+                href={`/admin/acquisition/${item.id}`}
+                className="grid gap-2 px-4 py-3 transition hover:bg-[#fbf7ef] sm:grid-cols-[1.15fr_1fr_auto] sm:items-center"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-zinc-950">
+                    {venue?.name || "Location"}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs font-semibold text-zinc-400">
+                    {[venue?.city, item.program].filter(Boolean).join(" · ") || "–"}
+                  </p>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                    Nächster Schritt
+                  </p>
+                  <p className="mt-0.5 truncate text-sm font-bold text-zinc-700">
+                    {item.next_step || "Nachfassen"}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 sm:justify-end">
+                  <span
+                    className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-black ${
+                      isOverdue
+                        ? "bg-red-50 text-red-500"
+                        : item.next_follow_up_at === today
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-zinc-100 text-zinc-600"
+                    }`}
+                  >
+                    {formatDate(item.next_follow_up_at)}
+                  </span>
+                  <span className="text-zinc-300">→</span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-bold text-zinc-400">
+          {emptyText}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function EmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-[1.3rem] bg-[#fbf7ef] px-5 py-5 text-sm font-bold text-zinc-500 ring-1 ring-black/5">
@@ -682,6 +773,12 @@ function buildAttentionItems(
   }
 
   return items.sort((a, b) => Number(Boolean(b.critical)) - Number(Boolean(a.critical)));
+}
+
+function addDays(date: Date, days: number) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
 }
 
 function dateOnly(date: Date) {

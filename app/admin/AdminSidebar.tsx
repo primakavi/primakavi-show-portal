@@ -16,10 +16,10 @@ export default function AdminSidebar({
   const isMarkusRole = role === "markus";
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 border-r border-black/5 bg-[#fffdf8] px-5 py-5 shadow-[20px_0_60px_rgba(0,0,0,0.035)] lg:flex lg:flex-col">
+    <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 overflow-hidden border-r border-black/5 bg-[#fffdf8] px-5 py-5 shadow-[20px_0_60px_rgba(0,0,0,0.035)] lg:flex lg:flex-col">
       <Link
         href={isMarkusRole ? "/admin/markus" : "/admin"}
-        className="mb-8 block"
+        className="mb-8 block shrink-0"
       >
         <div className="flex items-center gap-3">
           <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-[#d9ff00] ring-1 ring-black/10">
@@ -50,7 +50,7 @@ export default function AdminSidebar({
         </div>
       </Link>
 
-      <nav className="space-y-5">
+      <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
         {!isMarkusRole && (
           <>
             <NavSection title="Übersicht">
@@ -149,7 +149,7 @@ export default function AdminSidebar({
         )}
       </nav>
 
-      <div className="mt-auto space-y-4">
+      <div className="mt-4 shrink-0 space-y-4">
         <div
           className={[
             "rounded-2xl px-4 py-3 text-zinc-900 shadow-[0_10px_30px_rgba(0,0,0,0.04)] ring-1 ring-black/5",
