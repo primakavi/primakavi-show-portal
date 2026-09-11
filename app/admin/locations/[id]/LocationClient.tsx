@@ -156,6 +156,7 @@ export default function LocationClient({
   removeAcquisitionRound,
   saveLocation,
   isNew = false,
+  importedFromDiscover = false,
 }: {
   venue: Venue;
   shows: LocationShow[];
@@ -170,6 +171,7 @@ export default function LocationClient({
   removeAcquisitionRound?: (formData: FormData) => Promise<ActionResult>;
   saveLocation: (formData: FormData) => Promise<SaveResult>;
   isNew?: boolean;
+  importedFromDiscover?: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -184,6 +186,25 @@ export default function LocationClient({
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [rounds, setRounds] = useState<AcquisitionRound[]>(acquisitionRounds);
   const [selectedRoundName, setSelectedRoundName] = useState("");
+  const [showImportSuccess, setShowImportSuccess] = useState(
+    importedFromDiscover
+  );
+
+  function startAcquisitionFromImport() {
+    setShowNewAcquisitionForm(true);
+    setShowActivityForm(false);
+    setShowNewRoundForm(false);
+    setShowManageRounds(false);
+    setSelectedRoundName("");
+    setActionMessage(null);
+    setShowImportSuccess(false);
+
+    window.setTimeout(() => {
+      document
+        .getElementById("location-acquisition")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
 
   function handleSubmit(
     event: FormEvent<HTMLFormElement>
@@ -287,6 +308,39 @@ export default function LocationClient({
             </div>
           )}
         </header>
+
+        {showImportSuccess && !isNew && (
+          <section className="flex flex-col gap-4 rounded-[1.7rem] bg-lime-100 px-5 py-4 ring-1 ring-lime-200 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-black text-zinc-950">
+                ✓ Location wurde ins CRM übernommen
+              </p>
+              <p className="mt-1 text-sm font-semibold text-zinc-600">
+                Du kannst jetzt direkt eine Akquise für diese Location starten.
+              </p>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={startAcquisitionFromImport}
+                className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-black text-white transition hover:-translate-y-0.5"
+              >
+                🎯 Akquise starten
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowImportSuccess(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-sm font-black text-zinc-500 ring-1 ring-black/5 transition hover:text-zinc-950"
+                aria-label="Hinweis schließen"
+                title="Hinweis schließen"
+              >
+                ×
+              </button>
+            </div>
+          </section>
+        )}
 
         <form
           onSubmit={handleSubmit}
@@ -543,6 +597,7 @@ export default function LocationClient({
           {/* AKQUISE */}
 
           {!isNew && (
+            <div id="location-acquisition" className="scroll-mt-5">
             <Card
               title="Akquise"
               icon="🎯"
@@ -1294,6 +1349,7 @@ export default function LocationClient({
                 </div>
               )}
             </Card>
+            </div>
           )}
 
           {/* SHOWS */}

@@ -90,6 +90,7 @@ export default function AcquisitionDetailClient({
   activityWasSaved,
   activities = [],
   addActivity,
+  updateActivity,
   deleteActivity,
   deleteAcquisition,
   saveAcquisition,
@@ -103,6 +104,7 @@ export default function AcquisitionDetailClient({
   activityWasSaved: boolean;
   activities: AcquisitionActivity[];
   addActivity: (formData: FormData) => Promise<void>;
+  updateActivity: (formData: FormData) => Promise<void>;
   deleteActivity: (formData: FormData) => Promise<void>;
   deleteAcquisition: (formData: FormData) => Promise<void>;
   saveAcquisition: (formData: FormData) => Promise<void>;
@@ -110,6 +112,7 @@ export default function AcquisitionDetailClient({
   createShowFromAcquisition: (formData: FormData) => Promise<void>;
 }) {
   const [showActivityForm, setShowActivityForm] = useState(false);
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
   const isArchived = Boolean(acquisition.archived_at);
   const locationLine = [venue.city, venue.state].filter(Boolean).join(", ");
@@ -324,62 +327,133 @@ export default function AcquisitionDetailClient({
                   Noch keine Kontakte in der Historie.
                 </div>
               ) : (
-                activities.map((activity, index) => (
-                  <div key={activity.id} className="relative">
-                    <div className={`absolute -left-[39px] top-5 hidden h-4 w-4 rounded-full ring-4 ring-white md:block ${dotClass(index)}`} />
-                    <div className="grid gap-3 rounded-xl border border-black/[0.06] bg-white px-4 py-3 shadow-sm lg:grid-cols-[130px_125px_minmax(280px,1fr)_230px_38px] lg:items-center">
-                      <div>
-                        <p className="text-sm font-black">{formatDate(activity.activity_date)}</p>
-                        <p className="mt-1 text-xs font-semibold text-zinc-400">
-                          {formatCreatedTime(activity.created_at)}
-                        </p>
-                      </div>
+                activities.map((activity, index) => {
+                  const isEditing = editingActivityId === activity.id;
 
-                      <div className="text-sm font-black">
-                        {channelIcon(activity.channel)} {activity.channel || activity.activity_type || "Notiz"}
-                      </div>
+                  return (
+                    <div key={activity.id} className="relative">
+                      <div className={`absolute -left-[39px] top-5 hidden h-4 w-4 rounded-full ring-4 ring-white md:block ${dotClass(index)}`} />
 
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold leading-6 text-zinc-800">
-                          {activity.note || "—"}
-                        </p>
-                        {activity.response && (
-                          <p className="mt-1 text-sm leading-6 text-zinc-500">{activity.response}</p>
-                        )}
-                      </div>
+                      {isEditing ? (
+                        <div className="rounded-xl border border-lime-200 bg-[#fffdf8] p-4 shadow-sm">
+                          <input type="hidden" name="acquisition_id" value={acquisition.id} />
+                          <input type="hidden" name="activity_id" value={activity.id} />
 
-                      <div>
-                        {(activity.next_step || activity.follow_up_at) && (
-                          <div className="rounded-lg bg-[#fff7df] px-3 py-2 text-xs font-bold leading-5 text-zinc-700">
-                            {activity.next_step || "Follow-up"}
-                            {activity.follow_up_at ? ` · ${formatDate(activity.follow_up_at)}` : ""}
+                          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[130px_160px_1.15fr_1fr_1fr]">
+                            <Field label="Datum">
+                              <input type="date" name="activity_date" defaultValue={activity.activity_date || ""} className={inputClass} />
+                            </Field>
+                            <Field label="Kontaktweg">
+                              <select name="activity_channel" defaultValue={activity.channel || ""} className={inputClass}>
+                                <option value="">Bitte wählen …</option>
+                                <option>E-Mail</option>
+                                <option>Telefon</option>
+                                <option>Schriftlich</option>
+                                <option>Instagram</option>
+                                <option>Persönlich</option>
+                                <option>Notiz</option>
+                              </select>
+                            </Field>
+                            <Field label="Was ist passiert?">
+                              <textarea name="activity_note" rows={3} defaultValue={activity.note || ""} className={textareaClass} />
+                            </Field>
+                            <Field label="Rückmeldung">
+                              <textarea name="activity_response" rows={3} defaultValue={activity.response || ""} className={textareaClass} />
+                            </Field>
+                            <Field label="Nächster Schritt">
+                              <textarea name="activity_next_step" rows={3} defaultValue={activity.next_step || ""} className={textareaClass} />
+                            </Field>
                           </div>
-                        )}
-                      </div>
 
-                      <button
-                        type="button"
-                        title="Eintrag löschen"
-                        onClick={async () => {
-                          const confirmed = window.confirm(
-                            "Diesen Akquise-Eintrag wirklich löschen?"
-                          );
+                          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+                            <Field label="Wiedervorlage">
+                              <input type="date" name="activity_follow_up_at" defaultValue={activity.follow_up_at || ""} className={inputClass} />
+                            </Field>
 
-                          if (!confirmed) return;
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingActivityId(null)}
+                                className="rounded-xl border border-black/10 bg-white px-5 py-3 text-sm font-black text-zinc-500 transition hover:bg-zinc-50"
+                              >
+                                Abbrechen
+                              </button>
+                              <button
+                                type="submit"
+                                formAction={updateActivity}
+                                className="rounded-xl bg-lime-300 px-6 py-3 text-sm font-black shadow-sm transition hover:-translate-y-0.5"
+                              >
+                                ✓ Änderungen speichern
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid gap-3 rounded-xl border border-black/[0.06] bg-white px-4 py-3 shadow-sm lg:grid-cols-[130px_125px_minmax(280px,1fr)_230px_82px] lg:items-center">
+                          <div>
+                            <p className="text-sm font-black">{formatDate(activity.activity_date)}</p>
+                            <p className="mt-1 text-xs font-semibold text-zinc-400">
+                              {formatCreatedTime(activity.created_at)}
+                            </p>
+                          </div>
 
-                          const formData = new FormData();
-                          formData.set("acquisition_id", acquisition.id);
-                          formData.set("activity_id", activity.id);
+                          <div className="text-sm font-black">
+                            {channelIcon(activity.channel)} {activity.channel || activity.activity_type || "Notiz"}
+                          </div>
 
-                          await deleteActivity(formData);
-                        }}
-                        className="grid h-9 w-9 place-items-center rounded-lg text-red-500 transition hover:bg-red-50"
-                      >
-                        🗑
-                      </button>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold leading-6 text-zinc-800">
+                              {activity.note || "—"}
+                            </p>
+                            {activity.response && (
+                              <p className="mt-1 text-sm leading-6 text-zinc-500">{activity.response}</p>
+                            )}
+                          </div>
+
+                          <div>
+                            {(activity.next_step || activity.follow_up_at) && (
+                              <div className="rounded-lg bg-[#fff7df] px-3 py-2 text-xs font-bold leading-5 text-zinc-700">
+                                {activity.next_step || "Follow-up"}
+                                {activity.follow_up_at ? ` · ${formatDate(activity.follow_up_at)}` : ""}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              title="Eintrag bearbeiten"
+                              onClick={() => setEditingActivityId(activity.id)}
+                              className="grid h-9 w-9 place-items-center rounded-lg text-zinc-500 transition hover:bg-[#fbf7ef] hover:text-zinc-950"
+                            >
+                              ✏️
+                            </button>
+
+                            <button
+                              type="button"
+                              title="Eintrag löschen"
+                              onClick={async () => {
+                                const confirmed = window.confirm(
+                                  "Diesen Akquise-Eintrag wirklich löschen?"
+                                );
+                                if (!confirmed) return;
+
+                                const formData = new FormData();
+                                formData.set("acquisition_id", acquisition.id);
+                                formData.set("activity_id", activity.id);
+
+                                await deleteActivity(formData);
+                              }}
+                              className="grid h-9 w-9 place-items-center rounded-lg text-red-500 transition hover:bg-red-50"
+                            >
+                              🗑
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -395,28 +469,29 @@ export default function AcquisitionDetailClient({
                       <input type="date" name="activity_date" defaultValue={today()} className={inputClass} />
                     </Field>
                     <Field label="Kontaktweg">
-                      <select name="channel" defaultValue="" className={inputClass}>
+                      <select name="activity_channel" defaultValue="" className={inputClass}>
                         <option value="">Bitte wählen …</option>
                         <option>E-Mail</option>
                         <option>Telefon</option>
+                        <option>Schriftlich</option>
                         <option>Instagram</option>
                         <option>Persönlich</option>
                         <option>Notiz</option>
                       </select>
                     </Field>
                     <Field label="Was ist passiert?">
-                      <textarea name="note" rows={3} placeholder="z. B. Programm vorgestellt, Rückruf erhalten …" className={textareaClass} />
+                      <textarea name="activity_note" rows={3} placeholder="z. B. Programm vorgestellt, Rückruf erhalten …" className={textareaClass} />
                     </Field>
                     <Field label="Rückmeldung">
-                      <textarea name="response" rows={3} placeholder="z. B. grundsätzliches Interesse, noch offen …" className={textareaClass} />
+                      <textarea name="activity_response" rows={3} placeholder="z. B. grundsätzliches Interesse, noch offen …" className={textareaClass} />
                     </Field>
                     <Field label="Nächster Schritt">
-                      <textarea name="next_step" rows={3} placeholder="z. B. in 2 Wochen nachfassen …" className={textareaClass} />
+                      <textarea name="activity_next_step" rows={3} placeholder="z. B. in 2 Wochen nachfassen …" className={textareaClass} />
                     </Field>
                   </div>
                   <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
                     <Field label="Wiedervorlage">
-                      <input type="date" name="follow_up_at" className={inputClass} />
+                      <input type="date" name="activity_follow_up_at" className={inputClass} />
                     </Field>
                     <button
                       type="submit"
@@ -602,6 +677,8 @@ function channelIcon(channel?: string | null) {
   if (value.includes("mail")) return "✉️";
   if (value.includes("insta")) return "📸";
   if (value.includes("persön")) return "🤝";
+  if (value.includes("schrift")) return "📬";
+
   return "▣";
 }
 

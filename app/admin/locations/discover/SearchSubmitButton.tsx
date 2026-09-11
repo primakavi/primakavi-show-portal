@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 
-export default function SearchSubmitButton() {
+export default function SearchSubmitButton({
+  label = "Locations finden",
+  loadingLabel = "Locations werden gesucht …",
+}: {
+  label?: string;
+  loadingLabel?: string;
+}) {
   const [loading, setLoading] = useState(false);
 
   return (
@@ -18,10 +24,10 @@ export default function SearchSubmitButton() {
             aria-hidden="true"
             className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-950/20 border-t-zinc-950"
           />
-          <span>Locations werden gesucht …</span>
+          <span>{loadingLabel}</span>
         </>
       ) : (
-        "Locations finden"
+        label
       )}
     </button>
   );

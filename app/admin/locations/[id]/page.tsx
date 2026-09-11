@@ -5,10 +5,13 @@ import LocationClient from "./LocationClient";
 
 export default async function LocationPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ imported?: string }>;
 }) {
   const { id } = await params;
+  const { imported } = await searchParams;
 
   // ------------------------------------------------------------
   // LOCATION
@@ -794,6 +797,7 @@ export default async function LocationPage({
       deleteAcquisition={deleteAcquisition}
       removeAcquisitionRound={removeAcquisitionRound}
       saveLocation={saveLocation}
+      importedFromDiscover={imported === "1"}
     />
   );
 }
