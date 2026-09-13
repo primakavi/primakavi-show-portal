@@ -1,88 +1,274 @@
-import { revalidatePath } from "next/cache";
+import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { Fragment, type ReactNode } from "react";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
+
 import CopyMailButtons from "./CopyMailButtons";
 import FileUploadBox from "./FileUploadBox";
-import EconomicsTab from "@/components/EconomicsTab";
-import Link from "next/link";
 
-const CHECKLIST_GROUPS = [
-  {
-    title: "Vorbereitung",
-    tone: "emerald",
-    items: [
-      "Formular vollständig",
-      "Vertrag geklärt",
-      "Ticketlink vorhanden",
-      "Termin auf Homepage",
-      "Technik geprüft",
-      "Ablauf geprüft",
-      "Hotel/Anreise geklärt",
-      "Promo verschickt",
-      "GEMA erledigt",
-      "Markus informiert",
-    ],
-  },
-  {
-    title: "Showtag",
-    tone: "amber",
-    items: [
-      "Ankunft / Zugang geklärt",
-      "Backstage / Catering geklärt",
-      "Show gespielt",
-    ],
-  },
-  {
-    title: "Nachbereitung",
-    tone: "purple",
-    items: [
-      "Rechnung vorbereitet",
-      "Rechnung geschickt",
-      "Zahlung geprüft",
-      "Feedback notiert",
-      "Akte abgeschlossen",
-    ],
-  },
-];
+import StatusSelectCard from "./StatusSelectCard";
+import QuickChecklistToggle from "./QuickChecklistToggle";
+import CastEditor from "./CastEditor";
+import PriceCategoryEditor from "./PriceCategoryEditor";
+import TicketSalesEditor from "./TicketSalesEditor";
+import InvoiceRecipientEditor from "./InvoiceRecipientEditor";
+import PromoEditor from "./PromoEditor";
+import TechEditor from "./TechEditor";
+import BackstageEditor from "./BackstageEditor";
+import AccommodationEditor from "./AccommodationEditor";
+import PaymentEditor from "./PaymentEditor";
+import TravelLegEditor from "./TravelLegEditor";
+import Rating from "./Rating";
+import CheckTile from "./CheckTile";
+import FeeEditor from "./FeeEditor";
+import FeeExtrasEditor from "./FeeExtrasEditor";
 
-export default async function ShowAktePage({
+type AreaState = "open" | "done";
+
+const CHECKLIST_BEFORE = [
+  "Showdaten geprüft",
+  "Vertrag geklärt",
+  "Ticketlink vorhanden",
+  "Ticketlink auf Homepage verlinkt",
+  "Technik geklärt",
+  "Ablauf geklärt",
+  "Zugang zur Spielstätte geklärt",
+  "Anreise / Unterkunft geklärt",
+  "Backstage / Catering geklärt",
+  "Besetzung vollständig",
+  "Markus / Team informiert",
+  "Promo erledigt",
+  "GEMA geklärt",
+] as const;
+
+const CHECKLIST_AFTER = [
+  "Rechnung verschickt",
+  "Zahlung vollständig",
+  "Show bewertet",
+] as const;
+
+const ALL_CHECKLIST = [
+  ...CHECKLIST_BEFORE,
+  ...CHECKLIST_AFTER,
+] as const;
+
+const MANUAL_CHECKLIST = new Set([
+  "Showdaten geprüft",
+  "Vertrag geklärt",
+  "Ablauf geklärt",
+  "Zugang zur Spielstätte geklärt",
+  "Markus / Team informiert",
+  "GEMA geklärt",
+]);
+
+export default async function ShowAkteV2Page({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string; reviewed?: string }>;
+  searchParams: Promise<{ saved?: string }>;
 }) {
   const { id } = await params;
-  
-  const { data: economics } = await supabaseAdmin
-  .schema("booking")
-  .from("show_economics")
-  .select("revenue_total, profit")
-  .eq("show_id", id)
-  .maybeSingle();
-  const { saved, reviewed } = await searchParams;
+  const { saved } = await searchParams;
 
-  const wasSaved = saved === "1";
-  const wasReviewed = reviewed === "1";
-  
-  const { data: show, error } = await supabaseAdmin
-    .schema("booking")
-    .from("shows")
-    .select(`
-      *,
-      show_files (*),
-      show_portal_submissions (
+  const [
+    showResult,
+    venuesResult,
+    organizersResult,
+    economicsResult,
+    castResult,
+    travelResult,
+    paymentsResult,
+    ticketCategoriesResult,
+    feeExtrasResult,
+  ] = await Promise.all([
+    supabaseAdmin
+      .schema("booking")
+      .from("shows")
+      .select(`
+        *,
+        show_files (*),
+        show_portal_submissions (
+          id,
+          submitted_at,
+          reviewed_at,
+          data
+        )
+      `)
+      .eq("id", id)
+      .single(),
+
+    supabaseAdmin
+      .from("venues")
+      .select(`
         id,
-        submitted_at,
-        reviewed_at,
-        data
-      )
-    `)
-    .eq("id", id)
-    .single();
+        name,
+        street,
+        postal_code,
+        city,
+        contact_name,
+        contact_email,
+        contact_phone,
+        booking_email,
+        capacity
+      `)
+      .order("name"),
 
-  if (error || !show) notFound();
+    supabaseAdmin
+      .from("organizers")
+      .select(`
+        id,
+        name,
+        city,
+        email,
+        phone,
+        organizer_contacts (
+          id,
+          name,
+          email,
+          phone,
+          is_primary
+        )
+      `)
+      .order("name"),
+
+    // WICHTIG: "*" statt nicht sicher vorhandener Spalten.
+    // So bleiben bestehende Wirtschaftlichkeitsdatensätze sichtbar.
+    supabaseAdmin
+      .schema("booking")
+      .from("show_economics")
+      .select("*")
+      .eq("show_id", id)
+      .maybeSingle(),
+
+    supabaseAdmin
+      .schema("booking")
+      .from("show_cast")
+      .select("*")
+      .eq("show_id", id)
+      .order("sort_order"),
+
+    supabaseAdmin
+      .schema("booking")
+      .from("show_travel_legs")
+      .select("*")
+      .eq("show_id", id)
+      .order("direction")
+      .order("sort_order"),
+
+    supabaseAdmin
+      .schema("booking")
+      .from("show_payments")
+      .select("*")
+      .eq("show_id", id)
+      .order("payment_date"),
+
+    supabaseAdmin
+      .schema("booking")
+      .from("show_ticket_categories")
+      .select("*")
+      .eq("show_id", id)
+      .order("sort_order"),
+
+    supabaseAdmin
+      .schema("booking")
+      .from("show_fee_extras")
+      .select("*")
+      .eq("show_id", id)
+      .order("sort_order"),
+  ]);
+
+  const show = showResult.data;
+  if (showResult.error || !show) notFound();
+
+  const venues = venuesResult.data || [];
+  const organizers = organizersResult.data || [];
+  const economics = economicsResult.data || null;
+  const rawCast = castResult.data || [];
+  const travelLegs = travelResult.data || [];
+  const payments = paymentsResult.data || [];
+  const ticketCategories = ticketCategoriesResult.data || [];
+  const feeExtras = feeExtrasResult.data || [];
+  const allowManualChecklist = ["gespielt", "abgeschlossen"].includes(
+    String(show.internal_status || "")
+  );
+
+  const venue = venues.find((item: any) => item.id === show.venue_id) || null;
+  const organizer =
+    organizers.find((item: any) => item.id === show.organizer_id) || null;
+
+  const contractPartnerName =
+    organizer?.name || show.venue || venue?.name || "Vertragspartner offen";
+
+  const venueName = show.venue || venue?.name || "Spielstätte offen";
+  const venueAddress = show.venue_address || buildAddress(venue);
+
+  const contractPartnerAddress = organizer
+    ? organizer.city || ""
+    : venueAddress;
+
+  const primaryOrganizerContact = organizer?.organizer_contacts?.find(
+    (contact: any) => contact.is_primary
+  );
+
+  const contractPartnerSummary = [
+    contractPartnerName,
+    organizer
+      ? primaryOrganizerContact?.name || show.contact_name
+      : show.contact_name,
+    organizer
+      ? primaryOrganizerContact?.email || organizer.email || show.invoice_email
+      : show.invoice_email || show.contact_email,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const venueSummary = [
+    venueName,
+    venueAddress,
+    show.invoice_email || show.contact_email,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  // Altbestand: markus_included bleibt lesbar.
+  // Falls in der neuen Besetzungstabelle noch kein Markus steht, wird er nur für V2 ergänzt.
+  const castForEditor = [...rawCast];
+  if (
+    show.markus_included === true &&
+    !castForEditor.some((person: any) =>
+      /markus schell/i.test(String(person.name || ""))
+    )
+  ) {
+    castForEditor.push({
+      name: "Markus Schell",
+      role: "Piano",
+      sort_order: castForEditor.length,
+    });
+  }
+
+  const hasMarkus =
+    show.markus_included === true ||
+    castForEditor.some((person: any) =>
+      /markus schell/i.test(String(person.name || ""))
+    );
+
+  const castLabel = hasMarkus ? "🎹 Mit Markus Schell" : "Solo";
+
+  const files = await Promise.all(
+    (show.show_files || []).map(async (file: any) => {
+      const { data } = await supabaseAdmin.storage
+        .from("show-files")
+        .createSignedUrl(file.storage_path, 60 * 60);
+
+      return {
+        ...file,
+        url: data?.signedUrl || null,
+      };
+    })
+  );
 
   const headerList = await headers();
   const host = headerList.get("host");
@@ -91,1388 +277,2250 @@ export default async function ShowAktePage({
     ? `${protocol}://${host}/show/${show.token}`
     : `/show/${show.token}`;
 
-  const progress = getProgress(show);
-  const health = getShowHealth(show);
-  const nextSteps = getNextSteps(show);
-  const latestSubmission = getLatestSubmission(show);
-  const newPortalInfo = hasNewPortalInfo(show);
-  const filesWithUrls = await Promise.all(
-  (show.show_files || []).map(async (file: any) => {
-    const { data } = await supabaseAdmin.storage
-      .from("show-files")
-      .createSignedUrl(file.storage_path, 60 * 60);
+  const paid = payments.reduce(
+    (sum: number, payment: any) => sum + Number(payment.amount || 0),
+    0
+  );
+  const invoiceAmount = Number(show.invoice_amount || 0);
 
-    return {
-      ...file,
-      url: data?.signedUrl || null,
-    };
-  })
-);
+  const sellableCapacity = Number(
+    show.sellable_capacity || show.capacity || 0
+  );
+  const ticketsSoldEntered =
+    show.tickets_sold !== null &&
+    show.tickets_sold !== undefined &&
+    String(show.tickets_sold).trim() !== "";
+  const ticketsSold = ticketsSoldEntered
+    ? Number(show.tickets_sold)
+    : null;
+  const occupancy =
+    ticketsSold !== null && sellableCapacity > 0
+      ? Math.round((ticketsSold / sellableCapacity) * 100)
+      : null;
+
+  const sectionStates = getSectionStates({
+    show,
+    cast: castForEditor,
+    travelLegs,
+    ticketCategories,
+  });
+
+  const checklist = buildChecklistView({
+    show,
+    sectionStates,
+    paid,
+    invoiceAmount,
+  });
+
+  const smartTasks = getSmartTasks({
+    show,
+    sectionStates,
+    checklistState: checklist.state,
+  });
+
+  const economicsSummary = getEconomicsSummary(economics);
 
   return (
-    <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 pb-32 text-zinc-950">
-      <form action={updateShowAction}>
+    <main className="pb-32 text-zinc-950">
+      <form action={saveShowV2Action}>
         <input type="hidden" name="id" value={show.id} />
 
-        <div className="mx-auto max-w-7xl space-y-6">
-          <header className="relative overflow-hidden rounded-[2rem] bg-zinc-950 px-8 py-10 text-white shadow-2xl">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_28%,rgba(221,242,26,0.16),transparent_24%),radial-gradient(circle_at_24%_34%,rgba(168,85,247,0.24),transparent_30%),radial-gradient(circle_at_76%_62%,rgba(236,72,153,0.32),transparent_34%),radial-gradient(circle_at_92%_20%,rgba(221,242,26,0.12),transparent_24%)]" />
-            <div className="absolute right-24 top-10 rotate-[10deg] text-5xl text-pink-400/70">
-              ✦
-            </div>
-            <div className="absolute right-48 top-24 -rotate-[14deg] text-3xl text-white/20">
-              ✧
-            </div>
+        <div className="space-y-5 sm:space-y-6">
 
-            <div className="relative grid gap-8 lg:grid-cols-[1fr_340px] lg:items-center">
-              <div>
-                <p className="text-sm font-black uppercase tracking-[0.22em] text-zinc-300">
+          {/* HEADER */}
+          <header className="overflow-hidden rounded-[1.55rem] bg-white shadow-sm ring-1 ring-black/5">
+            <div className="grid lg:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="px-6 py-6 sm:px-7">
+                <p className="text-xs font-black uppercase tracking-[.18em] text-zinc-400">
                   Show-Akte
                 </p>
 
-                <h1 className="mt-5 max-w-3xl text-5xl font-black leading-tight tracking-tight">
-                  {show.venue || "Location offen"}
+                <h1 className="mt-2 max-w-5xl break-words text-3xl font-black tracking-tight sm:text-4xl">
+                  {contractPartnerName}
                 </h1>
 
-                <p className="mt-3 text-xl font-semibold text-zinc-300">
+                <p className="mt-2 text-base font-black text-zinc-600">
                   {show.program || "Programm offen"}
                 </p>
 
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <span
-                    className={`rounded-full px-4 py-2 text-sm font-black ring-1 ${healthClass(
-                      health.tone
-                    )}`}
-                  >
-                    {health.emoji} {health.label}
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <InfoLine
+                    label="Vertragspartner"
+                    value={contractPartnerName}
+                    subline={contractPartnerAddress || undefined}
+                  />
+                  <InfoLine
+                    label="Spielstätte"
+                    value={venueName}
+                    subline={venueAddress || undefined}
+                  />
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <span className="rounded-full bg-[#fbf7ef] px-3 py-2 text-xs font-black text-zinc-800">
+                    {castLabel}
                   </span>
 
-
-                  {show.markus_included && (
-                    <span className="rounded-full bg-purple-400/20 px-4 py-2 text-sm font-black text-purple-100 ring-1 ring-purple-300/30">
-                      🎹 Markus dabei
-                    </span>
-                  )}
-
-                  {show.follow_up_date && (
-                    <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-black text-white">
-                      WVL: {formatDate(show.follow_up_date)}
+                  {show.emergency_phone ? (
+                    <a
+                      href={`tel:${show.emergency_phone}`}
+                      className="rounded-full bg-[#eef5ff] px-3 py-2 text-xs font-black text-[#2867d8]"
+                    >
+                      ☎ {show.contact_name || "Showtag-Kontakt"} ·{" "}
+                      {show.emergency_phone}
+                    </a>
+                  ) : (
+                    <span className="rounded-full bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">
+                      ☎ Showtag-Kontakt offen
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-[2rem] border border-white/15 bg-white/15 p-5 shadow-2xl backdrop-blur-2xl">
-                <div className="grid grid-cols-[100px_1fr] gap-5">
-<div className="flex min-h-[140px] flex-col items-center justify-center rounded-3xl border border-white/10 bg-white/15 p-4 text-center shadow-inner">
-  <p className="text-xs font-black uppercase text-zinc-300">
-    {show.weekday || "Datum"}
-  </p>
+              <div className="border-t border-black/5 bg-[#fffdf8] p-5 lg:border-l lg:border-t-0">
+                <div className="grid h-full grid-cols-[105px_1fr] gap-5">
+                  <div className="flex min-h-[145px] flex-col items-center justify-center rounded-[1.4rem] bg-[#fde8e7] px-3 text-center">
+                    <p className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-500">
+                      {show.weekday || "Datum"}
+                    </p>
+                    <p className="mt-1 text-4xl font-black">
+                      {dateParts(show.show_date).day}
+                    </p>
+                    <p className="mt-2 text-sm font-black uppercase">
+                      {dateParts(show.show_date).month}{" "}
+                      {dateParts(show.show_date).year}
+                    </p>
+                  </div>
 
-  <p className="mt-2 text-5xl font-black leading-none">
-    {formatDateParts(show.show_date).day}
-  </p>
-
-  <p className="mt-2 text-sm font-black uppercase leading-none">
-    {formatDateParts(show.show_date).month}
-  </p>
-
-  <p className="mt-1 text-xs text-zinc-300">
-    {formatDateParts(show.show_date).year}
-  </p>
-</div>
-                  <div className="self-center">
-                    <div className="space-y-3 text-sm">
-                      <div className="rounded-2xl bg-white/10 px-4 py-3 font-semibold text-zinc-100">
-                        <p>Beginn: {show.start_time || "offen"}</p>
-                        <p className="mt-1">
-                          Einlass: {show.entry_time || "offen"}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl bg-white/10 px-4 py-3 font-semibold text-zinc-100">
-                        <p>⌖ Adresse</p>
-                        <p className="mt-1 text-zinc-200">
-                          {show.venue_address || show.city || "Adresse offen"}
-                        </p>
-                      </div>
-                    </div>
+                  <div className="flex flex-col justify-center gap-3 text-sm font-bold text-zinc-700">
+                    <span>🕒 {formatTimeDisplay(show.start_time) || "Beginn offen"}</span>
+                    <span>
+                      🚪 Einlass{" "}
+                      {formatTimeDisplay(show.entry_time) || "offen"}
+                    </span>
+                    <span>
+                      🎟️{" "}
+                      {show.capacity
+                        ? `max. ${numericText(show.capacity)} Plätze`
+                        : "Kapazität offen"}
+                    </span>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* 4 STATUS-KACHELN */}
+            <div className="border-t border-black/5 px-5 py-4 sm:px-6">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <StatusSelectCard
+                  name="internal_status"
+                  icon="🎟️"
+                  tone="green"
+                  defaultValue={show.internal_status}
+                  options={[
+                    ["option", "Option"],
+                    ["fix", "Fix gebucht"],
+                    ["gespielt", "Gespielt"],
+                    ["abgeschlossen", "Abgeschlossen"],
+                    ["abgesagt", "Abgesagt"],
+                  ]}
+                />
+
+                <StatusSelectCard
+                  name="work_status"
+                  icon="✅"
+                  tone="blue"
+                  defaultValue={show.work_status}
+                  options={[
+                    ["offen", "Offen"],
+                    ["wartet_auf_booking", "Wartet auf Booking"],
+                    [
+                      "wartet_auf_vertragspartner",
+                      "Wartet auf Vertragspartner",
+                    ],
+                    ["wartet_auf_kuenstler", "Wartet auf Künstler:in"],
+                    ["nichts_offen", "Nichts offen"],
+                  ]}
+                />
+
+                <StatusSelectCard
+                  name="contract_status"
+                  icon="📝"
+                  tone="yellow"
+                  defaultValue={show.contract_status}
+                  options={[
+                    ["offen", "Vertrag offen"],
+                    [
+                      "wartet_auf_vertragspartner",
+                      "Wartet auf Vertragspartner",
+                    ],
+                    ["wartet_auf_kuenstler", "Wartet auf Künstler:in"],
+                    ["erledigt", "Vertrag erledigt"],
+                    ["nicht_erforderlich", "Nicht erforderlich"],
+                  ]}
+                />
+
+                <StatusSelectCard
+                  name="billing_status"
+                  icon="💶"
+                  tone="red"
+                  defaultValue={show.billing_status}
+                  options={[
+                    ["offen", "Abrechnung offen"],
+                    ["rechnung_zu_schreiben", "Rechnung zu schreiben"],
+                    ["rechnung_verschickt", "Rechnung verschickt"],
+                    ["bezahlt", "Bezahlt"],
+                    ["nicht_relevant", "Nicht relevant"],
+                  ]}
+                />
               </div>
             </div>
           </header>
 
-          <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
-            <section className="space-y-6">
-              <FormSection number="01" title="Veranstaltung" doodle="〰" tone="purple">
-                <CompactGrid>
-                  <Input name="artist" label="Artist" defaultValue={show.artist} />
-                  <Input name="program" label="Programm" defaultValue={show.program} />
-                  <Input name="show_date" label="Datum" type="date" defaultValue={show.show_date} />
-                  <Input name="venue" label="Veranstaltungsort / Location" defaultValue={show.venue} />
-                  <Input name="city" label="Stadt / Ort" defaultValue={show.city} />
-                  <Input name="venue_address" label="Adresse" defaultValue={show.venue_address} />
-                </CompactGrid>
-              </FormSection>
+          {/* COMMAND CENTER */}
+          <section className="rounded-[1.55rem] bg-white p-5 shadow-sm ring-1 ring-black/5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef4ff] text-xl font-black text-[#2867d8]">
+                  ✓
+                </span>
 
-              <FormSection number="02" title="Organisation & Kontakt" doodle="☆" tone="pink">
-                <CompactGrid>
-                  <Input name="contact_name" label="Ansprechpartner:in" defaultValue={show.contact_name} />
-                  <Input name="contact_email" label="E-Mail" defaultValue={show.contact_email} />
-                  <Input name="contact_phone" label="Telefon" defaultValue={show.contact_phone} />
-                  <Input name="emergency_phone" label="Mobilnummer für Zugang am Veranstaltungstag" defaultValue={show.emergency_phone} />
-                </CompactGrid>
-              </FormSection>
+                <div className="min-w-0">
+                  <h2 className="text-2xl font-black tracking-tight">
+                    Was ist jetzt zu tun?
+                  </h2>
+                  <p className="mt-1 text-sm font-black text-zinc-600">
+                    {workStatusTitle(
+                      show.work_status,
+                      show.internal_status,
+                      smartTasks.length
+                    )}
+                  </p>
 
-              <FormSection number="03" title="Ablauf & Planung" doodle="↙" tone="orange">
-                <CompactGrid>
-                  <Input name="soundcheck_time" label="Aufbauzeit / Soundcheck" defaultValue={show.soundcheck_time} />
-                  <Input name="entry_time" label="Einlass für die Gäste" defaultValue={show.entry_time} />
-                  <Input name="start_time" label="Showbeginn" defaultValue={show.start_time} />
-                  <Input name="arrival_time" label="Gewünschte Ankunft" defaultValue={show.arrival_time} />
-                </CompactGrid>
-
-                <Textarea name="schedule_notes" label="Besonderheiten zum Ablauf" defaultValue={show.schedule_notes} />
-              </FormSection>
-
-              <FormSection number="04" title="Technik" doodle="♫" tone="purple">
-                <CompactGrid>
-                  <CheckInput
-                    name="tech_sound_available"
-                    label="Ton vorhanden"
-                    defaultChecked={show.tech_sound_available === true}
-                  />
-                  <CheckInput
-                    name="tech_lights_available"
-                    label="Licht vorhanden"
-                    defaultChecked={show.tech_lights_available === true}
-                  />
-                  <Input name="piano_type" label="Klavier / Flügel" defaultValue={show.piano_type} />
-                  <Input name="epiano_available" label="E-Piano" defaultValue={show.epiano_available} />
-                  <Input name="piano_notes" label="Marke / Modell" defaultValue={show.piano_notes} />
-                  <Input name="tech_contact" label="Technik-Ansprechpartner" defaultValue={show.tech_contact} />
-                </CompactGrid>
-
-                <Textarea name="tech_notes" label="Besonderheiten zur Technik" defaultValue={show.tech_notes} />
-              </FormSection>
-
-<FormSection number="05" title="Vertrag & Finanzen" doodle="♡" tone="orange">
-  <CompactGrid>
-    <Input name="contract_status" label="Aktueller Vertragsstatus" defaultValue={show.contract_status} />
-    <Input name="fee" label="Honorar" defaultValue={show.fee} />
-    <Input name="ticket_prices" label="Eintrittspreise" defaultValue={show.ticket_prices} />
-    <Input name="capacity" label="Anzahl Plätze / Kapazität" defaultValue={show.capacity} />
-    <Input name="free_tickets" label="Anzahl Freikarten" defaultValue={show.free_tickets} />
-    <Input name="ticket_link" label="Ticketlink" defaultValue={show.ticket_link} />
-    <Input name="invoice_email" label="Rechnungs-E-Mail" defaultValue={show.invoice_email} />
-    <Input name="po_number" label="Bestellnummer / PO-Nummer" defaultValue={show.po_number} />
-  </CompactGrid>
-
-  <Textarea
-    name="invoice_address"
-    label="Rechnungsadresse"
-    defaultValue={show.invoice_address}
-  />
-
-  <Textarea
-    name="contract_notes"
-    label="Hinweise zur Rechnung / Vertrag"
-    defaultValue={show.contract_notes}
-  />
-
-  {show.contract_link && (
-    <a
-      href={show.contract_link}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex w-fit rounded-2xl bg-white px-5 py-3 text-sm font-black text-zinc-950"
-    >
-      Vertrag öffnen →
-    </a>
-  )}
-</FormSection>
-
-              <FormSection number="06" title="Promotion" doodle="✦" tone="pink">
-                <CompactGrid>
-                  <Input name="flyers_needed" label="Werden Flyer benötigt?" defaultValue={show.flyers_needed} />
-                  <Input name="flyer_amount" label="Anzahl Flyer" defaultValue={show.flyer_amount} />
-                  <Input name="posters_needed" label="Werden Plakate benötigt?" defaultValue={show.posters_needed} />
-                  <Input name="poster_details" label="Plakate: Anzahl & Größe" defaultValue={show.poster_details} />
-                </CompactGrid>
-
-                <Textarea name="promotion" label="Weitere Hinweise zur Promotion" defaultValue={show.promotion} />
-              </FormSection>
-
-              <FormSection number="07" title="Verpflegung & Backstage" doodle="〰" tone="teal">
-                <CompactGrid>
-                  <Input name="catering_status" label="Catering / Getränke vorgesehen?" defaultValue={show.catering_status} />
-                  <Input name="catering_details" label="Details Catering" defaultValue={show.catering_details} />
-                  <CheckInput
-                    name="backstage_room_available"
-                    label="Backstage-Raum vorhanden"
-                    defaultChecked={show.backstage_room_available === true}
-                  />
-                  <CheckInput
-                    name="backstage_mirror_available"
-                    label="Spiegel vorhanden"
-                    defaultChecked={show.backstage_mirror_available === true}
-                  />
-                  <CheckInput
-                    name="backstage_seating_available"
-                    label="Sitzgelegenheit vorhanden"
-                    defaultChecked={show.backstage_seating_available === true}
-                  />
-                  <CheckInput
-                    name="backstage_table_available"
-                    label="Tisch vorhanden"
-                    defaultChecked={show.backstage_table_available === true}
-                  />
-                  <CheckInput
-                    name="backstage_no_room"
-                    label="Kein Backstage-Raum vorhanden"
-                    defaultChecked={show.backstage_no_room === true}
-                  />
-                </CompactGrid>
-
-                <Textarea name="backstage_notes" label="Backstage-Notizen" defaultValue={show.backstage_notes} />
-              </FormSection>
-
-              <FormSection number="08" title="Unterkunft & Anreise" doodle="↗" tone="orange">
-                <CompactGrid>
-                  <Input name="accommodation_type" label="Wie ist die Unterkunft geregelt?" defaultValue={show.accommodation_type} />
-                  <Input name="accommodation_hotel_name" label="Hotelname / Unterkunft" defaultValue={show.accommodation_hotel_name} />
-                  <Input name="accommodation_buyout" label="Hotel-Buyout" defaultValue={show.accommodation_buyout} />
-                  <Input name="accommodation_address" label="Hoteladresse" defaultValue={show.accommodation_address} />
-                </CompactGrid>
-
-                <Textarea name="accommodation_notes" label="Unterkunftsnotizen" defaultValue={show.accommodation_notes} />
-
-                <CompactGrid>
-                  <CheckInput
-                    name="parking_available"
-                    label="Parkplatz vorhanden"
-                    defaultChecked={show.parking_available === true}
-                  />
-                  <CheckInput
-                    name="loading_zone_available"
-                    label="Ladezone vorhanden"
-                    defaultChecked={show.loading_zone_available === true}
-                  />
-                  <CheckInput
-                    name="no_parking_available"
-                    label="Keine Parkmöglichkeit"
-                    defaultChecked={!!show.no_parking_available === true}
-                  />
-                  <CheckInput
-                    name="public_transport_recommended"
-                    label="ÖPNV empfohlen"
-                    defaultChecked={!!show.public_transport_recommended === true}
-                  />
-                  <Input name="parking_details" label="Parkdetails" defaultValue={show.parking_details} />
-                </CompactGrid>
-
-                <Textarea name="travel_notes" label="Details zur Anreise" defaultValue={show.travel_notes} />
-              </FormSection>
-
-              <FormSection number="09" title="Sonstiges" doodle="?" tone="zinc">
-                <Textarea name="general_notes" label="Gibt es noch etwas, das wir wissen sollten?" defaultValue={show.general_notes} />
-              </FormSection>
-
-              <FormSection number="10" title="Checkliste" doodle="✓" tone="teal">
-                <div className="space-y-6">
-                  {CHECKLIST_GROUPS.map((group) => {
-                    const groupProgress = getChecklistGroupProgress(show, group.items);
-
-                    return (
-                      <div key={group.title} className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-black text-zinc-800">
-                            {group.title}
-                          </p>
-                          <span className={`rounded-full px-3 py-1 text-xs font-black ${checklistTone(group.tone)}`}>
-                            {groupProgress.done} / {groupProgress.total}
-                          </span>
-                        </div>
-
-                        <div className="grid gap-3 md:grid-cols-2">
-                          {group.items.map((item) => {
-                          const checked = isChecklistChecked(show, item);
-                          const auto = isAutoChecklistItem(item);
-                          const allowManualOverride = item === "Vertrag geklärt";
-
-                            return (
-                              <label
-                                key={item}
-                                className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                                  checked
-                                    ? checkedChecklistClass(group.tone)
-                                    : "bg-white text-zinc-700"
-                                }`}
-                              >
-                                <span className="flex items-center gap-3">
-                                  <input
-                                    type="checkbox"
-                                    name={`checklist_${item}`}
-                                    defaultChecked={checked}
-                                    disabled={auto && !allowManualOverride}
-                                    className="h-5 w-5"
-                                  />
-                                  {item}
-                                </span>
-
-                                {auto && !allowManualOverride && checked && (
-                                  <span className="text-xs font-black opacity-70">
-                                    auto
-                                  </span>
-                                )}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {show.next_step ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <p className="text-sm font-black text-zinc-900">
+                        {show.next_step}
+                      </p>
+                      {show.follow_up_date && (
+                        <span className="text-xs font-bold text-zinc-400">
+                          WVL {formatDate(show.follow_up_date)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm font-semibold text-zinc-400">
+                      Noch kein individueller nächster Schritt hinterlegt.
+                    </p>
+                  )}
                 </div>
-              </FormSection>
-            </section>
+              </div>
 
-            <aside className="space-y-6 lg:top-8 lg:self-start">
-              <SideCard title="Was ist jetzt zu tun?" tone="amber">
-                {nextSteps.length === 0 ? (
-  <div
-  className={`rounded-[1.5rem] px-6 py-5 ${
-    show.internal_status === "abgesagt"
-      ? "bg-red-100 text-red-700"
-      : "bg-emerald-100 text-emerald-800"
-  }`}
->
-  <div className="flex min-h-[72px] items-center">
-    <p className="text-lg font-black leading-tight">
-      {show.internal_status === "abgesagt"
-        ? "❌ Diese Show ist abgesagt."
-        : "Keine offenen Punkte. Diese Show ist spielbereit 🎉"}
-    </p>
-  </div>
-</div>
-) : (
-                  <div className="space-y-3">
-                    {nextSteps.map((task) => (
-                      <div
-                        key={task.label}
-                        className={`rounded-2xl px-4 py-3 text-sm font-black ${
-                          task.critical
-                            ? "bg-rose-100 text-rose-800"
-                            : "bg-white text-zinc-700"
-                        }`}
-                      >
-                        {task.critical ? "⚠️ " : "→ "}
-                        {task.label}
-                      </div>
-                    ))}
+              <details className="group relative">
+                <summary className="list-none cursor-pointer rounded-xl bg-white px-4 py-2.5 text-xs font-black text-zinc-700 ring-1 ring-black/10 transition hover:bg-[#fbf7ef] [&::-webkit-details-marker]:hidden">
+                  + Nächster Schritt / WVL
+                </summary>
+
+                <div className="absolute right-0 z-20 mt-2 w-[min(560px,85vw)] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-black/10">
+                  <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
+                    <Input
+                      name="next_step"
+                      label="Nächster Schritt"
+                      defaultValue={show.next_step}
+                    />
+                    <Input
+                      name="follow_up_date"
+                      label="Wiedervorlage"
+                      type="date"
+                      defaultValue={show.follow_up_date}
+                    />
                   </div>
+                </div>
+              </details>
+            </div>
+
+            {!show.next_step && (
+              <div className="mt-4 rounded-xl bg-[#f7faff] px-4 py-3 text-xs font-semibold leading-5 text-zinc-600 ring-1 ring-[#e6eefb]">
+                <span className="font-black text-[#2867d8]">ⓘ Tipp:</span>{" "}
+                Trage einen nächsten Schritt ein, wenn es eine konkrete Aufgabe
+                gibt – z. B. „Nicole wegen Vertrag anrufen“.
+              </div>
+            )}
+
+            <div className="mt-5 border-t border-black/5 pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-black">Offene Punkte</p>
+                <a
+                  href="#arbeitsliste"
+                  className="text-xs font-black text-[#2867d8] hover:underline"
+                >
+                  Zur Arbeitsliste →
+                </a>
+              </div>
+
+              <div className="mt-3 grid gap-x-8 gap-y-2 md:grid-cols-2">
+                {smartTasks.map((task) =>
+                  task.manual ? (
+                    <QuickChecklistToggle
+                      key={task.label}
+                      targetId={checklistInputId(task.label)}
+                      initialChecked={
+                        checklist.state[task.label] === true
+                      }
+                      label={task.label}
+                    />
+                  ) : (
+                    <a
+                      key={task.label}
+                      href={task.href}
+                      className="flex items-center gap-3 text-sm font-semibold text-zinc-700 transition hover:text-[#2867d8]"
+                    >
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-[9px]">
+                        ○
+                      </span>
+                      <span>{task.label}</span>
+                      <span className="ml-auto text-zinc-300">→</span>
+                    </a>
+                  )
                 )}
-              </SideCard>
-              <SideCard title="Interne Steuerung" tone="zinc">
-                <div className="space-y-4">
-                 <Select
-  name="internal_status"
-  label="Status intern"
-  defaultValue={show.internal_status}
-  options={[
-    ["neu", "🔴 Neu"],
-    ["offen", "⚪ Offen"],
-    ["option", "🟣 Option"],
-    ["in_arbeit", "🟠 In Arbeit"],
-    ["wartet_auf_veranstalter", "⏳ Wartet auf Veranstalter"],
-    ["wartet_auf_sonja", "💬 Wartet auf Sonja"],
-    ["fertig", "🎭 Spielbereit"],
-    ["abgeschlossen", "✅ Abgeschlossen"],
-    ["abgesagt", "❌ Abgesagt"],
-    ["archiv", "📦 Archiv"],
-  ]}
-/>
+
+                {!smartTasks.length && (
+                  <p className="text-sm font-black text-emerald-700">
+                    ✓ Aktuell nichts offen.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* ① VOR DER SHOW */}
+          <PhaseHeader
+            number="1"
+            title="Vor der Show"
+            subtitle="Alles, was vorher geklärt sein muss."
+          />
+
+          <div className="space-y-3">
+            <FormSection
+              id="showdaten"
+              icon="🎭"
+              title="Showdaten"
+              state={sectionStates.showdata}
+              preview={[show.program, venueName, venueAddress]}
+            >
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                <Select
+                  name="venue_id"
+                  label="Spielstätte"
+                  defaultValue={show.venue_id}
+                  options={[
+                    ["", "Bitte Spielstätte auswählen"],
+...venues.map(
+  (item: any) =>
+    [
+      item.id,
+      `${item.name || "Ohne Namen"}${
+        item.city ? ` · ${item.city}` : ""
+      }`,
+    ] as [string, string]
+),
+                  ]}
+                />
+
+                {venue && (
+                  <Link
+                    href={`/admin/locations/${venue.id}`}
+                    className="mb-0.5 rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-black text-zinc-600 ring-1 ring-black/5 transition hover:text-zinc-950"
+                  >
+                    Stammdaten öffnen →
+                  </Link>
+                )}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input
+                  name="program"
+                  label="Programm"
+                  defaultValue={show.program}
+                />
+                <Input
+                  name="show_date"
+                  label="Datum"
+                  type="date"
+                  defaultValue={show.show_date}
+                />
+                <Input
+                  name="start_time"
+                  label="Showbeginn"
+                  type="time"
+                  defaultValue={normalizeTimeInput(show.start_time)}
+                />
+                <Input
+                  name="capacity"
+                  label="Kapazität"
+                  type="number"
+                  defaultValue={numericText(show.capacity)}
+                />
+              </div>
+            </FormSection>
+
+            <FormSection
+              id="vertragspartner"
+              icon="🤝"
+              title="Vertragspartner & Kontakt"
+              state={sectionStates.contact}
+              preview={[
+                contractPartnerName,
+                show.contact_name,
+                show.contact_email,
+              ]}
+            >
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                <Select
+                  name="organizer_id"
+                  label="Vertragspartner"
+                  defaultValue={show.organizer_id}
+                  options={[
+                    [
+                      "",
+                      "Kein separater Veranstalter – Spielstätte ist Vertragspartner",
+                    ],
+...organizers.map(
+  (item: any) =>
+    [
+      item.id,
+      `${item.name}${
+        item.city ? ` · ${item.city}` : ""
+      }`,
+    ] as [string, string]
+),
+                  ]}
+                />
+
+                {organizer && (
+                  <Link
+                    href={`/admin/organizers/${organizer.id}`}
+                    className="mb-0.5 rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-black text-zinc-600 ring-1 ring-black/5 transition hover:text-zinc-950"
+                  >
+                    Stammdaten öffnen →
+                  </Link>
+                )}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input
+                  name="contact_name"
+                  label="Ansprechpartner:in"
+                  defaultValue={show.contact_name}
+                />
+                <Input
+                  name="contact_email"
+                  label="E-Mail"
+                  defaultValue={show.contact_email}
+                />
+                <Input
+                  name="contact_phone"
+                  label="Telefon"
+                  defaultValue={show.contact_phone}
+                />
+                <Input
+                  name="emergency_phone"
+                  label="Mobilnummer Veranstaltungstag"
+                  defaultValue={show.emergency_phone}
+                />
+              </div>
+            </FormSection>
+
+            <FormSection
+              id="vertrag-finanzen"
+              icon="📝"
+              title="Vertrag & Finanzen"
+              state={sectionStates.contract}
+              preview={[
+                feePreview(show),
+                ticketPricePreview(ticketCategories, show.ticket_prices),
+              ]}
+            >
+              <SmallHeading>Konditionen</SmallHeading>
+
+              <div className="grid items-start gap-4 lg:grid-cols-[1.15fr_1.25fr_.75fr]">
+                <div className="self-start">
+                  <FieldLabel>Honorar</FieldLabel>
+                  <FeeEditor show={show} />
+                  <FeeExtrasEditor initialExtras={feeExtras} />
+                </div>
+
+                <div className="self-start">
+                  <FieldLabel>Eintrittspreise</FieldLabel>
+                  <PriceCategoryEditor
+                    initialCategories={ticketCategories}
+                  />
+                </div>
+
+                <div className="self-start space-y-3">
+                  <Input
+                    name="free_tickets"
+                    label="Freikarten"
+                    defaultValue={show.free_tickets}
+                  />
 
                   <Select
-                    name="billing_status"
-                    label="Abrechnung"
-                    defaultValue={show.billing_status}
+                    name="contract_status"
+                    label="Vertrag"
+                    defaultValue={show.contract_status}
                     options={[
-                      ["offen", "Offen"],
-                      ["rechnung_zu_schreiben", "Rechnung zu schreiben"],
-                      ["rechnung_verschickt", "Rechnung verschickt"],
-                      ["bezahlt", "Bezahlt"],
-                      ["nicht_relevant", "Nicht relevant"],
+                      ["offen", "Vertrag offen"],
+                      [
+                        "wartet_auf_vertragspartner",
+                        "Wartet auf Vertragspartner",
+                      ],
+                      ["wartet_auf_kuenstler", "Wartet auf Künstler:in"],
+                      ["erledigt", "Vertrag erledigt"],
+                      ["nicht_erforderlich", "Nicht erforderlich"],
                     ]}
                   />
 
-                  <Input name="next_step" label="Nächster Schritt manuell" defaultValue={show.next_step} />
-                  <Input name="follow_up_date" label="Wiedervorlage" type="date" defaultValue={show.follow_up_date} />
-
-                  <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-700">
-                    <input
-                      type="checkbox"
-                      name="markus_included"
-                      defaultChecked={show.markus_included === true}
-                      className="h-5 w-5"
+                  <div className="pt-1 [&_a]:block [&_a]:max-w-full [&_a]:truncate">
+                    <ContextFiles
+                      title="Vertragsdateien"
+                      files={files}
+                      pattern={/vertrag|contract/i}
                     />
-                    🎹 Markus dabei
-                  </label>
-
-                  <Textarea name="markus_notes" label="Notizen für Markus" defaultValue={show.markus_notes} />
+                  </div>
                 </div>
-                <Textarea
-  name="sonja_notes"
-  label="Interne Notizen für Sonja"
-  defaultValue={show.sonja_notes}
-/>
-              </SideCard>
+              </div>
 
-              <SideCard title="Formular Status" tone="purple">
-                <div>
-                  <p className="text-sm font-black text-purple-700">
-                    {progress.done} / {progress.total} Pflichtinfos
-                  </p>
-                  <p className="mt-1 text-xs font-bold text-zinc-500">
-                    Vollständigkeit der Veranstaltungsdaten
-                  </p>
-                </div>
+              <SmallHeading>Rechnungsempfänger</SmallHeading>
 
-                <div className="mt-4 h-2 rounded-full bg-purple-200">
-                  <div
-                    className="h-2 rounded-full bg-purple-500 transition-all"
-                    style={{ width: `${progress.percent}%` }}
+              <InvoiceRecipientEditor
+                defaultSource={
+                  show.invoice_recipient_source || "contract_partner"
+                }
+                contractPartnerSummary={contractPartnerSummary}
+                venueSummary={venueSummary}
+                values={show}
+              />
+
+              <details
+                open={Boolean(show.contract_notes)}
+                className="rounded-xl bg-[#fbf7ef] ring-1 ring-black/5"
+              >
+                <summary className="list-none cursor-pointer px-4 py-3 text-xs font-black text-zinc-700 [&::-webkit-details-marker]:hidden">
+                  {show.contract_notes
+                    ? "Hinweise zu Vertrag / Rechnung"
+                    : "+ Hinweis hinzufügen"}
+                </summary>
+                <div className="px-4 pb-4">
+                  <CompactTextarea
+                    name="contract_notes"
+                    label=""
+                    defaultValue={show.contract_notes}
                   />
                 </div>
+              </details>
 
-                <div className="mt-5 space-y-2">
-                  {progress.missing.length === 0 ? (
-                    <p className="rounded-2xl bg-emerald-100 px-4 py-3 text-sm font-black text-emerald-700">
-                      Alles vollständig 🎉
-                    </p>
-                  ) : (
-                    progress.missing.map((item) => (
-                      <p
-                        key={item}
-                        className="rounded-2xl bg-white/80 px-4 py-3 text-sm font-bold text-zinc-700"
+            </FormSection>
+
+            <FormSection
+              id="besetzung"
+              icon="👥"
+              title="Besetzung"
+              state={sectionStates.cast}
+              preview={[castPreview(castForEditor)]}
+            >
+              <CastEditor initialCast={castForEditor} />
+
+              <label className="flex min-h-11 items-center gap-3 rounded-xl bg-white px-4 text-sm font-black text-zinc-700 ring-1 ring-black/5">
+                <input
+                  type="checkbox"
+                  name="cast_confirmed"
+                  defaultChecked={show.cast_confirmed === true}
+                  className="h-4 w-4"
+                />
+                Besetzung vollständig
+              </label>
+            </FormSection>
+
+            <FormSection
+              id="promo-ticketing"
+              icon="📣"
+              title="Promo & Ticketing"
+              state={sectionStates.promo}
+              preview={[
+                show.ticket_link ? "Ticketlink ✓" : "Ticketlink offen",
+                show.homepage_ticket_linked ? "Homepage ✓" : null,
+                promoLabel(
+                  show.promo_send_status,
+                  show.promo_follow_up_date
+                ),
+                show.flyer_amount
+                  ? `Flyer ${show.flyer_amount}`
+                  : null,
+                posterPreview(show),
+              ]}
+            >
+              <PromoEditor show={show} />
+              <ContextFiles
+                title="Promo-Dateien"
+                files={files}
+                pattern={/promo|flyer|plakat|poster/i}
+              />
+            </FormSection>
+
+            <FormSection
+              id="technik"
+              icon="🎤"
+              title="Technik & Bühne"
+              state={sectionStates.tech}
+              preview={techPreview(show)}
+            >
+              <TechEditor show={show} />
+              <ContextFiles
+                title="Technik-Dateien"
+                files={files}
+                pattern={/technik|tech|rider|bühne|stage/i}
+              />
+            </FormSection>
+
+            <FormSection
+              id="backstage"
+              icon="☕"
+              title="Backstage & Catering"
+              state={sectionStates.backstage}
+              preview={[
+                backstagePreview(show),
+                cateringPreview(show),
+              ]}
+            >
+              <BackstageEditor show={show} />
+            </FormSection>
+
+            <FormSection
+              id="anreise"
+              icon="🧳"
+              title="Anreise & Unterkunft"
+              state={sectionStates.travel}
+              preview={[
+                travelPreview(travelLegs) || "Anreise noch offen",
+                accommodationPreview(show),
+              ]}
+            >
+              <SmallHeading>Anreise</SmallHeading>
+              <TravelLegEditor initialLegs={travelLegs} />
+
+              <SmallHeading>Unterkunft</SmallHeading>
+              <AccommodationEditor show={show} />
+            </FormSection>
+
+            <FormSection
+              id="ablauf"
+              icon="🕒"
+              title="Ablauf & Showtag"
+              state={sectionStates.schedule}
+              preview={[
+                show.arrival_time
+                  ? `Ankunft ${formatTimeDisplay(show.arrival_time)}`
+                  : "Ankunft offen",
+                show.setup_time
+                  ? `Aufbau ${formatTimeDisplay(show.setup_time)}`
+                  : "Aufbau offen",
+                show.soundcheck_time
+                  ? `Soundcheck ${formatTimeDisplay(show.soundcheck_time)}`
+                  : "Soundcheck offen",
+                show.entry_time
+                  ? `Einlass ${formatTimeDisplay(show.entry_time)}`
+                  : "Einlass offen",
+                show.start_time
+                  ? `Beginn ${formatTimeDisplay(show.start_time)}`
+                  : null,
+              ]}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <Input
+                  name="arrival_time"
+                  label="Ankunft"
+                  type="time"
+                  defaultValue={normalizeTimeInput(show.arrival_time)}
+                />
+                <Input
+                  name="setup_time"
+                  label="Aufbau"
+                  type="time"
+                  defaultValue={normalizeTimeInput(show.setup_time)}
+                />
+                <Input
+                  name="soundcheck_time"
+                  label="Soundcheck"
+                  type="time"
+                  defaultValue={normalizeTimeInput(show.soundcheck_time)}
+                />
+                <Input
+                  name="entry_time"
+                  label="Einlass"
+                  type="time"
+                  defaultValue={normalizeTimeInput(show.entry_time)}
+                />
+              </div>
+
+              <Input
+                name="venue_access_details"
+                label="Zugang / Treffpunkt vor Ort"
+                defaultValue={show.venue_access_details}
+              />
+
+              <CompactTextarea
+                name="schedule_notes"
+                label="Besonderheiten zum Ablauf"
+                defaultValue={show.schedule_notes}
+              />
+            </FormSection>
+          </div>
+
+          {/* ② SHOW */}
+          <PhaseHeader
+            number="2"
+            title="Show"
+            subtitle="Heute auf einen Blick."
+          />
+
+          <section className="rounded-[1.55rem] bg-white p-5 shadow-sm ring-1 ring-black/5 sm:p-6">
+            <div className="overflow-x-auto">
+              <div className="grid min-w-[720px] grid-cols-5 gap-2">
+                <Timeline
+                  label="Ankunft"
+                  value={formatTimeDisplay(show.arrival_time)}
+                />
+                <Timeline
+                  label="Aufbau"
+                  value={formatTimeDisplay(show.setup_time)}
+                />
+                <Timeline
+                  label="Soundcheck"
+                  value={formatTimeDisplay(show.soundcheck_time)}
+                />
+                <Timeline
+                  label="Einlass"
+                  value={formatTimeDisplay(show.entry_time)}
+                />
+                <Timeline
+                  label="SHOW"
+                  value={formatTimeDisplay(show.start_time)}
+                  strong
+                />
+              </div>
+            </div>
+
+            {show.venue_access_details && (
+              <div className="mt-4 rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-black text-zinc-800 ring-1 ring-black/5">
+                🚪 Zugang / Treffpunkt: {show.venue_access_details}
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <ShowdayCard title="Menschen & Kontakte">
+                <ShowdayLine
+                  label="Besetzung"
+                  value={showdayCastPreview(castForEditor)}
+                />
+                <ShowdayLine
+                  label="Showtag"
+                  value={show.contact_name || "offen"}
+                  phone={show.emergency_phone}
+                />
+                <ShowdayLine
+                  label="Technik"
+                  value={show.tech_contact || "offen"}
+                  phone={show.tech_phone}
+                />
+              </ShowdayCard>
+
+              <ShowdayCard title="Vor Ort">
+                <ShowdayLine
+                  label="Backstage"
+                  value={backstagePreview(show)}
+                />
+                <ShowdayLine
+                  label="Catering"
+                  value={cateringPreview(show)}
+                />
+                <ShowdayLine
+                  label="Technik"
+                  value={showdayTechPreview(show)}
+                />
+              </ShowdayCard>
+
+              <ShowdayCard title="Anreise & Übernachtung">
+                <ShowdayLine
+                  label="Route"
+                  value={travelPreview(travelLegs) || "noch offen"}
+                />
+                <ShowdayLine
+                  label="Unterkunft"
+                  value={accommodationPreview(show)}
+                />
+              </ShowdayCard>
+            </div>
+          </section>
+
+          {/* ③ NACH DER SHOW */}
+          <PhaseHeader
+            number="3"
+            title="Nach der Show"
+            subtitle="Abrechnen, bewerten, abschließen."
+          />
+
+          <FormSection
+            id="nachbereitung"
+            icon="✅"
+            title="Nachbereitung"
+            state={postState(show, paid, invoiceAmount)}
+            doneLabel="✓ Abgeschlossen"
+            preview={postPreview({
+              show,
+              paid,
+              invoiceAmount,
+              ticketsSold,
+              sellableCapacity,
+              occupancy,
+            })}
+          >
+            <SmallHeading>Rechnung & Zahlung</SmallHeading>
+
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <div className="self-end">
+                <CheckTile
+                  name="invoice_sent"
+                  label="Rechnung verschickt"
+                  defaultChecked={show.invoice_sent === true}
+                />
+              </div>
+
+              <Input
+                name="invoice_date"
+                label="Rechnungsdatum"
+                type="date"
+                defaultValue={show.invoice_date}
+              />
+              <Input
+                name="invoice_number"
+                label="Rechnungsnummer"
+                defaultValue={show.invoice_number}
+              />
+              <Input
+                name="invoice_amount"
+                label="Rechnungsbetrag €"
+                type="number"
+                defaultValue={show.invoice_amount}
+              />
+              <Input
+                name="invoice_due_date"
+                label="Fällig am"
+                type="date"
+                defaultValue={show.invoice_due_date}
+              />
+            </div>
+
+            <ContextFiles
+              title="Rechnungsdateien"
+              files={files}
+              pattern={/rechnung|invoice/i}
+            />
+
+            <PaymentEditor
+              initialPayments={payments}
+              invoiceAmount={show.invoice_amount}
+            />
+
+            <SmallHeading>Ticketzahlen</SmallHeading>
+
+            <TicketSalesEditor
+              initialMode={show.ticket_sales_mode}
+              initialTotal={show.tickets_sold}
+              initialCapacity={
+                show.sellable_capacity || show.capacity
+              }
+              categories={ticketCategories}
+            />
+
+            <SmallHeading>Show-Bewertung</SmallHeading>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <Rating
+                name="review_audience"
+                label="Publikum"
+                value={show.review_audience}
+                options={[
+                  ["hard", "😕 Schwierig"],
+                  ["okay", "🙂 Okay"],
+                  ["great", "😍 Super"],
+                ]}
+              />
+
+              <Rating
+                name="review_location"
+                label="Location"
+                value={show.review_location}
+                options={[
+                  ["hard", "😕 Schwierig"],
+                  ["okay", "🙂 Okay"],
+                  ["great", "😍 Super"],
+                ]}
+              />
+
+              <Rating
+                name="review_organization"
+                label="Organisation"
+                value={show.review_organization}
+                options={[
+                  ["hard", "😕 Schwierig"],
+                  ["okay", "🙂 Okay"],
+                  ["great", "😍 Super"],
+                ]}
+              />
+
+              <Rating
+                name="review_effort"
+                label="Aufwand"
+                value={show.review_effort}
+                options={[
+                  ["low", "😌 Gering"],
+                  ["okay", "🙂 Okay"],
+                  ["high", "😵 Hoch"],
+                ]}
+              />
+
+              <Rating
+                name="review_tech"
+                label="Technik"
+                value={show.review_tech}
+                options={[
+                  ["hard", "😕 Schwierig"],
+                  ["okay", "🙂 Okay"],
+                  ["great", "😍 Super"],
+                ]}
+              />
+
+              <Rating
+                name="play_again"
+                label="Würdest du hier wieder spielen?"
+                value={show.play_again}
+                options={[
+                  ["yes", "😍 Ja"],
+                  ["maybe", "🤔 Vielleicht"],
+                  ["no", "👎 Nein"],
+                ]}
+              />
+            </div>
+
+            <CompactTextarea
+              name="show_learnings"
+              label="Was lernen wir aus dieser Show?"
+              defaultValue={show.show_learnings}
+            />
+          </FormSection>
+
+          {/* ARBEITSLISTE */}
+          <section
+            id="arbeitsliste"
+            className="rounded-[1.55rem] bg-white p-5 shadow-sm ring-1 ring-black/5 sm:p-6"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef4ff] text-[#2867d8]">
+                  ☑
+                </span>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[.14em] text-zinc-400">
+                    Checkliste
+                  </p>
+                  <h2 className="mt-0.5 text-xl font-black">
+                    Sonjas Arbeitsliste
+                  </h2>
+                </div>
+              </div>
+
+              <p className="max-w-md text-xs font-semibold leading-5 text-zinc-400">
+                ⓘ Einige Punkte werden automatisch aus der Show-Akte
+                abgehakt.
+              </p>
+            </div>
+
+            <div className="mt-5">
+              <h3 className="text-sm font-black text-zinc-900">
+                Vor der Show
+              </h3>
+
+              <div className="mt-3 grid gap-x-10 gap-y-2 md:grid-cols-2">
+                {CHECKLIST_BEFORE.map((label) => (
+                  <ChecklistRow
+                    key={label}
+                    label={label}
+                    checked={checklist.state[label] === true}
+                    manual={
+                      allowManualChecklist || MANUAL_CHECKLIST.has(label)
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 border-t border-black/5 pt-5">
+              <h3 className="text-sm font-black text-zinc-900">
+                Nach der Show
+              </h3>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                {CHECKLIST_AFTER.map((label) => (
+                  <ChecklistRow
+                    key={label}
+                    label={label}
+                    checked={checklist.state[label] === true}
+                    manual={allowManualChecklist}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* WERKZEUGE */}
+          <section className="grid items-start gap-4 xl:grid-cols-3">
+            <BottomCard title="📨 Veranstalter-Portal">
+              <p className="text-sm font-bold text-zinc-500">
+                Formular vollständig · {portalProgress(show).done}/
+                {portalProgress(show).total} Angaben
+              </p>
+
+              <div className="mt-4">
+                <a
+                  href={`/show/${show.token}`}
+                  target="_blank"
+                  className="flex items-center justify-between rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-black text-zinc-700 ring-1 ring-black/5"
+                >
+                  <span>Formular öffnen</span>
+                  <span>→</span>
+                </a>
+              </div>
+
+              <div className="mt-2 [&>div]:!gap-3 [&_button]:!min-h-10 [&_button]:!rounded-xl [&_button]:!bg-none [&_button]:!bg-[#fbf7ef] [&_button]:!px-4 [&_button]:!py-2.5 [&_button]:!text-xs [&_button]:!font-black [&_button]:!text-zinc-700 [&_button]:!shadow-none">
+                <CopyMailButtons show={show} portalUrl={portalUrl} />
+              </div>
+            </BottomCard>
+
+            <BottomCard title="📁 Dateien">
+              <FileUploadBox token={show.token} />
+
+              <div className="mt-3 space-y-2">
+                {files.length ? (
+                  files.slice(0, 5).map((file: any) =>
+                    file.url ? (
+                      <a
+                        key={file.id}
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-black text-zinc-700 ring-1 ring-black/5"
                       >
-                        fehlt: {item}
+                        <span className="min-w-0 truncate">
+                          {file.file_name || "Datei"}
+                        </span>
+                        <span className="ml-3">→</span>
+                      </a>
+                    ) : null
+                  )
+                ) : (
+                  <p className="text-sm font-bold text-zinc-400">
+                    Noch keine Dateien hochgeladen.
+                  </p>
+                )}
+              </div>
+            </BottomCard>
+
+            <BottomCard title="💸 Wirtschaftlichkeit">
+              {economics ? (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <MiniMetric
+                      label="Einnahmen"
+                      value={formatEuro(economicsSummary.revenue)}
+                    />
+                    <MiniMetric
+                      label="Kosten"
+                      value={formatEuro(economicsSummary.costs)}
+                    />
+                  </div>
+
+                  <div className="mt-2 rounded-xl bg-[#fbf7ef] px-4 py-3 ring-1 ring-black/5">
+                    <p className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-400">
+                      Ergebnis
+                    </p>
+                    <p className="mt-1 text-xl font-black text-zinc-950">
+                      {formatEuro(economicsSummary.profit)}
+                    </p>
+
+                    {occupancy !== null && (
+                      <p className="mt-1 text-xs font-bold text-zinc-500">
+                        Auslastung {occupancy} %
                       </p>
-                    ))
-                  )}
-                </div>
-              </SideCard>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm font-bold text-zinc-400">
+                  Für diese Show liegt noch kein Wirtschaftlichkeitsdatensatz vor.
+                </p>
+              )}
 
-              <SideCard title="Formular & Mail" tone="teal">
-                <div className="break-all rounded-2xl bg-white/80 p-4 text-sm font-bold text-zinc-700">
-                  {portalUrl}
-                </div>
-
-                <div className="mt-4 flex flex-col gap-3">
-                  <a
-                    href={`/show/${show.token}`}
-                    target="_blank"
-                    className="rounded-2xl bg-zinc-950 px-5 py-3 text-center text-sm font-black text-white"
-                  >
-                    Formular öffnen →
-                  </a>
-
-                  <CopyMailButtons show={show} portalUrl={portalUrl} />
-                </div>
-              </SideCard>
-<SideCard title="Dateien" tone="zinc">
-  <FileUploadBox token={show.token} />
-
-<div className="mt-5">
-  {filesWithUrls.length ? (
-    <div className="space-y-3">
-      {filesWithUrls.map((file: any) => {
-        const fileUrl = file.url;
-
-        return fileUrl ? (
-          <a
-            key={file.id}
-            href={fileUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-700 transition hover:bg-zinc-50"
-          >
-            <p className="font-black text-zinc-950">
-              {file.file_name || "Datei"}
-            </p>
-            <p className="mt-1 text-xs text-zinc-400">
-              {file.file_type || "Sonstiges"}
-            </p>
-            <p className="mt-2 text-xs font-black text-pink-500">
-              öffnen →
-            </p>
-          </a>
-        ) : (
-          <div
-            key={file.id}
-            className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-700"
-          >
-            <p className="font-black text-zinc-950">
-              {file.file_name || "Datei"}
-            </p>
-            <p className="mt-1 text-xs text-red-500">
-              Datei-Link konnte nicht erstellt werden.
-            </p>
-          </div>
-        );
-      })}
-    </div>
-  ) : (
-    <p className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-zinc-500">
-      Noch keine Dateien hochgeladen.
-    </p>
-  )}
-</div>
-
-</SideCard>  
-<SideCard title="Nachbereitung" tone="zinc">
-  <div className="space-y-3">
-    {economics ? (
-      <div className="rounded-2xl bg-[#fbf7ef] p-4">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
-          Wirtschaftlichkeit
-        </p>
-
-        <p
-          className={`mt-2 text-3xl font-black ${
-            Number(economics.profit) > 0
-              ? "text-emerald-600"
-              : Number(economics.profit) < 0
-              ? "text-rose-600"
-              : "text-zinc-700"
-          }`}
-        >
-          {formatEuro(Number(economics.profit) || 0)}
-        </p>
-
-        {/* Mini-Bar */}
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-rose-200">
-          <div
-            className="h-2 rounded-full bg-emerald-400"
-            style={{
-              width: `${Math.max(
-                0,
-                Math.min(
-                  100,
-                  ((Number(economics.revenue_total) || 0) -
-                    Math.abs(Number(economics.profit) || 0)) /
-                    Math.max(Number(economics.revenue_total) || 1, 1) *
-                    100
-                )
-              )}%`,
-            }}
-          />
+              <Link
+                href={`/admin/shows/${show.id}/economics`}
+                className="mt-3 flex items-center justify-between rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-black text-zinc-700 ring-1 ring-black/5"
+              >
+                <span>Auswertung öffnen</span>
+                <span>→</span>
+              </Link>
+            </BottomCard>
+          </section>
         </div>
 
-        <p className="mt-2 text-xs font-bold text-zinc-500">
-          Einnahmen: {formatEuro(Number(economics.revenue_total) || 0)}
-        </p>
-      </div>
-    ) : (
-      <p className="rounded-2xl bg-[#fbf7ef] px-4 py-3 text-sm font-bold text-zinc-500">
-        Noch keine Wirtschaftlichkeit erfasst.
-      </p>
-    )}
+        <div className="fixed bottom-5 left-[calc(260px+2rem)] right-8 z-30 rounded-[1.5rem] bg-zinc-950 p-3 text-white shadow-2xl">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-black">
+                {saved === "1" ? "✓ Gespeichert" : "Show-Akte"}
+              </p>
+              <p className="mt-0.5 text-xs font-semibold text-zinc-400">
+                Änderungen werden direkt in der Show-Akte gespeichert.
+              </p>
+            </div>
 
-    <Link
-      href={`/admin/shows/${show.id}/economics`}
-      className="flex items-center justify-between rounded-2xl bg-[#fbf7ef] px-4 py-3 text-sm font-black text-zinc-700 transition hover:bg-[#f5ead9] hover:text-zinc-950"
-    >
-      <span>💸 Wirtschaftlichkeit öffnen</span>
-      <span>→</span>
-    </Link>
-  </div>
-</SideCard>
-
-          </aside>
+            <button
+              type="submit"
+              className="rounded-full bg-[#dff66d] px-6 py-3 text-sm font-black text-zinc-950 transition hover:scale-[1.01]"
+            >
+              Speichern →
+            </button>
           </div>
         </div>
-
-<div className="fixed bottom-5 left-[calc(18rem+2rem)] right-8 z-30 rounded-[1.75rem] bg-zinc-950 p-4 text-white shadow-2xl">
-  <div className="mx-auto flex max-w-7xl flex-col gap-4 md:flex-row md:items-center md:justify-between">
-    <div>
-      <p className="font-black">
-        {wasSaved
-          ? "✓ Akte gespeichert"
-          : wasReviewed
-            ? "✓ Portalinfos geprüft"
-            : newPortalInfo
-              ? "✨ Portalinfos prüfen"
-              : "Akte speichern"}
-      </p>
-
-      <p
-        className={`text-sm ${
-          wasSaved || wasReviewed
-            ? "text-emerald-300"
-            : newPortalInfo
-              ? "text-pink-200"
-              : "text-zinc-400"
-        }`}
-      >
-        {wasSaved
-          ? "Deine Änderungen wurden übernommen."
-          : wasReviewed
-            ? "Die Formularinfos wurden als geprüft markiert."
-            : newPortalInfo
-              ? "Im Portal wurden seit der letzten Prüfung Angaben gespeichert."
-              : "Änderungen werden erst nach dem Speichern übernommen."}
-      </p>
-    </div>
-
-    <div className="flex flex-wrap items-center gap-3">
-      {newPortalInfo && (
-        <>
-          <input type="hidden" name="show_id" value={show.id} />
-          <input
-            type="hidden"
-            name="submission_id"
-            value={latestSubmission?.id || ""}
-          />
-
-          <button
-            type="submit"
-            formAction={markPortalReviewedAction}
-            className="rounded-full bg-purple-100 px-6 py-3 text-sm font-black text-purple-900 shadow-lg transition hover:scale-[1.02]"
-          >
-            Portalinfos geprüft ✓
-          </button>
-        </>
-      )}
-
-      <button
-        type="submit"
-        className="rounded-full bg-gradient-to-r from-pink-400 to-orange-400 px-9 py-4 font-black text-white shadow-lg transition hover:scale-[1.02]"
-      >
-        Akte speichern →
-      </button>
-    </div>
-  </div>
-</div>      </form>
+      </form>
     </main>
   );
 }
 
-async function updateShowAction(formData: FormData) {
+/* ============================================================
+   SAVE
+   ============================================================ */
+
+async function saveShowV2Action(formData: FormData) {
   "use server";
 
-  const id = String(formData.get("id") || "");
-  const showDate = value(formData, "show_date");
-  const checklist = buildChecklist(formData);
+  const id = str(formData.get("id"));
+  if (!id) return;
 
-  const { error } = await supabaseAdmin
+  const { data: current, error: currentError } = await supabaseAdmin
     .schema("booking")
     .from("shows")
-    .update({
-      artist: value(formData, "artist"),
-      program: value(formData, "program"),
-      show_date: showDate,
-      weekday: getWeekday(showDate),
-      venue: value(formData, "venue"),
-      city: value(formData, "city"),
-      venue_address: value(formData, "venue_address"),
+    .select(`
+      venue_id,
+      organizer_id,
+      venue,
+      city,
+      venue_address,
+      capacity,
+      contact_name,
+      contact_email,
+      contact_phone,
+      fee,
+      checklist
+    `)
+    .eq("id", id)
+    .single();
 
-      contact_name: value(formData, "contact_name"),
-      contact_email: value(formData, "contact_email"),
-      contact_phone: value(formData, "contact_phone"),
-      emergency_phone: value(formData, "emergency_phone"),
+  if (currentError || !current) {
+    throw new Error(
+      currentError?.message || "Show konnte nicht geladen werden."
+    );
+  }
 
-      soundcheck_time: value(formData, "soundcheck_time"),
-      entry_time: value(formData, "entry_time"),
-      start_time: value(formData, "start_time"),
-      arrival_time: value(formData, "arrival_time"),
-      schedule_notes: value(formData, "schedule_notes"),
+  const venueId = nullable(formData.get("venue_id"));
+  const organizerId = nullable(formData.get("organizer_id"));
 
-      tech_sound_available: formData.get("tech_sound_available") === "on",
-      tech_lights_available: formData.get("tech_lights_available") === "on",
-      piano_type: value(formData, "piano_type"),
-      epiano_available: value(formData, "epiano_available"),
-      piano_notes: value(formData, "piano_notes"),
-      tech_contact: value(formData, "tech_contact"),
-      tech_notes: value(formData, "tech_notes"),
+  const venueChanged = venueId !== (current.venue_id || null);
+  const organizerChanged =
+    organizerId !== (current.organizer_id || null);
 
-      contract_status: value(formData, "contract_status"),
-      fee: value(formData, "fee"),
-      ticket_prices: value(formData, "ticket_prices"),
-      capacity: value(formData, "capacity"),
-      ticket_link: value(formData, "ticket_link"),
-      free_tickets: value(formData, "free_tickets"),
-      invoice_email: value(formData, "invoice_email"),
-      invoice_address: value(formData, "invoice_address"),
-      po_number: value(formData, "po_number"),
-      contract_notes: value(formData, "contract_notes"),
+  let venue: any = null;
+  if (venueId) {
+    const result = await supabaseAdmin
+      .from("venues")
+      .select(`
+        id,
+        name,
+        street,
+        postal_code,
+        city,
+        contact_name,
+        contact_email,
+        contact_phone,
+        booking_email,
+        capacity
+      `)
+      .eq("id", venueId)
+      .single();
 
-      flyers_needed: value(formData, "flyers_needed"),
-      flyer_amount: value(formData, "flyer_amount"),
-      posters_needed: value(formData, "posters_needed"),
-      poster_details: value(formData, "poster_details"),
-      promotion: value(formData, "promotion"),
+    if (result.error) throw new Error(result.error.message);
+    venue = result.data;
+  }
 
-      catering_status: value(formData, "catering_status"),
-      catering_details: value(formData, "catering_details"),
+  let organizer: any = null;
+  if (organizerId) {
+    const result = await supabaseAdmin
+      .from("organizers")
+      .select(`
+        id,
+        name,
+        email,
+        phone,
+        city,
+        organizer_contacts (
+          id,
+          name,
+          email,
+          phone,
+          is_primary
+        )
+      `)
+      .eq("id", organizerId)
+      .single();
 
-      backstage_room_available:
-        formData.get("backstage_room_available") === "on",
-      backstage_mirror_available:
-        formData.get("backstage_mirror_available") === "on",
-      backstage_seating_available:
-        formData.get("backstage_seating_available") === "on",
-      backstage_table_available:
-        formData.get("backstage_table_available") === "on",
-      backstage_no_room: formData.get("backstage_no_room") === "on",
-      backstage_notes: value(formData, "backstage_notes"),
+    if (result.error) throw new Error(result.error.message);
+    organizer = result.data;
+  }
 
-      accommodation_type: value(formData, "accommodation_type"),
-      accommodation_hotel_name: value(formData, "accommodation_hotel_name"),
-      accommodation_address: value(formData, "accommodation_address"),
-      accommodation_buyout: value(formData, "accommodation_buyout"),
-      accommodation_notes: value(formData, "accommodation_notes"),
+  const primary = organizer?.organizer_contacts?.find(
+    (contact: any) => contact.is_primary
+  );
 
-      parking_available: formData.get("parking_available") === "on",
-      loading_zone_available: formData.get("loading_zone_available") === "on",
-      no_parking_available: formData.get("no_parking_available") === "on",
-      public_transport_recommended:
-        formData.get("public_transport_recommended") === "on",
-      parking_details: value(formData, "parking_details"),
-      travel_notes: value(formData, "travel_notes"),
+  const fallbackName = organizerId
+    ? primary?.name || null
+    : venue?.contact_name || null;
 
-      general_notes: value(formData, "general_notes"),
+  const fallbackEmail = organizerId
+    ? primary?.email || organizer?.email || null
+    : venue?.contact_email || venue?.booking_email || null;
 
-      internal_status: lastValue(formData, "internal_status"),
-      billing_status: lastValue(formData, "billing_status"),
-      next_step: value(formData, "next_step"),
-      follow_up_date: value(formData, "follow_up_date"),
-      markus_included: formData.get("markus_included") === "on",
-markus_notes: value(formData, "markus_notes"),
-sonja_notes: value(formData, "sonja_notes"),
-checklist,    })
+  const fallbackPhone = organizerId
+    ? primary?.phone || organizer?.phone || null
+    : venue?.contact_phone || null;
+
+  const venueAddress = venue ? buildAddress(venue) : null;
+  const showDate = nullable(formData.get("show_date"));
+
+  const existingChecklist = {
+    ...(current.checklist || {}),
+  };
+
+  const submittedInternalStatus = last(formData, "internal_status");
+  const allowManualChecklist = ["gespielt", "abgeschlossen"].includes(
+    String(submittedInternalStatus || "")
+  );
+
+  const checklistKeysToSave = allowManualChecklist
+    ? ALL_CHECKLIST
+    : Array.from(MANUAL_CHECKLIST);
+
+  for (const key of checklistKeysToSave) {
+    existingChecklist[key] =
+      formData.get(`checklist_${key}`) === "on";
+  }
+
+  const patch: Record<string, any> = {
+    venue_id: venueId,
+    organizer_id: organizerId,
+
+    program: nullable(formData.get("program")),
+    show_date: showDate,
+    weekday: weekday(showDate),
+    start_time: normalizeTimeForDb(
+      nullable(formData.get("start_time"))
+    ),
+    capacity: intOrNull(formData.get("capacity")),
+
+    venue: venueChanged
+      ? venue?.name || current.venue
+      : current.venue,
+
+    city: venueChanged
+      ? venue?.city || current.city
+      : current.city,
+
+    venue_address: venueChanged
+      ? venueAddress || current.venue_address
+      : current.venue_address,
+
+    contact_name:
+      nullable(formData.get("contact_name")) ||
+      ((venueChanged || organizerChanged)
+        ? fallbackName
+        : current.contact_name),
+
+    contact_email:
+      nullable(formData.get("contact_email")) ||
+      ((venueChanged || organizerChanged)
+        ? fallbackEmail
+        : current.contact_email),
+
+    contact_phone:
+      nullable(formData.get("contact_phone")) ||
+      ((venueChanged || organizerChanged)
+        ? fallbackPhone
+        : current.contact_phone),
+
+    emergency_phone: nullable(
+      formData.get("emergency_phone")
+    ),
+
+    // Das alte Freitext-Honorar bleibt als historischer Snapshot erhalten,
+    // solange kein altes "fee"-Feld explizit mitgesendet wird.
+    fee: formData.has("fee")
+      ? nullable(formData.get("fee"))
+      : current.fee,
+
+    fee_model: nullable(formData.get("fee_model")),
+    fee_base_amount: numOrNull(formData.get("fee_base_amount")),
+    fee_artist_share: numOrNull(formData.get("fee_artist_share")),
+    fee_organizer_share: numOrNull(formData.get("fee_organizer_share")),
+    fee_tax_mode: nullable(formData.get("fee_tax_mode")),
+    fee_notes: nullable(formData.get("fee_notes")),
+
+    free_tickets: nullable(formData.get("free_tickets")),
+
+    invoice_recipient_source: nullable(
+      formData.get("invoice_recipient_source")
+    ),
+    invoice_recipient_company: nullable(
+      formData.get("invoice_recipient_company")
+    ),
+    invoice_recipient_contact: nullable(
+      formData.get("invoice_recipient_contact")
+    ),
+    invoice_recipient_street: nullable(
+      formData.get("invoice_recipient_street")
+    ),
+    invoice_recipient_postal_code: nullable(
+      formData.get("invoice_recipient_postal_code")
+    ),
+    invoice_recipient_city: nullable(
+      formData.get("invoice_recipient_city")
+    ),
+    invoice_recipient_country: nullable(
+      formData.get("invoice_recipient_country")
+    ),
+    invoice_email: nullable(formData.get("invoice_email")),
+    po_number: nullable(formData.get("po_number")),
+    contract_notes: nullable(formData.get("contract_notes")),
+
+    cast_confirmed:
+      formData.get("cast_confirmed") === "on",
+
+    ticket_link: nullable(formData.get("ticket_link")),
+    homepage_ticket_linked:
+      formData.get("homepage_ticket_linked") === "on",
+    flyers_needed: nullable(formData.get("flyers_needed")),
+    flyer_amount: nullable(formData.get("flyer_amount")),
+    posters_needed: nullable(formData.get("posters_needed")),
+    poster_amount_text: nullable(formData.get("poster_amount_text")),
+    poster_format: nullable(formData.get("poster_format")),
+    poster_format_other: nullable(
+      formData.get("poster_format_other")
+    ),
+    promo_send_status: nullable(
+      formData.get("promo_send_status")
+    ),
+    promo_follow_up_date: nullable(
+      formData.get("promo_follow_up_date")
+    ),
+    promotion: nullable(formData.get("promotion")),
+
+    tech_sound_status: nullable(
+      formData.get("tech_sound_status")
+    ),
+    tech_lights_status: nullable(
+      formData.get("tech_lights_status")
+    ),
+    tech_piano_status: nullable(
+      formData.get("tech_piano_status")
+    ),
+    tech_piano_model: nullable(
+      formData.get("tech_piano_model")
+    ),
+    epiano_status: nullable(formData.get("epiano_status")),
+    tech_epiano_model: nullable(
+      formData.get("tech_epiano_model")
+    ),
+    tech_contact: nullable(formData.get("tech_contact")),
+    tech_phone: nullable(formData.get("tech_phone")),
+    tech_notes: nullable(formData.get("tech_notes")),
+
+    backstage_status: nullable(
+      formData.get("backstage_status")
+    ),
+    backstage_mirror_status: nullable(
+      formData.get("backstage_mirror_status")
+    ),
+    backstage_seating_status: nullable(
+      formData.get("backstage_seating_status")
+    ),
+    backstage_table_status: nullable(
+      formData.get("backstage_table_status")
+    ),
+    catering_structured_status: nullable(
+      formData.get("catering_structured_status")
+    ),
+    catering_details: nullable(
+      formData.get("catering_details")
+    ),
+    backstage_notes: nullable(
+      formData.get("backstage_notes")
+    ),
+
+    accommodation_status: nullable(
+      formData.get("accommodation_status")
+    ),
+    accommodation_buyout: nullable(
+      formData.get("accommodation_buyout")
+    ),
+    accommodation_hotel_name: nullable(
+      formData.get("accommodation_hotel_name")
+    ),
+    accommodation_address: nullable(
+      formData.get("accommodation_address")
+    ),
+    accommodation_checkin: nullable(
+      formData.get("accommodation_checkin")
+    ),
+    accommodation_checkout: nullable(
+      formData.get("accommodation_checkout")
+    ),
+    accommodation_booking_ref: nullable(
+      formData.get("accommodation_booking_ref")
+    ),
+    accommodation_booked:
+      formData.get("accommodation_booked") === "on",
+    accommodation_actual_cost: numOrNull(
+      formData.get("accommodation_actual_cost")
+    ),
+    accommodation_notes: nullable(
+      formData.get("accommodation_notes")
+    ),
+
+    arrival_time: normalizeTimeForDb(
+      nullable(formData.get("arrival_time"))
+    ),
+    setup_time: normalizeTimeForDb(
+      nullable(formData.get("setup_time"))
+    ),
+    soundcheck_time: normalizeTimeForDb(
+      nullable(formData.get("soundcheck_time"))
+    ),
+    entry_time: normalizeTimeForDb(
+      nullable(formData.get("entry_time"))
+    ),
+    venue_access_details: nullable(
+      formData.get("venue_access_details")
+    ),
+    schedule_notes: nullable(formData.get("schedule_notes")),
+
+    invoice_sent: formData.get("invoice_sent") === "on",
+    invoice_date: nullable(formData.get("invoice_date")),
+    invoice_number: nullable(
+      formData.get("invoice_number")
+    ),
+    invoice_amount: numOrNull(
+      formData.get("invoice_amount")
+    ),
+    invoice_due_date: nullable(
+      formData.get("invoice_due_date")
+    ),
+
+    ticket_sales_mode:
+      nullable(formData.get("ticket_sales_mode")) || "total",
+    tickets_sold: intOrNull(formData.get("tickets_sold")),
+    sellable_capacity: intOrNull(
+      formData.get("sellable_capacity")
+    ),
+
+    review_audience: nullable(
+      formData.get("review_audience")
+    ),
+    review_location: nullable(
+      formData.get("review_location")
+    ),
+    review_organization: nullable(
+      formData.get("review_organization")
+    ),
+    review_effort: nullable(
+      formData.get("review_effort")
+    ),
+    review_tech: nullable(formData.get("review_tech")),
+    play_again: nullable(formData.get("play_again")),
+    show_learnings: nullable(
+      formData.get("show_learnings")
+    ),
+
+    internal_status: submittedInternalStatus,
+    work_status: last(formData, "work_status"),
+    contract_status: last(formData, "contract_status"),
+    billing_status: last(formData, "billing_status"),
+    next_step: nullable(formData.get("next_step")),
+    follow_up_date: nullable(
+      formData.get("follow_up_date")
+    ),
+
+    checklist: existingChecklist,
+  };
+
+  const updateResult = await supabaseAdmin
+    .schema("booking")
+    .from("shows")
+    .update(patch)
     .eq("id", id);
 
-  if (error) throw new Error(error.message);
-
-revalidateAkte(id);
-redirect(`/admin/shows/${id}?saved=1`);
-}
-
-async function applyPortalFieldAction(formData: FormData) {
-  const showId = String(formData.get("show_id") || "");
-  const field = String(formData.get("field") || "");
-  const incomingValue = String(formData.get("value") || "");
-
-  if (!showId || !field) return;
-
-  if (!PORTAL_FIELD_LABELS[field]) {
-    throw new Error("Dieses Feld darf nicht übernommen werden.");
+  if (updateResult.error) {
+    throw new Error(updateResult.error.message);
   }
 
-  const isBooleanField = BOOLEAN_PORTAL_FIELDS.includes(field);
+  const castRows = parseJsonArray(
+    formData.get("show_cast_json")
+  );
+  await replaceCast(id, castRows);
 
-  const { error } = await supabaseAdmin
+  const travelRows = parseJsonArray(
+    formData.get("travel_legs_json")
+  );
+  await replaceTravel(id, travelRows);
+
+  const paymentRows = parseJsonArray(
+    formData.get("payments_json")
+  );
+  await replacePayments(id, paymentRows);
+
+  const feeExtraRows = parseJsonArray(
+    formData.get("fee_extras_json")
+  );
+  await replaceFeeExtras(id, feeExtraRows);
+
+  const categoryRows = parseJsonArray(
+    formData.get("ticket_categories_json")
+  );
+  const salesRows = parseJsonArray(
+    formData.get("ticket_sales_json")
+  );
+  await replaceTicketCategories(id, categoryRows, salesRows);
+
+  const markusIncluded = castRows.some((row: any) =>
+    /markus schell/i.test(String(row.name || ""))
+  );
+
+  await supabaseAdmin
     .schema("booking")
     .from("shows")
     .update({
-      [field]: isBooleanField ? incomingValue === "true" : incomingValue || null,
+      markus_included: markusIncluded,
     })
-    .eq("id", showId);
+    .eq("id", id);
 
-  if (error) throw new Error(error.message);
-
-revalidateAkte(showId);
-redirect(`/admin/shows/${showId}?reviewed=1`);
-}
-
-async function markPortalReviewedAction(formData: FormData) {
-  "use server";
-
-  const showId = String(formData.get("show_id") || "");
-  const submissionId = String(formData.get("submission_id") || "");
-
-  if (!showId) return;
-
-  const now = new Date().toISOString();
-
-  const { error: showError } = await supabaseAdmin
-    .schema("booking")
-    .from("shows")
-    .update({
-      last_reviewed_at: now,
-    })
-    .eq("id", showId);
-
-  if (showError) throw new Error(showError.message);
-
-  if (submissionId) {
-    const { error: submissionError } = await supabaseAdmin
-      .schema("booking")
-      .from("show_portal_submissions")
-      .update({
-        reviewed_at: now,
-      })
-      .eq("id", submissionId);
-
-    if (submissionError) throw new Error(submissionError.message);
-  }
-
-revalidateAkte(showId);
-redirect(`/admin/shows/${showId}?reviewed=1`);
-}
-
-function revalidateAkte(id: string) {
+  revalidatePath(`/admin/shows/${id}/v2`);
   revalidatePath(`/admin/shows/${id}`);
-  revalidatePath("/admin");
   revalidatePath("/admin/shows");
-  revalidatePath("/admin/markus");
+
+  redirect(`/admin/shows/${id}?saved=1`);
 }
 
-function buildChecklist(formData: FormData) {
-  const checklist: Record<string, boolean> = {};
+async function replaceCast(showId: string, rows: any[]) {
+  const cleanRows = rows
+    .map((row, index) => ({
+      show_id: showId,
+      name: str(row.name).trim(),
+      role: nullable(row.role),
+      sort_order: index,
+    }))
+    .filter((row) => row.name);
 
-  for (const group of CHECKLIST_GROUPS) {
-    for (const item of group.items) {
-      if (item === "Formular vollständig") continue;
-      if (item === "Ticketlink vorhanden") continue;
+  const deleteResult = await supabaseAdmin
+    .schema("booking")
+    .from("show_cast")
+    .delete()
+    .eq("show_id", showId);
 
-      checklist[item] = formData.get(`checklist_${item}`) === "on";
+  if (deleteResult.error) {
+    throw new Error(deleteResult.error.message);
+  }
+
+  if (cleanRows.length) {
+    const insertResult = await supabaseAdmin
+      .schema("booking")
+      .from("show_cast")
+      .insert(cleanRows);
+
+    if (insertResult.error) {
+      throw new Error(insertResult.error.message);
     }
   }
-
-  checklist["Formular vollständig"] = isPortalCompleteFromForm(formData);
-  checklist["Ticketlink vorhanden"] = Boolean(value(formData, "ticket_link"));
-
-  const contractStatus = String(
-    value(formData, "contract_status") || ""
-  ).toLowerCase();
-
-  const contractAutoCleared =
-    contractStatus.includes("vertrag liegt vor") ||
-    contractStatus.includes("erstellt") ||
-    contractStatus.includes("unterschrieben");
-
-  checklist["Vertrag geklärt"] =
-    checklist["Vertrag geklärt"] || contractAutoCleared;
-
-  const billingStatus = value(formData, "billing_status");
-
-  if (billingStatus === "rechnung_verschickt" || billingStatus === "bezahlt") {
-    checklist["Rechnung geschickt"] = true;
-  }
-
-  if (billingStatus === "bezahlt") {
-    checklist["Zahlung geprüft"] = true;
-  }
-
-  return checklist;
 }
 
-function isPortalCompleteFromForm(formData: FormData) {
-  const hasTech =
-    formData.get("tech_sound_available") === "on" ||
-    formData.get("tech_lights_available") === "on" ||
-    !!value(formData, "tech_notes") ||
-    !!value(formData, "piano_type");
+async function replaceTravel(showId: string, rows: any[]) {
+  const cleanRows = rows.map((row, index) => ({
+    show_id: showId,
+    direction:
+      row.direction === "return" ? "return" : "outbound",
+    sort_order: index,
+    transport_type:
+      str(row.transport_type).trim() || "Sonstiges",
+    booked: Boolean(row.booked),
+    from_place: nullable(row.from_place),
+    to_place: nullable(row.to_place),
+    departure_at: nullable(row.departure_at),
+    arrival_at: nullable(row.arrival_at),
+    booking_info: nullable(row.booking_info),
+    actual_cost: numOrNull(row.actual_cost),
+    driver_name: nullable(row.driver_name),
+    meeting_point: nullable(row.meeting_point),
+    meeting_time: nullable(row.meeting_time),
+    pickup_contact: nullable(row.pickup_contact),
+    pickup_phone: nullable(row.pickup_phone),
+    parking_status: nullable(row.parking_status),
+    loading_zone_status: nullable(
+      row.loading_zone_status
+    ),
+    notes: nullable(row.notes),
+  }));
 
-  const hasTravel =
-    formData.get("parking_available") === "on" ||
-    formData.get("loading_zone_available") === "on" ||
-    formData.get("no_parking_available") === "on" ||
-    formData.get("public_transport_recommended") === "on" ||
-    !!value(formData, "travel_notes");
+  const deleteResult = await supabaseAdmin
+    .schema("booking")
+    .from("show_travel_legs")
+    .delete()
+    .eq("show_id", showId);
 
-  const required = [
-    value(formData, "show_date"),
-    value(formData, "venue"),
-    value(formData, "city"),
-    value(formData, "start_time"),
-    value(formData, "contact_name"),
-    value(formData, "contact_email"),
-    value(formData, "venue_address"),
-    hasTech ? "ok" : null,
-    value(formData, "fee"),
-    value(formData, "contract_status"),
-    value(formData, "ticket_prices"),
-    value(formData, "capacity"),
-    hasTravel ? "ok" : null,
-    value(formData, "accommodation_type") ||
-      value(formData, "accommodation_notes"),
-  ];
-
-  return required.every(Boolean);
-}
-
-function getProgress(show: any) {
-  const hasTech =
-    show.tech_sound_available ||
-    show.tech_lights_available ||
-    show.tech_notes ||
-    show.piano_type;
-
-  const hasTravel =
-    show.parking_available ||
-    show.loading_zone_available ||
-    show.no_parking_available ||
-    show.public_transport_recommended ||
-    show.travel_notes;
-
-  const fields = [
-    ["Datum", show.show_date],
-    ["Location", show.venue],
-    ["Stadt", show.city],
-    ["Beginn", show.start_time],
-    ["Kontakt", show.contact_name],
-    ["E-Mail", show.contact_email],
-    ["Adresse", show.venue_address],
-    ["Technik", hasTech],
-    ["Honorar", show.fee],
-    ["Vertragsstatus", show.contract_status],
-    ["Eintrittspreise", show.ticket_prices],
-    ["Kapazität", show.capacity],
-    ["Anreise", hasTravel],
-    ["Unterkunft", show.accommodation_type || show.accommodation_notes],
-  ];
-
-  const done = fields.filter(([, fieldValue]) => !!fieldValue).length;
-  const total = fields.length;
-
-  return {
-    done,
-    total,
-    percent: Math.round((done / total) * 100),
-    missing: fields
-      .filter(([, fieldValue]) => !fieldValue)
-      .map(([label]) => label),
-  };
-}
-
-function getShowHealth(show: any) {
-  const tasks = getNextSteps(show);
-  const showDate = parseDateOnly(show.show_date);
-  const today = startOfToday();
-  const isPast = showDate && showDate < today;
-
-  if (isPast && show.billing_status !== "bezahlt") {
-    return { label: "Nachbereitung", tone: "blue", emoji: "🔵" };
+  if (deleteResult.error) {
+    throw new Error(deleteResult.error.message);
   }
 
-  if (tasks.some((task) => task.critical)) {
-    return { label: "Kritisch offen", tone: "red", emoji: "🔴" };
-  }
+  if (cleanRows.length) {
+    const insertResult = await supabaseAdmin
+      .schema("booking")
+      .from("show_travel_legs")
+      .insert(cleanRows);
 
-  if (tasks.length === 0) {
-    return { label: "Spielbereit", tone: "green", emoji: "🟢" };
+    if (insertResult.error) {
+      throw new Error(insertResult.error.message);
+    }
   }
-
-  return { label: "In Vorbereitung", tone: "yellow", emoji: "🟡" };
 }
 
-function getNextSteps(show: any) {
-  const tasks: { label: string; critical?: boolean }[] = [];
-
-  if (show.internal_status === "abgesagt") {
-  return [
-    {
-      label: "Diese Show ist abgesagt.",
-      critical: true,
-    },
-  ];
-}
-
-  if (
-  show.internal_status === "fertig" ||
-  show.internal_status === "archiv" ||
-  show.internal_status === "archiviert" ||
-  show.internal_status === "abgeschlossen"
+async function replacePayments(
+  showId: string,
+  rows: any[]
 ) {
-  return [];
+  const mappedRows = rows.map((row) => ({
+    show_id: showId,
+    payment_date: nullable(row.payment_date),
+    amount: numOrNull(row.amount),
+    note: nullable(row.note),
+  }));
+
+  const incompletePayment = mappedRows.find(
+    (row) =>
+      (row.payment_date && row.amount === null) ||
+      (!row.payment_date && row.amount !== null)
+  );
+
+  if (incompletePayment) {
+    throw new Error(
+      "Bitte bei jeder Zahlung Datum und Betrag angeben."
+    );
+  }
+
+  const cleanRows = mappedRows.filter(
+    (row) => row.payment_date && row.amount !== null
+  );
+
+  const deleteResult = await supabaseAdmin
+    .schema("booking")
+    .from("show_payments")
+    .delete()
+    .eq("show_id", showId);
+
+  if (deleteResult.error) {
+    throw new Error(deleteResult.error.message);
+  }
+
+  if (cleanRows.length) {
+    const insertResult = await supabaseAdmin
+      .schema("booking")
+      .from("show_payments")
+      .insert(cleanRows);
+
+    if (insertResult.error) {
+      throw new Error(insertResult.error.message);
+    }
+  }
 }
 
-  if (show.internal_status === "option") {
-    if (show.follow_up_date) {
-      tasks.push({ label: "Option auf Wiedervorlage", critical: false });
-    } else {
-      tasks.push({ label: "Option nachfassen / Termin sichern", critical: true });
-    }
+async function replaceFeeExtras(showId: string, rows: any[]) {
+  const allowedTypes = new Set([
+    "meal_buyout",
+    "travel",
+    "accommodation_buyout",
+    "other",
+  ]);
+  const allowedBilling = new Set([
+    "flat",
+    "per_km",
+    "receipt",
+    "included",
+    "other",
+  ]);
 
-    return tasks;
-  }
-
-  const showDate = parseDateOnly(show.show_date);
-  const today = startOfToday();
-  const isPast = showDate && showDate < today;
-
-  if (isPast) {
-    if (
-      show.billing_status !== "rechnung_verschickt" &&
-      show.billing_status !== "bezahlt" &&
-      show.billing_status !== "nicht_relevant"
-    ) {
-      tasks.push({ label: "Rechnung vorbereiten", critical: true });
-    }
-
-    if (show.billing_status === "rechnung_verschickt") {
-      tasks.push({ label: "Zahlung prüfen" });
-    }
-
-    if (!show.checklist?.["Feedback notiert"]) {
-      tasks.push({ label: "Feedback / Nachbereitung notieren" });
-    }
-
-    return tasks;
-  }
-
-  if (hasNewPortalInfo(show)) {
-    tasks.push({ label: "Neue Formularinfos prüfen", critical: true });
-  }
-
-  if (!show.contact_name || !show.contact_email) {
-    tasks.push({ label: "Kontakt vervollständigen", critical: true });
-  }
-
-  if (!show.venue_address) {
-    tasks.push({ label: "Adresse klären", critical: true });
-  }
-
-  if (!show.start_time || !show.entry_time) {
-    tasks.push({ label: "Ablauf / Timing klären", critical: true });
-  }
-
-  if (
-    !show.tech_sound_available &&
-    !show.tech_lights_available &&
-    !show.tech_notes &&
-    !show.piano_type
-  ) {
-    tasks.push({ label: "Technik prüfen", critical: true });
-  }
-
-  if (!isChecklistChecked(show, "Vertrag geklärt")) {
-    tasks.push({ label: "Vertrag klären", critical: true });
-  }
-
-  const nextWeek = new Date(today);
-  nextWeek.setDate(nextWeek.getDate() + 7);
-
-  const isSoon = showDate && showDate >= today && showDate <= nextWeek;
-
-  if (isSoon && !show.checklist?.["Finalcheck erledigt"]) {
-    tasks.push({
-      label: "Finalcheck: Ist die Show spielbereit?",
-      critical: true,
-    });
-  }
-
-  if (
-    !show.parking_available &&
-    !show.loading_zone_available &&
-    !show.no_parking_available &&
-    !show.public_transport_recommended &&
-    !show.travel_notes
-  ) {
-    tasks.push({ label: "Anreise klären" });
-  }
-
-  if (!show.accommodation_type && !show.accommodation_notes) {
-    tasks.push({ label: "Unterkunft klären" });
-  }
-
-  if (show.markus_included && !show.checklist?.["Markus informiert"]) {
-    tasks.push({ label: "Markus informieren" });
-  }
-
-  const wantsPromo =
-    show.flyers_needed === "Ja" ||
-    show.posters_needed === "Ja" ||
-    String(show.promotion || "").toLowerCase().includes("flyer") ||
-    String(show.promotion || "").toLowerCase().includes("plakate");
-
-  if (wantsPromo && !show.checklist?.["Promo verschickt"]) {
-    tasks.push({ label: "Promo-Material vorbereiten" });
-  }
-
-  if (getProgress(show).missing.length === 0 && show.internal_status !== "fertig") {
-    tasks.push({ label: "Akte final prüfen" });
-  }
-
-  return tasks;
-}
-
-const BOOLEAN_PORTAL_FIELDS = [
-  "tech_sound_available",
-  "tech_lights_available",
-  "backstage_room_available",
-  "backstage_mirror_available",
-  "backstage_seating_available",
-  "backstage_table_available",
-  "backstage_no_room",
-  "parking_available",
-  "loading_zone_available",
-  "no_parking_available",
-  "public_transport_recommended",
-];
-
-const PORTAL_FIELD_LABELS: Record<string, string> = {
-  artist: "Artist",
-  program: "Programm",
-  show_date: "Datum",
-  venue: "Location",
-  city: "Stadt / Ort",
-  venue_address: "Adresse",
-
-  contact_name: "Ansprechpartner:in",
-  contact_email: "E-Mail",
-  contact_phone: "Telefon",
-  emergency_phone: "Mobilnummer Veranstaltungstag",
-
-  soundcheck_time: "Aufbauzeit / Soundcheck",
-  entry_time: "Einlass",
-  start_time: "Showbeginn",
-  arrival_time: "Gewünschte Ankunft",
-  schedule_notes: "Ablaufnotizen",
-
-  tech_sound_available: "Ton vorhanden",
-  tech_lights_available: "Licht vorhanden",
-  piano_type: "Klavier / Flügel",
-  epiano_available: "E-Piano",
-  piano_notes: "Piano / Modell",
-  tech_contact: "Technik-Ansprechpartner",
-  tech_notes: "Techniknotizen",
-
-  contract_status: "Vertragsstatus",
-  fee: "Honorar",
-  ticket_prices: "Eintrittspreise",
-  capacity: "Kapazität",
-  ticket_link: "Ticketlink",
-  free_tickets: "Freikarten",
-  invoice_email: "Rechnungs-E-Mail",
-  invoice_address: "Rechnungsadresse",
-  po_number: "Bestellnummer / PO-Nummer",
-  contract_notes: "Vertrags-/Rechnungshinweise",
-
-  flyers_needed: "Flyer benötigt?",
-  flyer_amount: "Flyeranzahl",
-  posters_needed: "Plakate benötigt?",
-  poster_details: "Plakatdetails",
-  promotion: "Promotion-Hinweise",
-
-  catering_status: "Catering Status",
-  catering_details: "Catering Details",
-
-  backstage_room_available: "Backstage-Raum",
-  backstage_mirror_available: "Spiegel",
-  backstage_seating_available: "Sitzgelegenheit",
-  backstage_table_available: "Tisch",
-  backstage_no_room: "Kein Backstage-Raum",
-  backstage_notes: "Backstage-Notizen",
-
-  accommodation_type: "Unterkunftsart",
-  accommodation_hotel_name: "Hotelname / Unterkunft",
-  accommodation_address: "Hoteladresse",
-  accommodation_buyout: "Hotel-Buyout",
-  accommodation_notes: "Unterkunftsnotizen",
-
-  parking_available: "Parkplatz vorhanden?",
-  loading_zone_available: "Ladezone vorhanden?",
-  no_parking_available: "Keine Parkmöglichkeit",
-  public_transport_recommended: "ÖPNV empfohlen",
-  parking_details: "Parkplatzdetails",
-  travel_notes: "Anreisehinweise",
-
-  general_notes: "Sonstiges",
-};
-
-function getPortalDiffs(show: any, latestSubmission: any) {
-  const data = latestSubmission?.data || {};
-
-  return Object.entries(PORTAL_FIELD_LABELS)
-    .map(([field, label]) => {
-      const current = normalizeCompareValue(show[field]);
-      const incoming = normalizeCompareValue(data[field]);
+  const cleanRows = rows
+    .map((row, index) => {
+      const type = allowedTypes.has(String(row.type))
+        ? String(row.type)
+        : "other";
+      const billing = allowedBilling.has(String(row.billing))
+        ? String(row.billing)
+        : "flat";
 
       return {
-        field,
-        label,
-        current,
-        incoming,
-        changed: incoming !== "" && current !== incoming,
+        show_id: showId,
+        type,
+        billing,
+        amount: ["receipt", "included"].includes(billing)
+          ? null
+          : numOrNull(row.amount),
+        note: nullable(row.note),
+        sort_order: index,
       };
     })
-    .filter((item) => item.changed);
-}
-
-function normalizeCompareValue(value: unknown) {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
-}
-
-function hasNewPortalInfo(show: any) {
-  const latestSubmission = getLatestSubmission(show);
-
-  if (!latestSubmission?.submitted_at) return false;
-  if (!show.last_reviewed_at) return true;
-
-  return (
-    new Date(latestSubmission.submitted_at).getTime() >
-    new Date(show.last_reviewed_at).getTime()
-  );
-}
-
-function getLatestSubmission(show: any) {
-  const submissions = show.show_portal_submissions || [];
-
-  return [...submissions].sort((a: any, b: any) => {
-    return (
-      new Date(b.submitted_at || "").getTime() -
-      new Date(a.submitted_at || "").getTime()
+    .filter(
+      (row) =>
+        row.amount !== null ||
+        row.note ||
+        ["receipt", "included"].includes(row.billing)
     );
-  })[0];
+
+  const deleteResult = await supabaseAdmin
+    .schema("booking")
+    .from("show_fee_extras")
+    .delete()
+    .eq("show_id", showId);
+
+  if (deleteResult.error) {
+    throw new Error(deleteResult.error.message);
+  }
+
+  if (cleanRows.length) {
+    const insertResult = await supabaseAdmin
+      .schema("booking")
+      .from("show_fee_extras")
+      .insert(cleanRows);
+
+    if (insertResult.error) {
+      throw new Error(insertResult.error.message);
+    }
+  }
 }
 
-function hasContractFile(show: any) {
-  return (show.show_files || []).some((file: any) => {
-    const text = `${file.file_type || ""} ${file.file_name || ""}`.toLowerCase();
-    return text.includes("vertrag");
-  });
-}
-
-function isContractCleared(show: any) {
-  const status = String(show.contract_status || "").toLowerCase();
-
-  return (
-    status.includes("vertrag liegt vor") ||
-    status.includes("erstellt") ||
-    status.includes("unterschrieben") ||
-    hasContractFile(show)
+async function replaceTicketCategories(
+  showId: string,
+  categories: any[],
+  sales: any[]
+) {
+  const soldById = new Map(
+    sales
+      .filter((row) => row?.id)
+      .map((row) => [
+        String(row.id),
+        intOrNull(row.sold_count),
+      ])
   );
-}
 
-function isAutoChecklistItem(item: string) {
-  return (
-    item === "Formular vollständig" ||
-    item === "Ticketlink vorhanden"
-  );
-}
+  const cleanRows = categories
+    .map((row, index) => ({
+      show_id: showId,
+      label: str(row.label).trim(),
+      price: numOrNull(row.price),
+      sold_count: row.id
+        ? soldById.get(String(row.id)) ??
+          intOrNull(row.sold_count)
+        : intOrNull(row.sold_count),
+      sort_order: index,
+    }))
+    .filter((row) => row.label);
 
-function isChecklistChecked(show: any, item: string) {
-  if (item === "Formular vollständig") {
-    return getProgress(show).missing.length === 0;
+  const deleteResult = await supabaseAdmin
+    .schema("booking")
+    .from("show_ticket_categories")
+    .delete()
+    .eq("show_id", showId);
+
+  if (deleteResult.error) {
+    throw new Error(deleteResult.error.message);
   }
 
-  if (item === "Vertrag geklärt") {
-    return Boolean(show.checklist?.["Vertrag geklärt"]) || isContractCleared(show);
-  }
+  if (cleanRows.length) {
+    const insertResult = await supabaseAdmin
+      .schema("booking")
+      .from("show_ticket_categories")
+      .insert(cleanRows);
 
-  if (item === "Ticketlink vorhanden") {
-    return Boolean(show.ticket_link);
+    if (insertResult.error) {
+      throw new Error(insertResult.error.message);
+    }
   }
-
-  return !!show.checklist?.[item];
 }
 
-function getChecklistGroupProgress(show: any, items: string[]) {
+/* ============================================================
+   STATUS / CHECKLIST / PREVIEWS
+   ============================================================ */
+
+function getSectionStates({
+  show,
+  cast,
+  travelLegs,
+  ticketCategories,
+}: {
+  show: any;
+  cast: any[];
+  travelLegs: any[];
+  ticketCategories: any[];
+}) {
+  const state = (ready: boolean): AreaState =>
+    ready ? "done" : "open";
+
+  const promoReady =
+    Boolean(show.ticket_link) &&
+    show.homepage_ticket_linked === true &&
+    ["Ja", "Nein"].includes(
+      String(show.flyers_needed || "")
+    ) &&
+    ["Ja", "Nein"].includes(
+      String(show.posters_needed || "")
+    ) &&
+    show.promo_send_status === "sent";
+
+  const techReady =
+    ["available", "unavailable"].includes(
+      String(show.tech_sound_status || "")
+    ) &&
+    ["available", "unavailable"].includes(
+      String(show.tech_lights_status || "")
+    );
+
+  const backstageReady =
+    ["available", "unavailable"].includes(
+      String(show.backstage_status || "")
+    ) &&
+    ["available", "unavailable"].includes(
+      String(show.catering_structured_status || "")
+    );
+
+  const travelReadyState =
+    travelReady(travelLegs) &&
+    ["organizer", "buyout", "not_required"].includes(
+      String(show.accommodation_status || "")
+    );
+
   return {
-    done: items.filter((item) => isChecklistChecked(show, item)).length,
-    total: items.length,
+    showdata: state(
+      Boolean(
+        show.program &&
+          show.venue_id &&
+          show.show_date &&
+          show.start_time &&
+          show.capacity
+      )
+    ),
+
+    contact: state(
+      Boolean(show.contact_name && show.contact_email)
+    ),
+
+    contract: state(
+      ["erledigt", "nicht_erforderlich"].includes(
+        String(show.contract_status || "")
+      ) &&
+        Boolean(show.invoice_recipient_source)
+    ),
+
+    cast: state(show.cast_confirmed === true),
+
+    promo: state(promoReady),
+
+    tech: state(techReady),
+
+    backstage: state(backstageReady),
+
+    travel: state(travelReadyState),
+
+    schedule: state(
+      Boolean(
+        show.arrival_time &&
+          show.setup_time &&
+          show.soundcheck_time &&
+          show.entry_time
+      )
+    ),
   };
 }
 
-function FormSection({
+function buildChecklistView({
+  show,
+  sectionStates,
+  paid,
+  invoiceAmount,
+}: {
+  show: any;
+  sectionStates: Record<string, AreaState>;
+  paid: number;
+  invoiceAmount: number;
+}) {
+  const state: Record<string, boolean> = {
+    "Showdaten geprüft":
+      Boolean(show.checklist?.["Showdaten geprüft"]),
+
+    "Vertrag geklärt":
+      ["erledigt", "nicht_erforderlich"].includes(
+        String(show.contract_status || "")
+      ) ||
+      Boolean(show.checklist?.["Vertrag geklärt"]),
+
+    "Ticketlink vorhanden": Boolean(show.ticket_link),
+
+    "Ticketlink auf Homepage verlinkt":
+      show.homepage_ticket_linked === true,
+
+    "Technik geklärt":
+      sectionStates.tech === "done",
+
+    "Ablauf geklärt":
+      sectionStates.schedule === "done" ||
+      Boolean(show.checklist?.["Ablauf geklärt"]),
+
+    "Zugang zur Spielstätte geklärt":
+      Boolean(show.venue_access_details) ||
+      Boolean(show.checklist?.["Zugang zur Spielstätte geklärt"]),
+
+    "Anreise / Unterkunft geklärt":
+      sectionStates.travel === "done",
+
+    "Backstage / Catering geklärt":
+      sectionStates.backstage === "done",
+
+    "Besetzung vollständig":
+      show.cast_confirmed === true,
+
+    "Markus / Team informiert":
+      Boolean(
+        show.checklist?.["Markus / Team informiert"] ||
+          show.checklist?.["Markus informiert"]
+      ),
+
+    "Promo erledigt":
+      show.promo_send_status === "sent",
+
+    "GEMA geklärt":
+      Boolean(
+        show.checklist?.["GEMA geklärt"] ||
+          show.checklist?.["GEMA erledigt"]
+      ),
+
+    "Rechnung verschickt":
+      show.invoice_sent === true,
+
+    "Zahlung vollständig":
+      invoiceAmount > 0 && paid >= invoiceAmount,
+
+    "Show bewertet":
+      Boolean(
+        show.review_audience &&
+          show.review_location &&
+          show.review_organization &&
+          show.review_effort &&
+          show.review_tech &&
+          show.play_again
+      ),
+  };
+
+  return { state };
+}
+
+function getSmartTasks({
+  show,
+  sectionStates,
+  checklistState,
+}: {
+  show: any;
+  sectionStates: Record<string, AreaState>;
+  checklistState: Record<string, boolean>;
+}) {
+  const tasks: {
+    label: string;
+    href: string;
+    manual: boolean;
+  }[] = [];
+
+  function push(
+    label: string,
+    href: string,
+    manual = false
+  ) {
+    if (!checklistState[label]) {
+      tasks.push({ label, href, manual });
+    }
+  }
+
+  push("Showdaten geprüft", "#showdaten", true);
+
+  push(
+    "Vertrag geklärt",
+    "#vertrag-finanzen",
+    true
+  );
+
+  if (!show.ticket_link) {
+    push("Ticketlink vorhanden", "#promo-ticketing");
+  } else if (!show.homepage_ticket_linked) {
+    push(
+      "Ticketlink auf Homepage verlinkt",
+      "#promo-ticketing"
+    );
+  }
+
+  if (sectionStates.tech !== "done") {
+    push("Technik geklärt", "#technik");
+  }
+
+  if (!checklistState["Ablauf geklärt"]) {
+    push("Ablauf geklärt", "#ablauf", true);
+  }
+
+  if (!checklistState["Zugang zur Spielstätte geklärt"]) {
+    push(
+      "Zugang zur Spielstätte geklärt",
+      "#ablauf",
+      true
+    );
+  }
+
+  if (sectionStates.travel !== "done") {
+    push(
+      "Anreise / Unterkunft geklärt",
+      "#anreise"
+    );
+  }
+
+  if (sectionStates.backstage !== "done") {
+    push(
+      "Backstage / Catering geklärt",
+      "#backstage"
+    );
+  }
+
+  if (!show.cast_confirmed) {
+    push("Besetzung vollständig", "#besetzung");
+  }
+
+  push(
+    "Markus / Team informiert",
+    "#arbeitsliste",
+    true
+  );
+
+  if (show.promo_send_status !== "sent") {
+    push("Promo erledigt", "#promo-ticketing");
+  }
+
+  push("GEMA geklärt", "#arbeitsliste", true);
+
+  if (
+    ["gespielt", "abgeschlossen"].includes(
+      String(show.internal_status || "")
+    )
+  ) {
+    push(
+      "Rechnung verschickt",
+      "#nachbereitung"
+    );
+    push(
+      "Zahlung vollständig",
+      "#nachbereitung"
+    );
+    push(
+      "Show bewertet",
+      "#nachbereitung"
+    );
+  }
+
+  return tasks.slice(0, 8);
+}
+
+function postState(
+  show: any,
+  paid: number,
+  invoiceAmount: number
+): AreaState {
+  const rated = Boolean(
+    show.review_audience &&
+      show.review_location &&
+      show.review_organization &&
+      show.review_effort &&
+      show.review_tech &&
+      show.play_again
+  );
+
+  return show.invoice_sent &&
+    invoiceAmount > 0 &&
+    paid >= invoiceAmount &&
+    rated
+    ? "done"
+    : "open";
+}
+
+function postPreview({
+  show,
+  paid,
+  invoiceAmount,
+  ticketsSold,
+  sellableCapacity,
+  occupancy,
+}: any) {
+  const payment =
+    invoiceAmount > 0 && paid >= invoiceAmount
+      ? "vollständig bezahlt"
+      : paid > 0
+        ? `${formatEuro(invoiceAmount - paid)} offen`
+        : "Zahlung offen";
+
+  return [
+    show.invoice_sent
+      ? "Rechnung verschickt"
+      : "Rechnung offen",
+    payment,
+    ticketsSold !== null && sellableCapacity
+      ? `${ticketsSold}/${sellableCapacity} Tickets${
+          occupancy !== null
+            ? ` · ${occupancy} %`
+            : ""
+        }`
+      : ticketsSold !== null
+        ? `${ticketsSold} Tickets`
+        : "Ticketzahlen offen",
+    show.play_again
+      ? `Wieder spielen: ${playAgainLabel(
+          show.play_again
+        )}`
+      : "Bewertung offen",
+  ];
+}
+
+/* ============================================================
+   COMPONENTS
+   ============================================================ */
+
+function PhaseHeader({
   number,
   title,
-  doodle,
-  tone,
-  children,
+  subtitle,
 }: {
   number: string;
   title: string;
-  doodle: string;
-  tone: "purple" | "pink" | "orange" | "teal" | "zinc";
-  children: React.ReactNode;
+  subtitle: string;
 }) {
-  const theme = getTheme(tone);
-
   return (
-    <section className="relative rounded-[1.75rem] bg-white p-6 shadow-xl shadow-zinc-200/70">
-      <span
-        className={`absolute right-7 top-7 rotate-[-8deg] text-3xl font-black opacity-50 ${theme.doodle}`}
-      >
-        {doodle}
-      </span>
-
-      <div className="mb-6 flex items-start gap-5">
-        <div
-          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${theme.number} text-xl font-black text-zinc-900`}
-        >
+    <div className="px-1 pt-2">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-black text-zinc-400 ring-1 ring-black/5">
           {number}
-        </div>
-
-        <div>
-          <h2 className="text-2xl font-black tracking-tight">{title}</h2>
-          <p className="mt-1 text-sm font-semibold text-zinc-500">
-            {sectionDescription(title)}
-          </p>
-        </div>
+        </span>
+        <h2 className="text-2xl font-black tracking-tight text-zinc-950">
+          {title}
+        </h2>
       </div>
-
-      <div className={`grid gap-5 rounded-3xl border-2 border-dashed p-5 ${theme.shell}`}>
-        {children}
-      </div>
-    </section>
+      <p className="mt-1 pl-9 text-sm font-semibold text-zinc-500">
+        {subtitle}
+      </p>
+    </div>
   );
 }
 
-function SideCard({
+function FormSection({
+  id,
+  icon,
   title,
-  tone,
+  state,
+  preview,
   children,
+  doneLabel = "✓ Geklärt",
 }: {
+  id: string;
+  icon: string;
   title: string;
-  tone: "purple" | "amber" | "teal" | "zinc";
-  children: React.ReactNode;
+  state: AreaState;
+  preview: any[];
+  children: ReactNode;
+  doneLabel?: string;
 }) {
-  const styles = {
-    purple: "border-purple-200 bg-purple-50/70",
-    amber: "border-amber-200 bg-amber-50/70",
-    teal: "border-teal-200 bg-teal-50/70",
-    zinc: "border-zinc-200 bg-zinc-50/70",
-  }[tone];
-
   return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-xl shadow-zinc-200/70">
-      <h3 className="mb-4 text-lg font-black">{title}</h3>
-      <div className={`rounded-3xl border-2 border-dashed p-4 ${styles}`}>
-        {children}
+    <details
+      id={id}
+      className="group scroll-mt-6 overflow-hidden rounded-[1.3rem] bg-white shadow-sm ring-1 ring-black/5"
+    >
+      <summary className="list-none cursor-pointer px-5 py-4 transition hover:bg-[#fbfaf7] [&::-webkit-details-marker]:hidden">
+        <div className="grid min-h-[52px] items-center gap-x-5 gap-y-1 md:grid-cols-[250px_minmax(0,1fr)_auto_26px]">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f7f8fa] text-lg">
+              {icon}
+            </span>
+            <h3 className="text-sm font-black text-zinc-950">
+              {title}
+            </h3>
+          </div>
+
+          <div className="min-w-0 text-xs font-semibold leading-5 text-zinc-500">
+            {preview
+              .filter(Boolean)
+              .slice(0, 5)
+              .map((value, index) => (
+                <Fragment key={`${String(value)}-${index}`}>
+                  {index > 0 && (
+                    <span className="mx-2 text-zinc-300">
+                      ·
+                    </span>
+                  )}
+                  <span>{String(value)}</span>
+                </Fragment>
+              ))}
+          </div>
+
+          <span
+            className={`rounded-full px-3 py-1 text-[10px] font-black ring-1 ${
+              state === "done"
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+                : "bg-amber-50 text-amber-700 ring-amber-100"
+            }`}
+          >
+            {state === "done" ? doneLabel : "Offen"}
+          </span>
+
+          <span className="justify-self-end text-lg font-black text-zinc-500 transition group-open:rotate-90">
+            ›
+          </span>
+        </div>
+      </summary>
+
+      <div className="border-t border-black/5 bg-[#fffdf9] p-5 sm:p-6">
+        <div className="space-y-4">{children}</div>
       </div>
-    </section>
-  );
-}
-
-function CompactGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-4 md:grid-cols-2">{children}</div>;
-}
-
-function CheckInput({
-  name,
-  label,
-  defaultChecked,
-}: {
-  name: string;
-  label: string;
-  defaultChecked?: boolean;
-}) {
-  return (
-    <label className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-700">
-      <input
-        type="checkbox"
-        name={name}
-        defaultChecked={defaultChecked}
-        className="h-5 w-5"
-      />
-      {label}
-    </label>
+    </details>
   );
 }
 
@@ -1484,21 +2532,18 @@ function Input({
 }: {
   name: string;
   label: string;
-  defaultValue?: string | number | boolean | null;
+  defaultValue?: any;
   type?: string;
 }) {
   return (
-    <label className="grid gap-2 text-xs font-black text-zinc-700">
+    <label className="grid gap-1.5 text-[11px] font-semibold text-zinc-500">
       {label}
       <input
         name={name}
         type={type}
-        defaultValue={
-          typeof defaultValue === "string" || typeof defaultValue === "number"
-            ? defaultValue
-            : ""
-        }
-        className="h-14 rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-semibold outline-none transition focus:border-pink-300 focus:ring-4 focus:ring-pink-100"
+        step={type === "number" ? "0.01" : undefined}
+        defaultValue={defaultValue ?? ""}
+        className="h-11 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-bold text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-100"
       />
     </label>
   );
@@ -1512,22 +2557,19 @@ function Select({
 }: {
   name: string;
   label: string;
-  defaultValue?: string | null;
+  defaultValue?: any;
   options: [string, string][];
 }) {
-  const safeDefaultValue = defaultValue || "offen";
-
   return (
-    <label className="grid gap-2 text-xs font-black text-zinc-700">
+    <label className="grid gap-1.5 text-[11px] font-semibold text-zinc-500">
       {label}
       <select
-        key={`${name}-${safeDefaultValue}`}
         name={name}
-        defaultValue={safeDefaultValue}
-        className="h-14 rounded-2xl border border-zinc-200 bg-white px-4 text-sm font-semibold outline-none transition focus:border-pink-300 focus:ring-4 focus:ring-pink-100"
+        defaultValue={defaultValue || ""}
+        className="h-11 rounded-xl border border-zinc-300 bg-white px-3 text-sm font-bold text-zinc-900 outline-none transition focus:border-zinc-400"
       >
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
+        {options.map(([value, optionLabel]) => (
+          <option key={value} value={value}>
             {optionLabel}
           </option>
         ))}
@@ -1536,152 +2578,818 @@ function Select({
   );
 }
 
-function Textarea({
+function CompactTextarea({
   name,
   label,
   defaultValue,
 }: {
   name: string;
   label: string;
-  defaultValue?: string | number | boolean | null;
+  defaultValue?: any;
 }) {
   return (
-    <label className="grid gap-2 text-xs font-black text-zinc-700 md:col-span-2">
+    <label className="grid gap-1.5 text-[11px] font-semibold text-zinc-500">
       {label}
       <textarea
         name={name}
-        defaultValue={
-          typeof defaultValue === "string" || typeof defaultValue === "number"
-            ? defaultValue
-            : ""
-        }
-        rows={5}
-        className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold leading-7 outline-none transition focus:border-pink-300 focus:ring-4 focus:ring-pink-100"
+        defaultValue={defaultValue ?? ""}
+        rows={3}
+        className="min-h-[84px] rounded-xl border border-zinc-300 bg-white px-3 py-2.5 text-sm font-bold leading-6 text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-100"
       />
     </label>
   );
 }
 
-function getTheme(tone: string) {
-  const themes: Record<string, any> = {
-    purple: {
-      shell: "border-purple-200 bg-purple-50/60",
-      number: "from-purple-200 to-pink-300",
-      doodle: "text-purple-400",
-    },
-    pink: {
-      shell: "border-pink-200 bg-pink-50/60",
-      number: "from-pink-200 to-rose-300",
-      doodle: "text-pink-400",
-    },
-    orange: {
-      shell: "border-orange-200 bg-orange-50/60",
-      number: "from-amber-200 to-orange-300",
-      doodle: "text-orange-400",
-    },
-    teal: {
-      shell: "border-teal-200 bg-teal-50/60",
-      number: "from-teal-200 to-emerald-300",
-      doodle: "text-teal-500",
-    },
-    zinc: {
-      shell: "border-zinc-200 bg-zinc-50/70",
-      number: "from-zinc-200 to-zinc-300",
-      doodle: "text-zinc-400",
-    },
-  };
-
-  return themes[tone] || themes.zinc;
-}
-
-function sectionDescription(title: string) {
-  const descriptions: Record<string, string> = {
-    Veranstaltung: "Grunddaten zum Auftritt.",
-    "Organisation & Kontakt": "Wer ist vor Ort erreichbar?",
-    "Ablauf & Planung": "Alles für Timing und Ablauf.",
-    Technik: "Technische Anforderungen und Hinweise.",
-    "Vertrag & Finanzen": "Vertrag, Honorar und Rechnungsdaten.",
-    Promotion: "Werbematerial und Ankündigungen.",
-    "Verpflegung & Backstage": "Catering, Garderobe und Ausstattung.",
-    "Unterkunft & Anreise": "Hotel, Anfahrt und Besonderheiten.",
-    Sonstiges: "Alles, was sonst noch wichtig ist.",
-    Checkliste: "Interne Vorbereitung und Nachbereitung.",
-  };
-
-  return descriptions[title] || "";
-}
-
-function checklistTone(tone: string) {
-  const tones: Record<string, string> = {
-    emerald: "bg-emerald-100 text-emerald-700",
-    amber: "bg-amber-100 text-amber-700",
-    purple: "bg-purple-100 text-purple-700",
-  };
-
-  return tones[tone] || "bg-zinc-100 text-zinc-700";
-}
-
-function checkedChecklistClass(tone: string) {
-  const tones: Record<string, string> = {
-    emerald: "bg-emerald-100 text-emerald-800",
-    amber: "bg-amber-100 text-amber-800",
-    purple: "bg-purple-100 text-purple-800",
-  };
-
-  return tones[tone] || "bg-zinc-100 text-zinc-800";
-}
-
-function healthClass(tone: string) {
-  const tones: Record<string, string> = {
-    green: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-    yellow: "bg-amber-100 text-amber-800 ring-amber-200",
-    red: "bg-rose-100 text-rose-800 ring-rose-200",
-    blue: "bg-sky-100 text-sky-800 ring-sky-200",
-  };
-
-  return tones[tone] || "bg-zinc-100 text-zinc-800 ring-zinc-200";
-}
-
-function value(formData: FormData, key: string) {
-  const raw = formData.get(key);
-  if (raw === null) return null;
-
-  const stringValue = String(raw).trim();
-  return stringValue === "" ? null : stringValue;
-}
-
-function lastValue(formData: FormData, key: string) {
+function SmallHeading({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
-    formData
-      .getAll(key)
-      .map((v) => String(v).trim())
-      .filter(Boolean)
-      .at(-1) || null
+    <h4 className="border-b border-black/5 pb-2 text-[10px] font-black uppercase tracking-[.14em] text-zinc-400">
+      {children}
+    </h4>
   );
 }
 
-function getWeekday(date?: string | null) {
-  const d = parseDateOnly(date);
-  if (!d) return null;
-
-  return d.toLocaleDateString("de-DE", { weekday: "long" }).toUpperCase();
+function FieldLabel({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return (
+    <p className="mb-1.5 text-[11px] font-semibold text-zinc-500">
+      {children}
+    </p>
+  );
 }
 
-function formatDate(date?: string | null) {
-  const d = parseDateOnly(date);
-  if (!d) return date || "Datum offen";
-
-  return d.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+function InfoLine({
+  label,
+  value,
+  subline,
+}: {
+  label: string;
+  value: string;
+  subline?: string;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-300">
+        {label}
+      </p>
+      <p className="mt-1 font-bold text-zinc-700">
+        {value}
+      </p>
+      {subline && (
+        <p className="mt-0.5 text-xs font-semibold text-zinc-400">
+          {subline}
+        </p>
+      )}
+    </div>
+  );
 }
 
-function formatDateParts(date?: string | null) {
-  const d = parseDateOnly(date);
+function Timeline({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value?: string | null;
+  strong?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl px-4 py-4 text-center ring-1 ${
+        strong
+          ? "bg-zinc-950 text-white ring-zinc-950"
+          : "bg-[#fbf7ef] text-zinc-800 ring-black/5"
+      }`}
+    >
+      <p className="text-[10px] font-black uppercase tracking-[.12em] opacity-60">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-black">
+        {value || "—"}
+      </p>
+    </div>
+  );
+}
 
-  if (!d) {
+function ShowdayCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-xl bg-[#fbf7ef] p-4 ring-1 ring-black/5">
+      <h3 className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-400">
+        {title}
+      </h3>
+      <div className="mt-3 space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function ShowdayLine({
+  label,
+  value,
+  phone,
+}: {
+  label: string;
+  value: string;
+  phone?: string | null;
+}) {
+  return (
+    <div>
+      <p className="text-[9px] font-black uppercase tracking-[.1em] text-zinc-400">
+        {label}
+      </p>
+
+      {phone ? (
+        <a
+          href={`tel:${phone}`}
+          className="mt-0.5 block text-sm font-black text-[#2867d8]"
+        >
+          {value} · {phone}
+        </a>
+      ) : (
+        <p className="mt-0.5 text-sm font-black text-zinc-900">
+          {value || "—"}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ChecklistRow({
+  label,
+  checked,
+  manual,
+}: {
+  label: string;
+  checked: boolean;
+  manual: boolean;
+}) {
+  if (manual) {
+    return (
+      <label className="flex min-h-8 items-center gap-3 text-sm font-semibold text-zinc-700">
+        <input
+          id={checklistInputId(label)}
+          type="checkbox"
+          name={`checklist_${label}`}
+          defaultChecked={checked}
+          className="h-4 w-4 rounded accent-[#2867d8]"
+        />
+        <span
+          className={
+            checked
+              ? "text-zinc-400 line-through"
+              : ""
+          }
+        >
+          {label}
+        </span>
+      </label>
+    );
+  }
+
+  return (
+    <div className="flex min-h-8 items-center gap-3 text-sm font-semibold text-zinc-700">
+      <span
+        className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
+          checked
+            ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+            : "border-zinc-300 bg-white text-transparent"
+        }`}
+      >
+        ✓
+      </span>
+
+      <span
+        className={
+          checked
+            ? "text-zinc-400 line-through"
+            : ""
+        }
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function ContextFiles({
+  title,
+  files,
+  pattern,
+}: {
+  title: string;
+  files: any[];
+  pattern: RegExp;
+}) {
+  const matches = files.filter((file: any) =>
+    pattern.test(
+      `${file.file_name || ""} ${file.file_type || ""}`
+    )
+  );
+
+  if (!matches.length) return null;
+
+  return (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-[.14em] text-zinc-400">
+        {title}
+      </p>
+
+      <div className="mt-2 flex flex-wrap gap-2">
+        {matches.map((file: any) =>
+          file.url ? (
+            <a
+              key={file.id}
+              href={file.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full bg-white px-3 py-2 text-xs font-black text-zinc-700 ring-1 ring-black/10"
+            >
+              📄 {file.file_name || "Datei"} →
+            </a>
+          ) : null
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BottomCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-black/5">
+      <h3 className="text-lg font-black tracking-tight">
+        {title}
+      </h3>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function MiniMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl bg-[#fbf7ef] px-4 py-3 ring-1 ring-black/5">
+      <p className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-400">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-black text-zinc-900">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+/* ============================================================
+   PREVIEW HELPERS
+   ============================================================ */
+
+function castPreview(cast: any[]) {
+  if (!cast.length) return "Sonja Gründemann · solo";
+
+  return [
+    "Sonja Gründemann",
+    ...cast.map(
+      (person: any) =>
+        `${person.name}${
+          person.role ? ` (${person.role})` : ""
+        }`
+    ),
+  ].join(" · ");
+}
+
+function showdayCastPreview(cast: any[]) {
+  if (!cast.length) return "Sonja Gründemann · solo";
+
+  return [
+    "Sonja Gründemann",
+    ...cast.map(
+      (person: any) =>
+        `${person.name}${
+          person.role ? ` (${person.role})` : ""
+        }`
+    ),
+  ].join(" · ");
+}
+
+function ticketPricePreview(categories: any[], legacy: any) {
+  const prices = (categories || [])
+    .map((item: any) => Number(item.price))
+    .filter((value: number) => Number.isFinite(value));
+
+  if (prices.length) {
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const euro = (value: number) =>
+      value.toLocaleString("de-DE", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+    return min === max
+      ? `Tickets ${euro(min)} €`
+      : `Tickets ${euro(min)} €–${euro(max)} €`;
+  }
+
+  return legacy ? `Tickets ${legacy}` : null;
+}
+
+function techPreview(show: any) {
+  const result = [
+    triPreview("Ton", show.tech_sound_status),
+    triPreview("Licht", show.tech_lights_status),
+  ];
+
+  if (show.tech_piano_status === "available") {
+    result.push(
+      show.tech_piano_model
+        ? `Flügel: ${show.tech_piano_model}`
+        : "Flügel vorhanden"
+    );
+  }
+
+  if (show.epiano_status === "available") {
+    result.push(
+      show.tech_epiano_model
+        ? `E-Piano: ${show.tech_epiano_model}`
+        : "E-Piano vorhanden"
+    );
+  }
+
+  if (show.tech_contact) {
+    result.push(`Technik: ${show.tech_contact}`);
+  }
+
+  return result.filter(Boolean);
+}
+
+function showdayTechPreview(show: any) {
+  return techPreview(show)
+    .filter(
+      (value) =>
+        !String(value).includes("nicht vorhanden")
+    )
+    .join(" · ");
+}
+
+function triPreview(
+  label: string,
+  status?: string | null
+) {
+  if (status === "available") return `${label} ✓`;
+  if (status === "unavailable")
+    return `${label} nicht vorhanden`;
+  return `${label} offen`;
+}
+
+function backstagePreview(show: any) {
+  const status =
+    show.backstage_status ||
+    legacyBackstage(show);
+
+  if (status === "available") {
+    const details = [
+      miniStatus(
+        "Spiegel",
+        show.backstage_mirror_status,
+        show.backstage_mirror_available
+      ),
+      miniStatus(
+        "Sitzplatz",
+        show.backstage_seating_status,
+        show.backstage_seating_available
+      ),
+      miniStatus(
+        "Tisch",
+        show.backstage_table_status,
+        show.backstage_table_available
+      ),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    return details
+      ? `Backstage vorhanden · ${details}`
+      : "Backstage vorhanden";
+  }
+
+  if (status === "unavailable") {
+    return "Kein Backstage";
+  }
+
+  return "Backstage offen";
+}
+
+function cateringPreview(show: any) {
+  const status =
+    show.catering_structured_status ||
+    legacyCatering(show.catering_status);
+
+  if (status === "available") {
+    return show.catering_details
+      ? `Catering: ${compactText(
+          show.catering_details,
+          60
+        )}`
+      : "Catering vorgesehen";
+  }
+
+  if (status === "unavailable") {
+    return "Kein Catering";
+  }
+
+  return "Catering offen";
+}
+
+function accommodationPreview(show: any) {
+  const status =
+    show.accommodation_status ||
+    legacyAccommodation(show);
+
+  if (status === "not_required") {
+    return "Unterkunft nicht erforderlich";
+  }
+
+  if (status === "organizer") {
+    return show.accommodation_hotel_name
+      ? `Unterkunft gestellt · ${show.accommodation_hotel_name}`
+      : "Unterkunft gestellt";
+  }
+
+  if (status === "buyout") {
+    return show.accommodation_booked
+      ? `Hotel gebucht · Buyout`
+      : "Hotel noch buchen · Buyout";
+  }
+
+  return "Unterkunft offen";
+}
+
+function travelPreview(legs: any[]) {
+  if (!legs.length) return "";
+
+  const outbound = legs
+    .filter((row) => row.direction === "outbound")
+    .map((row) => row.transport_type)
+    .join(" → ");
+
+  const returnRoute = legs
+    .filter((row) => row.direction === "return")
+    .map((row) => row.transport_type)
+    .join(" → ");
+
+  return [
+    outbound ? `Hin: ${outbound}` : "",
+    returnRoute ? `Rück: ${returnRoute}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function posterPreview(show: any) {
+  if (show.posters_needed !== "Ja") return null;
+
+  if (!show.poster_format) {
+    return "Plakatformat offen";
+  }
+
+  return [
+    (show.poster_amount_text || show.poster_amount)
+      ? `Plakate ${show.poster_amount_text || show.poster_amount}`
+      : "Plakate",
+    show.poster_format === "other"
+      ? show.poster_format_other || "anderes Format"
+      : show.poster_format,
+  ].join(" × ");
+}
+
+function promoLabel(
+  status?: string | null,
+  date?: string | null
+) {
+  if (status === "sent") return "Promo verschickt";
+
+  if (status === "follow_up") {
+    return `Promo WVL${
+      date ? ` ${formatDate(date)}` : ""
+    }`;
+  }
+
+  return "Promo offen";
+}
+
+function invoiceRecipientLabel(
+  source?: string | null
+) {
+  if (source === "venue")
+    return "Rechnung an Spielstätte";
+  if (source === "custom")
+    return "Rechnung abweichend";
+  return "Rechnung an Vertragspartner";
+}
+
+function contractStatusLabel(
+  status?: string | null
+) {
+  if (status === "erledigt")
+    return "Vertrag erledigt";
+  if (status === "nicht_erforderlich")
+    return "Kein Vertrag nötig";
+  return "Vertrag offen";
+}
+
+function playAgainLabel(value?: string | null) {
+  if (value === "yes") return "Ja";
+  if (value === "maybe") return "Vielleicht";
+  if (value === "no") return "Nein";
+  return value || "—";
+}
+
+function feePreview(show: any) {
+  const model = String(show.fee_model || "");
+  const amount =
+    show.fee_base_amount !== null &&
+    show.fee_base_amount !== undefined
+      ? Number(show.fee_base_amount)
+      : null;
+  const artist =
+    show.fee_artist_share !== null &&
+    show.fee_artist_share !== undefined
+      ? Number(show.fee_artist_share)
+      : null;
+  const organizer =
+    show.fee_organizer_share !== null &&
+    show.fee_organizer_share !== undefined
+      ? Number(show.fee_organizer_share)
+      : null;
+  const tax =
+    show.fee_tax_mode === "gross"
+      ? "brutto"
+      : show.fee_tax_mode === "net"
+        ? "netto"
+        : "";
+
+  if (model === "fixed") {
+    return amount !== null
+      ? `${formatEuroCompact(amount)}${tax ? ` ${tax}` : ""}`
+      : "Festgage offen";
+  }
+
+  if (model === "minimum_plus_share") {
+    const parts = [
+      amount !== null
+        ? `${formatEuroCompact(amount)}${tax ? ` ${tax}` : ""}`
+        : "Mindestgage offen",
+      artist !== null && organizer !== null
+        ? `${numericText(artist)}/${numericText(organizer)}`
+        : null,
+    ].filter(Boolean);
+
+    return parts.join(" · ");
+  }
+
+  if (model === "share") {
+    return artist !== null && organizer !== null
+      ? `Beteiligung ${numericText(artist)}/${numericText(organizer)}`
+      : "Beteiligung offen";
+  }
+
+  if (model === "other") {
+    return show.fee_notes
+      ? compactText(String(show.fee_notes), 55)
+      : "Honorarvereinbarung";
+  }
+
+  return show.fee
+    ? compactText(String(show.fee), 55)
+    : "Honorar offen";
+}
+
+function compactText(
+  value: string,
+  max: number
+) {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 1)}…`;
+}
+
+/* ============================================================
+   ECONOMICS
+   ============================================================ */
+
+function getEconomicsSummary(economics: any) {
+  if (!economics) {
+    return {
+      revenue: 0,
+      costs: 0,
+      profit: 0,
+    };
+  }
+
+  const revenueItems = Array.isArray(
+    economics.revenue_items
+  )
+    ? economics.revenue_items
+    : [];
+
+  const costItems = Array.isArray(
+    economics.cost_items
+  )
+    ? economics.cost_items
+    : [];
+
+  const revenueFromItems = revenueItems.reduce(
+    (sum: number, item: any) =>
+      sum + Number(item?.amount || 0),
+    0
+  );
+
+  const costsFromItems = costItems.reduce(
+    (sum: number, item: any) =>
+      sum + Number(item?.amount || 0),
+    0
+  );
+
+  const revenue =
+    economics.revenue_total !== null &&
+    economics.revenue_total !== undefined
+      ? Number(economics.revenue_total || 0)
+      : revenueFromItems;
+
+  const costs =
+    economics.cost_total !== null &&
+    economics.cost_total !== undefined
+      ? Number(economics.cost_total || 0)
+      : costsFromItems;
+
+  const profit =
+    economics.profit !== null &&
+    economics.profit !== undefined
+      ? Number(economics.profit || 0)
+      : revenue - costs;
+
+  return { revenue, costs, profit };
+}
+
+/* ============================================================
+   GENERAL HELPERS
+   ============================================================ */
+
+function travelReady(legs: any[]) {
+  const outbound = legs.filter(
+    (row) => row.direction === "outbound"
+  );
+
+  if (!outbound.length) return false;
+
+  return outbound.every(
+    (leg: any) =>
+      !["Zug", "Fähre", "Flug"].includes(
+        leg.transport_type
+      ) || leg.booked
+  );
+}
+
+function miniStatus(
+  label: string,
+  status?: string | null,
+  legacy?: boolean | null
+) {
+  const effective =
+    status || (legacy === true ? "available" : "open");
+
+  if (effective === "available")
+    return `${label} ✓`;
+  if (effective === "unavailable")
+    return `${label} nein`;
+  return null;
+}
+
+function legacyBackstage(show: any) {
+  if (show.backstage_room_available)
+    return "available";
+  if (show.backstage_no_room)
+    return "unavailable";
+  return "open";
+}
+
+function legacyCatering(value: any) {
+  if (!value) return "open";
+  return /nicht|kein/i.test(String(value))
+    ? "unavailable"
+    : "available";
+}
+
+function legacyAccommodation(show: any) {
+  const value = String(
+    show.accommodation_type || ""
+  ).toLowerCase();
+
+  if (!value) return "open";
+  if (value.includes("buyout")) return "buyout";
+  if (value.includes("nicht"))
+    return "not_required";
+  return "organizer";
+}
+
+function workStatusTitle(
+  workStatus?: string | null,
+  internalStatus?: string | null,
+  openTaskCount = 0
+) {
+  if (internalStatus === "abgesagt")
+    return "Show abgesagt";
+
+  if (internalStatus === "abgeschlossen") {
+    return openTaskCount === 0
+      ? "Alles abgeschlossen"
+      : "Nachbereitung ist am Zug";
+  }
+
+  if (internalStatus === "gespielt")
+    return "Nachbereitung ist am Zug";
+
+  const map: Record<string, string> = {
+    offen: "Offen – Booking ist am Zug",
+    wartet_auf_booking: "Booking ist am Zug",
+    wartet_auf_vertragspartner:
+      "Wartet auf Vertragspartner",
+    wartet_auf_kuenstler:
+      "Wartet auf Künstler:in",
+    nichts_offen: "Aktuell nichts offen",
+  };
+
+  return (
+    map[String(workStatus || "")] ||
+    map.offen
+  );
+}
+
+function portalProgress(show: any) {
+  const fields = [
+    show.show_date,
+    show.venue,
+    show.city,
+    show.venue_address,
+    show.start_time,
+    show.contact_name,
+    show.contact_email,
+  ];
+
+  return {
+    done: fields.filter(Boolean).length,
+    total: fields.length,
+  };
+}
+
+function checklistInputId(label: string) {
+  return `checklist-${slug(label)}`;
+}
+
+function slug(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function buildAddress(value: any) {
+  if (!value) return "";
+
+  return [
+    value.street,
+    [value.postal_code, value.city]
+      .filter(Boolean)
+      .join(" "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function dateParts(date?: string | null) {
+  if (!date) {
     return {
       day: "--",
       month: "---",
@@ -1689,39 +3397,164 @@ function formatDateParts(date?: string | null) {
     };
   }
 
+  const parsed = new Date(`${date}T12:00:00`);
+
   return {
-    day: String(d.getDate()).padStart(2, "0"),
-    month: d
-      .toLocaleDateString("de-DE", { month: "short" })
+    day: String(parsed.getDate()).padStart(2, "0"),
+    month: parsed
+      .toLocaleDateString("de-DE", {
+        month: "short",
+      })
       .replace(".", "")
       .toUpperCase(),
-    year: String(d.getFullYear()),
+    year: String(parsed.getFullYear()),
   };
 }
 
-function parseDateOnly(date?: string | null) {
-  if (!date) return null;
+function formatDate(date?: string | null) {
+  if (!date) return "";
 
-  const [year, month, day] = date.split("-").map(Number);
-  if (!year || !month || !day) return null;
-
-  const d = new Date(year, month - 1, day);
-  if (Number.isNaN(d.getTime())) return null;
-
-  return d;
+  return new Date(`${date}T12:00:00`).toLocaleDateString(
+    "de-DE",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }
+  );
 }
 
-function startOfToday() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
+function formatTimeDisplay(
+  value?: string | null
+) {
+  if (!value) return "";
+
+  const match = String(value).match(
+    /(\d{1,2}):(\d{2})/
+  );
+
+  if (!match) return String(value);
+
+  return `${String(match[1]).padStart(
+    2,
+    "0"
+  )}:${match[2]} Uhr`;
+}
+
+function normalizeTimeInput(
+  value?: string | null
+) {
+  if (!value) return "";
+
+  const match = String(value).match(
+    /(\d{1,2}):(\d{2})/
+  );
+
+  if (!match) return "";
+
+  return `${String(match[1]).padStart(
+    2,
+    "0"
+  )}:${match[2]}`;
+}
+
+function normalizeTimeForDb(
+  value?: string | null
+) {
+  if (!value) return null;
+  return value;
+}
+
+function numericText(value: any) {
+  if (value === null || value === undefined)
+    return "";
+
+  const match = String(value).match(
+    /-?\d+(?:[.,]\d+)?/
+  );
+
+  return match
+    ? match[0].replace(",", ".")
+    : "";
+}
+
+function weekday(date?: string | null) {
+  if (!date) return null;
+
+  return new Date(`${date}T12:00:00`)
+    .toLocaleDateString("de-DE", {
+      weekday: "long",
+    })
+    .toUpperCase();
 }
 
 function formatEuro(value: number) {
   return new Intl.NumberFormat("de-DE", {
     style: "currency",
     currency: "EUR",
-    minimumFractionDigits: 2,
+  }).format(Number(value) || 0);
+}
+
+function formatEuroCompact(value: number) {
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(value);
+  }).format(Number(value) || 0);
+}
+
+function parseJsonArray(value: any) {
+  try {
+    const parsed = JSON.parse(
+      String(value || "[]")
+    );
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function nullable(value: any) {
+  const stringValue = str(value).trim();
+  return stringValue ? stringValue : null;
+}
+
+function str(value: any) {
+  return value === null || value === undefined
+    ? ""
+    : String(value);
+}
+
+function last(
+  formData: FormData,
+  key: string
+) {
+  const values = formData
+    .getAll(key)
+    .map(str)
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return values.at(-1) || null;
+}
+
+function numOrNull(value: any) {
+  const stringValue = str(value)
+    .trim()
+    .replace(",", ".");
+
+  if (!stringValue) return null;
+
+  const parsed = Number(stringValue);
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
+function intOrNull(value: any) {
+  const parsed = numOrNull(value);
+  return parsed === null
+    ? null
+    : Math.trunc(parsed);
 }

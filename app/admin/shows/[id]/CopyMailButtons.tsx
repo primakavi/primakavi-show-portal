@@ -43,14 +43,14 @@ Vielen Dank und herzliche Grüße
 primakavi Booking`;
 
   return (
-    <>
+    <div className="grid grid-cols-2 gap-3">
       <button
         type="button"
         onClick={async () => {
           await navigator.clipboard.writeText(subject);
           alert("Betreff kopiert ✓");
         }}
-        className="rounded-2xl bg-white px-5 py-3 text-center text-sm font-black text-zinc-950"
+        className="min-h-10 rounded-xl bg-[#fbf7ef] px-4 py-2.5 text-center text-xs font-black text-zinc-700 ring-1 ring-black/5 transition hover:bg-[#f5efe4]"
       >
         Betreff kopieren
       </button>
@@ -61,10 +61,10 @@ primakavi Booking`;
           await navigator.clipboard.writeText(text);
           alert("Mailtext kopiert ✓");
         }}
-        className="rounded-2xl bg-gradient-to-r from-pink-400 to-orange-400 px-5 py-3 text-center text-sm font-black text-white"
+        className="min-h-10 rounded-xl bg-[#fbf7ef] px-4 py-2.5 text-center text-xs font-black text-zinc-700 ring-1 ring-black/5 transition hover:bg-[#f5efe4]"
       >
         📋 Mailtext kopieren
       </button>
-    </>
+    </div>
   );
 }
