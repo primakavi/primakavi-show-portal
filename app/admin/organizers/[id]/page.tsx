@@ -31,6 +31,8 @@ export default async function OrganizerDetailPage({
       website,
       email,
       phone,
+      street,
+      postal_code,
       city,
       country,
       relationship_status,
@@ -140,6 +142,44 @@ export default async function OrganizerDetailPage({
         };
       })
       .filter(Boolean);
+
+  // ============================================================
+  // SHOWS DIESES VERANSTALTERS
+  // ============================================================
+
+  const {
+    data: shows,
+    error: showsError,
+  } = await supabaseAdmin
+    .schema("booking")
+    .from("shows")
+    .select(`
+      id,
+      show_date,
+      program,
+      internal_status,
+      start_time,
+      venue,
+      city
+    `)
+    .eq(
+      "organizer_id",
+      id
+    )
+    .order(
+      "show_date",
+      {
+        ascending: true,
+        nullsFirst: false,
+      }
+    );
+
+  if (showsError) {
+    console.error(
+      "Shows des Veranstalters konnten nicht geladen werden:",
+      showsError
+    );
+  }
 
   // ============================================================
   // AKQUISE-RUNDEN
@@ -332,6 +372,20 @@ export default async function OrganizerDetailPage({
             valueOrNull(
               formData.get(
                 "phone"
+              )
+            ),
+
+          street:
+            valueOrNull(
+              formData.get(
+                "street"
+              )
+            ),
+
+          postal_code:
+            valueOrNull(
+              formData.get(
+                "postal_code"
               )
             ),
 
@@ -943,31 +997,33 @@ export default async function OrganizerDetailPage({
         "venue_only"
       ) === "on";
 
-    const {
-      error: venueError,
-    } =
-      await supabaseAdmin
-        .from("venues")
-        .update({
-          acquisition_relevant:
-            !venueOnly,
+    // Beim normalen Verknüpfen verändern wir die Location NICHT.
+    // Nur der bewusst gesetzte Haken markiert sie als reine Spielstätte.
+    if (venueOnly) {
+      const {
+        error: venueError,
+      } =
+        await supabaseAdmin
+          .from("venues")
+          .update({
+            acquisition_relevant:
+              false,
 
-          relationship_status:
-            venueOnly
-              ? "🔴 Nicht relevant"
-              : "⚪ Neu",
-        })
-        .eq(
-          "id",
-          venueId
-        );
+            relationship_status:
+              "🔴 Nicht relevant",
+          })
+          .eq(
+            "id",
+            venueId
+          );
 
-    if (venueError) {
-      return {
-        success: false,
-        message:
-          venueError.message,
-      };
+      if (venueError) {
+        return {
+          success: false,
+          message:
+            venueError.message,
+        };
+      }
     }
 
     const {
@@ -1006,7 +1062,9 @@ export default async function OrganizerDetailPage({
     return {
       success: true,
       message:
-        "Spielort verknüpft.",
+        venueOnly
+          ? "Spielstätte verknüpft und bewusst als nicht direkt akquirierbar markiert."
+          : "Spielstätte verknüpft. Der Location-Status blieb unverändert.",
     };
   }
 
@@ -1115,7 +1173,9 @@ export default async function OrganizerDetailPage({
     return {
       success: true,
       message:
-        "Location angelegt und verknüpft.",
+        venueOnly
+          ? "Location angelegt, verknüpft und als reine Spielstätte markiert."
+          : "Location angelegt und verknüpft.",
     };
   }
 
@@ -1148,18 +1208,60 @@ export default async function OrganizerDetailPage({
         "venue_only"
       ) === "on";
 
+    const {
+      data: currentVenue,
+      error: currentVenueError,
+    } =
+      await supabaseAdmin
+        .from("venues")
+        .select(`
+          acquisition_relevant,
+          relationship_status
+        `)
+        .eq(
+          "id",
+          venueId
+        )
+        .single();
+
+    if (
+      currentVenueError ||
+      !currentVenue
+    ) {
+      return {
+        success: false,
+        message:
+          currentVenueError?.message ||
+          "Location konnte nicht geladen werden.",
+      };
+    }
+
+    const venueUpdate:
+      Record<
+        string,
+        string | boolean | null
+      > = {
+        acquisition_relevant:
+          !venueOnly,
+      };
+
+    if (venueOnly) {
+      venueUpdate.relationship_status =
+        "🔴 Nicht relevant";
+    } else if (
+      currentVenue.relationship_status ===
+      "🔴 Nicht relevant"
+    ) {
+      venueUpdate.relationship_status =
+        "⚪ Neu";
+    }
+
     const { error } =
       await supabaseAdmin
         .from("venues")
-        .update({
-          acquisition_relevant:
-            !venueOnly,
-
-          relationship_status:
-            venueOnly
-              ? "🔴 Nicht relevant"
-              : "⚪ Neu",
-        })
+        .update(
+          venueUpdate
+        )
         .eq(
           "id",
           venueId
@@ -1180,7 +1282,9 @@ export default async function OrganizerDetailPage({
     return {
       success: true,
       message:
-        "Spielort gespeichert.",
+        venueOnly
+          ? "Als reine Spielstätte gespeichert."
+          : "Location wieder für direkte Akquise freigegeben.",
     };
   }
 
@@ -2117,6 +2221,10 @@ export default async function OrganizerDetailPage({
 
       linkedVenues={
         linkedVenues as any[]
+      }
+
+      shows={
+        shows || []
       }
 
       acquisition={

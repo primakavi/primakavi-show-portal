@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import type { ReactNode } from "react";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 import LocationPicker from "./LocationPicker";
 
@@ -25,42 +27,30 @@ const ORGANIZER_TYPES = [
 
 export default async function NewOrganizerPage() {
   // ------------------------------------------------------------
-  // LOCATIONS FÜR SUCHE
+  // LOCATIONS FÜR VERKNÜPFUNG
   // ------------------------------------------------------------
 
-  const { data: venues, error: venuesError } =
-    await supabaseAdmin
-      .from("venues")
-      .select(`
-        id,
-        name,
-        city,
-        website,
-        relationship_status,
-        acquisition_relevant
-      `)
-      .order("name", {
-        ascending: true,
-      });
+  const { data: venues, error: venuesError } = await supabaseAdmin
+    .from("venues")
+    .select(`
+      id,
+      name,
+      city
+    `)
+    .order("name", { ascending: true });
 
   if (venuesError) {
-    throw new Error(
-      venuesError.message
-    );
+    throw new Error(venuesError.message);
   }
 
   // ------------------------------------------------------------
   // VERANSTALTER ANLEGEN
   // ------------------------------------------------------------
 
-  async function createOrganizer(
-    formData: FormData
-  ) {
+  async function createOrganizer(formData: FormData) {
     "use server";
 
-    const name = clean(
-      formData.get("name")
-    );
+    const name = clean(formData.get("name"));
 
     if (!name) {
       throw new Error(
@@ -68,57 +58,33 @@ export default async function NewOrganizerPage() {
       );
     }
 
-    const venueMode = clean(
-      formData.get("venue_mode")
+    const venueIds = Array.from(
+      new Set(
+        formData
+          .getAll("venue_ids")
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      )
     );
 
-    const existingVenueId =
-      clean(
-        formData.get("venue_id")
-      );
+    const venueOnlyIds = new Set(
+      formData
+        .getAll("venue_only_ids")
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    );
 
-    const newVenueName =
-      clean(
-        formData.get(
-          "new_venue_name"
-        )
-      );
+    // ----------------------------------------------------------
+    // VERANSTALTER
+    // ----------------------------------------------------------
 
-    const newVenueCity =
-      clean(
-        formData.get(
-          "new_venue_city"
-        )
-      );
-
-    const newVenueWebsite =
-      clean(
-        formData.get(
-          "new_venue_website"
-        )
-      );
-
-    const venueOnly =
-      formData.get(
-        "venue_only"
-      ) === "on";
-
-    // ------------------------------------------------------------
-    // 1. VERANSTALTER
-    // ------------------------------------------------------------
-
-    const {
-      data: created,
-      error: organizerError,
-    } = await supabaseAdmin
+    const { data: created, error: organizerError } = await supabaseAdmin
       .from("organizers")
       .insert({
         name,
 
         organizer_type: clean(
-          formData.get(
-            "organizer_type"
-          )
+          formData.get("organizer_type")
         ),
 
         website: clean(
@@ -133,20 +99,25 @@ export default async function NewOrganizerPage() {
           formData.get("phone")
         ),
 
+        street: clean(
+          formData.get("street")
+        ),
+
+        postal_code: clean(
+          formData.get("postal_code")
+        ),
+
         city: clean(
           formData.get("city")
         ),
 
         country:
-          clean(
-            formData.get("country")
-          ) || "Deutschland",
+          clean(formData.get("country")) ||
+          "Deutschland",
 
         relationship_status:
           clean(
-            formData.get(
-              "relationship_status"
-            )
+            formData.get("relationship_status")
           ) || "⚪ Neu",
 
         notes: clean(
@@ -156,258 +127,136 @@ export default async function NewOrganizerPage() {
       .select("id")
       .single();
 
-    if (
-      organizerError ||
-      !created
-    ) {
+    if (organizerError || !created) {
       throw new Error(
         organizerError?.message ||
           "Veranstalter konnte nicht angelegt werden."
       );
     }
 
-    // ------------------------------------------------------------
-    // 2. ANSPRECHPARTNER 1
-    // ------------------------------------------------------------
+    // ----------------------------------------------------------
+    // ANSPRECHPARTNER 1
+    // ----------------------------------------------------------
 
-    const contact1Name =
-      clean(
-        formData.get(
-          "contact_name"
-        )
-      );
+    const contact1Name = clean(
+      formData.get("contact_name")
+    );
 
     if (contact1Name) {
-      const { error } =
-        await supabaseAdmin
-          .from(
-            "organizer_contacts"
-          )
-          .insert({
-            organizer_id:
-              created.id,
+      const { error } = await supabaseAdmin
+        .from("organizer_contacts")
+        .insert({
+          organizer_id: created.id,
 
-            name: contact1Name,
+          name: contact1Name,
 
-            role: clean(
-              formData.get(
-                "contact_role"
-              )
-            ),
+          role: clean(
+            formData.get("contact_role")
+          ),
 
-            email: clean(
-              formData.get(
-                "contact_email"
-              )
-            ),
+          email: clean(
+            formData.get("contact_email")
+          ),
 
-            phone: clean(
-              formData.get(
-                "contact_phone"
-              )
-            ),
+          phone: clean(
+            formData.get("contact_phone")
+          ),
 
-            is_primary: true,
-          });
+          notes: clean(
+            formData.get("contact_notes")
+          ),
+
+          is_primary: true,
+        });
 
       if (error) {
-        throw new Error(
-          error.message
-        );
+        throw new Error(error.message);
       }
     }
 
-    // ------------------------------------------------------------
-    // 3. ANSPRECHPARTNER 2
-    // ------------------------------------------------------------
+    // ----------------------------------------------------------
+    // ANSPRECHPARTNER 2
+    // ----------------------------------------------------------
 
-    const contact2Name =
-      clean(
-        formData.get(
-          "contact_name_2"
-        )
-      );
+    const contact2Name = clean(
+      formData.get("contact_name_2")
+    );
 
     if (contact2Name) {
-      const { error } =
-        await supabaseAdmin
-          .from(
-            "organizer_contacts"
-          )
-          .insert({
-            organizer_id:
-              created.id,
+      const { error } = await supabaseAdmin
+        .from("organizer_contacts")
+        .insert({
+          organizer_id: created.id,
 
-            name: contact2Name,
+          name: contact2Name,
 
-            role: clean(
-              formData.get(
-                "contact_role_2"
-              )
-            ),
+          role: clean(
+            formData.get("contact_role_2")
+          ),
 
-            email: clean(
-              formData.get(
-                "contact_email_2"
-              )
-            ),
+          email: clean(
+            formData.get("contact_email_2")
+          ),
 
-            phone: clean(
-              formData.get(
-                "contact_phone_2"
-              )
-            ),
+          phone: clean(
+            formData.get("contact_phone_2")
+          ),
 
-            is_primary: false,
-          });
+          notes: clean(
+            formData.get("contact_notes_2")
+          ),
+
+          is_primary: false,
+        });
 
       if (error) {
-        throw new Error(
-          error.message
-        );
+        throw new Error(error.message);
       }
     }
 
-    // ------------------------------------------------------------
-    // 4. LOCATION BESTIMMEN
-    // ------------------------------------------------------------
+    // ----------------------------------------------------------
+    // SPIELSTÄTTEN VERKNÜPFEN
+    // ----------------------------------------------------------
 
-    let venueId:
-      | string
-      | null = null;
+    if (venueIds.length > 0) {
+      const rows = venueIds.map((venueId) => ({
+        organizer_id: created.id,
+        venue_id: venueId,
+      }));
 
-    // ------------------------------------------------------------
-    // BESTEHENDE LOCATION
-    // ------------------------------------------------------------
+      const { error } = await supabaseAdmin
+        .from("organizer_venues")
+        .insert(rows);
 
-    if (
-      venueMode === "existing" &&
-      existingVenueId
-    ) {
-      venueId =
-        existingVenueId;
+      if (error) {
+        throw new Error(error.message);
+      }
 
-      const {
-        error: venueUpdateError,
-      } =
-        await supabaseAdmin
-          .from("venues")
-          .update({
-            acquisition_relevant:
-              !venueOnly,
-
-            relationship_status:
-              venueOnly
-                ? "🔴 Nicht relevant"
-                : "⚪ Neu",
-          })
-          .eq(
-            "id",
-            existingVenueId
-          );
-
-      if (
-        venueUpdateError
-      ) {
-        throw new Error(
-          venueUpdateError.message
+      const markedVenueIds =
+        venueIds.filter((venueId) =>
+          venueOnlyIds.has(venueId)
         );
+
+      if (markedVenueIds.length > 0) {
+        const { error: venueStatusError } =
+          await supabaseAdmin
+            .from("venues")
+            .update({
+              acquisition_relevant: false,
+              relationship_status: "🔴 Nicht relevant",
+            })
+            .in("id", markedVenueIds);
+
+        if (venueStatusError) {
+          throw new Error(venueStatusError.message);
+        }
       }
     }
 
-    // ------------------------------------------------------------
-    // NEUE LOCATION
-    // ------------------------------------------------------------
+    revalidatePath("/admin/organizers");
+    revalidatePath("/admin/locations");
 
-    if (
-      venueMode === "new" &&
-      newVenueName
-    ) {
-      const {
-        data: newVenue,
-        error: newVenueError,
-      } =
-        await supabaseAdmin
-          .from("venues")
-          .insert({
-            name:
-              newVenueName,
-
-            city:
-              newVenueCity,
-
-            website:
-              newVenueWebsite,
-
-            acquisition_relevant:
-              !venueOnly,
-
-            relationship_status:
-              venueOnly
-                ? "🔴 Nicht relevant"
-                : "⚪ Neu",
-          })
-          .select("id")
-          .single();
-
-      if (
-        newVenueError ||
-        !newVenue
-      ) {
-        throw new Error(
-          newVenueError
-            ?.message ||
-            "Location konnte nicht angelegt werden."
-        );
-      }
-
-      venueId =
-        newVenue.id;
-    }
-
-    // ------------------------------------------------------------
-    // 5. VERANSTALTER ↔ LOCATION VERKNÜPFEN
-    // ------------------------------------------------------------
-
-    if (venueId) {
-      const {
-        error: linkError,
-      } =
-        await supabaseAdmin
-          .from(
-            "organizer_venues"
-          )
-          .upsert(
-            {
-              organizer_id:
-                created.id,
-
-              venue_id:
-                venueId,
-
-              is_primary:
-                true,
-            },
-            {
-              onConflict:
-                "organizer_id,venue_id",
-            }
-          );
-
-      if (linkError) {
-        throw new Error(
-          linkError.message
-        );
-      }
-    }
-
-    // ------------------------------------------------------------
-    // FERTIG
-    // ------------------------------------------------------------
-
-    redirect(
-      `/admin/organizers/${created.id}`
-    );
+    redirect(`/admin/organizers/${created.id}`);
   }
 
   // ------------------------------------------------------------
@@ -417,9 +266,6 @@ export default async function NewOrganizerPage() {
   return (
     <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
       <div className="mx-auto max-w-7xl space-y-5">
-
-        {/* HEADER */}
-
         <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <Link
@@ -438,7 +284,7 @@ export default async function NewOrganizerPage() {
             </h1>
 
             <p className="mt-2 text-zinc-500">
-              Neuen Veranstalter anlegen.
+              Veranstalter
             </p>
           </div>
         </header>
@@ -447,7 +293,6 @@ export default async function NewOrganizerPage() {
           action={createOrganizer}
           className="space-y-5"
         >
-
           {/* STAMMDATEN */}
 
           <Card
@@ -456,7 +301,6 @@ export default async function NewOrganizerPage() {
             description="Grunddaten des Veranstalters."
           >
             <div className="grid gap-4 md:grid-cols-12">
-
               <Field
                 label="Veranstalter"
                 name="name"
@@ -468,37 +312,51 @@ export default async function NewOrganizerPage() {
                 label="Beziehungsstatus"
                 name="relationship_status"
                 defaultValue="⚪ Neu"
-                options={
-                  RELATIONSHIP_OPTIONS
-                }
+                options={RELATIONSHIP_OPTIONS}
                 className="md:col-span-4"
               />
 
               <SelectField
                 label="Typ"
                 name="organizer_type"
-                options={
-                  ORGANIZER_TYPES
-                }
+                options={ORGANIZER_TYPES}
                 className="md:col-span-4"
+              />
+
+              <Field
+                label="Straße / Hausnummer"
+                name="street"
+                autoComplete="street-address"
+                className="md:col-span-8"
+              />
+
+              <Field
+                label="PLZ"
+                name="postal_code"
+                autoComplete="postal-code"
+                className="md:col-span-3"
               />
 
               <Field
                 label="Ort / Sitz"
                 name="city"
-                className="md:col-span-4"
+                autoComplete="address-level2"
+                className="md:col-span-5"
               />
 
               <Field
                 label="Land"
                 name="country"
                 defaultValue="Deutschland"
+                autoComplete="country-name"
                 className="md:col-span-4"
               />
+
 
               <Field
                 label="Website"
                 name="website"
+                autoComplete="url"
                 className="md:col-span-6"
               />
 
@@ -506,28 +364,27 @@ export default async function NewOrganizerPage() {
                 label="Allgemeine E-Mail"
                 name="email"
                 type="email"
+                autoComplete="email"
                 className="md:col-span-3"
               />
 
               <Field
                 label="Telefon"
                 name="phone"
+                autoComplete="tel"
                 className="md:col-span-3"
               />
-
             </div>
           </Card>
 
           {/* ANSPRECHPARTNER */}
 
-          <div className="grid gap-5 xl:grid-cols-2">
-
+          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <Card
               title="Ansprechpartner 1"
               icon="👤"
             >
-              <div className="grid gap-4 md:grid-cols-2">
-
+              <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <Field
                   label="Name"
                   name="contact_name"
@@ -550,7 +407,6 @@ export default async function NewOrganizerPage() {
                   label="Telefon"
                   name="contact_phone"
                 />
-
               </div>
             </Card>
 
@@ -558,8 +414,7 @@ export default async function NewOrganizerPage() {
               title="Ansprechpartner 2"
               icon="👥"
             >
-              <div className="grid gap-4 md:grid-cols-2">
-
+              <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <Field
                   label="Name"
                   name="contact_name_2"
@@ -582,27 +437,27 @@ export default async function NewOrganizerPage() {
                   label="Telefon"
                   name="contact_phone_2"
                 />
-
               </div>
             </Card>
-
           </div>
 
-          {/* SPIELORT */}
+          {/* SPIELSTÄTTEN */}
 
           <Card
-            title="Spielort"
+            title="Spielstätten"
             icon="🏛️"
-            description="Optional: Location auswählen oder direkt neu anlegen."
+            description="Locations, an denen Veranstaltungen dieses Veranstalters stattfinden."
           >
-            <LocationPicker
-              venues={
-                venues || []
-              }
-            />
+            <LocationPicker venues={venues || []} />
+
+            <div className="mt-4 rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-semibold leading-5 text-zinc-500">
+              Beispiel: Hamburger Comedy Pokal → Die Motte + Schmidt Theater.
+              Der Veranstalter bleibt Vertragspartner, die Locations sind die
+              jeweiligen Spielstätten.
+            </div>
           </Card>
 
-          {/* NOTIZEN */}
+          {/* NOTIZ */}
 
           <Card
             title="Notizen"
@@ -617,9 +472,8 @@ export default async function NewOrganizerPage() {
           {/* SAVE BAR */}
 
           <div className="sticky bottom-5 z-20 flex flex-col gap-3 rounded-[1.5rem] bg-zinc-950 px-5 py-4 text-white shadow-2xl sm:flex-row sm:items-center sm:justify-between">
-
             <p className="text-sm text-white/50">
-              Der neue Veranstalter wird in den Stammdaten angelegt.
+              Neuen Veranstalter mit Kontakten und Spielstätten anlegen.
             </p>
 
             <button
@@ -628,15 +482,12 @@ export default async function NewOrganizerPage() {
             >
               Veranstalter anlegen
             </button>
-
           </div>
-
         </form>
       </div>
     </main>
   );
 }
-
 
 // ============================================================
 // CARD
@@ -651,11 +502,10 @@ function Card({
   title: string;
   icon: string;
   description?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <section className="rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-
+    <section className="min-w-0 rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
       <div className="mb-5 flex items-start gap-3">
         <div className="text-2xl">
           {icon}
@@ -679,7 +529,6 @@ function Card({
   );
 }
 
-
 // ============================================================
 // FIELD
 // ============================================================
@@ -690,6 +539,7 @@ function Field({
   type = "text",
   defaultValue,
   required = false,
+  autoComplete,
   className = "",
 }: {
   label: string;
@@ -697,16 +547,17 @@ function Field({
   type?: string;
   defaultValue?: string | null;
   required?: boolean;
+  autoComplete?: string;
   className?: string;
 }) {
   return (
     <label
       className={[
-        "block",
+        "block min-w-0 max-w-full",
         className,
       ].join(" ")}
     >
-      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
+      <span className="mb-2 block truncate text-xs font-black uppercase tracking-wider text-zinc-400">
         {label}
       </span>
 
@@ -714,10 +565,9 @@ function Field({
         name={name}
         type={type}
         required={required}
-        defaultValue={
-          defaultValue || ""
-        }
-        className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+        autoComplete={autoComplete}
+        defaultValue={defaultValue || ""}
+        className="h-12 w-full min-w-0 max-w-full truncate rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
       />
     </label>
   );
@@ -744,7 +594,7 @@ function SelectField({
   return (
     <label
       className={[
-        "block",
+        "block min-w-0",
         className,
       ].join(" ")}
     >
@@ -754,29 +604,21 @@ function SelectField({
 
       <select
         name={name}
-        defaultValue={
-          defaultValue || ""
-        }
-        className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-bold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+        defaultValue={defaultValue || ""}
+        className="h-12 w-full min-w-0 max-w-full truncate rounded-xl bg-[#fbf7ef] px-4 text-sm font-bold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
       >
-        {options.map(
-          (option) => (
-            <option
-              key={
-                option ||
-                "__empty"
-              }
-              value={option}
-            >
-              {option || "—"}
-            </option>
-          )
-        )}
+        {options.map((option) => (
+          <option
+            key={option || "__empty"}
+            value={option}
+          >
+            {option || "—"}
+          </option>
+        ))}
       </select>
     </label>
   );
 }
-
 
 // ============================================================
 // TEXTAREA
@@ -798,12 +640,11 @@ function Textarea({
       <textarea
         name={name}
         rows={4}
-        className="w-full rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+        className="w-full min-w-0 max-w-full break-words rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
       />
     </label>
   );
 }
-
 
 // ============================================================
 // CLEAN
@@ -812,9 +653,6 @@ function Textarea({
 function clean(
   value: FormDataEntryValue | null
 ) {
-  const text = String(
-    value ?? ""
-  ).trim();
-
+  const text = String(value ?? "").trim();
   return text || null;
 }

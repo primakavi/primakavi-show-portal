@@ -21,6 +21,8 @@ type Organizer = {
   website: string | null;
   email: string | null;
   phone: string | null;
+  street: string | null;
+  postal_code: string | null;
   city: string | null;
   country: string | null;
   relationship_status: string | null;
@@ -56,6 +58,17 @@ type LinkedVenue =
     is_primary: boolean;
     link_notes: string | null;
   };
+
+
+type OrganizerShow = {
+  id: string;
+  show_date: string | null;
+  program: string | null;
+  internal_status: string | null;
+  start_time: string | null;
+  venue: string | null;
+  city: string | null;
+};
 
 
 type AcquisitionRecord = {
@@ -142,6 +155,7 @@ export default function OrganizerClient({
   contacts,
   venues,
   linkedVenues,
+  shows,
   acquisition,
   acquisitionActivities,
   acquisitionRounds,
@@ -173,6 +187,8 @@ export default function OrganizerClient({
   venues: Venue[];
 
   linkedVenues: LinkedVenue[];
+
+  shows: OrganizerShow[];
 
   acquisition: AcquisitionRecord[];
 
@@ -746,12 +762,33 @@ export default function OrganizerClient({
               />
 
               <Field
+                label="Straße / Hausnummer"
+                name="street"
+                defaultValue={
+                  organizer.street
+                }
+                autoComplete="street-address"
+                className="md:col-span-8"
+              />
+
+              <Field
+                label="PLZ"
+                name="postal_code"
+                defaultValue={
+                  organizer.postal_code
+                }
+                autoComplete="postal-code"
+                className="md:col-span-3"
+              />
+
+              <Field
                 label="Ort / Sitz"
                 name="city"
                 defaultValue={
                   organizer.city
                 }
-                className="md:col-span-4"
+                autoComplete="address-level2"
+                className="md:col-span-5"
               />
 
               <Field
@@ -761,6 +798,7 @@ export default function OrganizerClient({
                   organizer.country ||
                   "Deutschland"
                 }
+                autoComplete="country-name"
                 className="md:col-span-4"
               />
 
@@ -770,6 +808,7 @@ export default function OrganizerClient({
                 defaultValue={
                   organizer.website
                 }
+                autoComplete="url"
                 className="md:col-span-6"
               />
 
@@ -780,6 +819,7 @@ export default function OrganizerClient({
                 defaultValue={
                   organizer.email
                 }
+                autoComplete="email"
                 className="md:col-span-3"
               />
 
@@ -789,6 +829,7 @@ export default function OrganizerClient({
                 defaultValue={
                   organizer.phone
                 }
+                autoComplete="tel"
                 className="md:col-span-3"
               />
 
@@ -800,7 +841,7 @@ export default function OrganizerClient({
           {/* ANSPRECHPARTNER */}
           {/* ================================================= */}
 
-          <div className="grid gap-5 xl:grid-cols-2">
+          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 
             {sortedContacts.map(
               (
@@ -944,9 +985,9 @@ export default function OrganizerClient({
           {/* ================================================= */}
 
           <Card
-            title="Spielorte"
+            title="Spielstätten"
             icon="🏛️"
-            description="Locations, an denen dieser Veranstalter spielt."
+            description="Locations, an denen Veranstaltungen dieses Veranstalters stattfinden."
             action={
               <button
                 type="button"
@@ -963,7 +1004,7 @@ export default function OrganizerClient({
               >
                 {showVenueForm
                   ? "Schließen"
-                  : "+ Spielort"}
+                  : "+ Spielstätte"}
               </button>
             }
           >
@@ -974,11 +1015,11 @@ export default function OrganizerClient({
               <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center">
 
                 <p className="text-sm font-black text-zinc-700">
-                  Noch kein Spielort verknüpft.
+                  Noch keine Spielstätte verknüpft.
                 </p>
 
                 <p className="mt-1 text-sm font-semibold text-zinc-400">
-                  Über „+ Spielort“ kannst du eine bestehende Location verbinden oder eine neue anlegen.
+                  Über „+ Spielstätte“ kannst du eine bestehende Location verbinden oder eine neue anlegen.
                 </p>
 
               </div>
@@ -1748,6 +1789,114 @@ export default function OrganizerClient({
           </Card>
 
           {/* ================================================= */}
+          {/* SHOWS */}
+          {/* ================================================= */}
+
+          <Card
+            title="Shows dieses Veranstalters"
+            icon="🎟️"
+            description={
+              shows.length === 0
+                ? "Noch keine Show mit diesem Veranstalter verknüpft."
+                : `${shows.length} ${
+                    shows.length === 1
+                      ? "Show"
+                      : "Shows"
+                  } mit diesem Veranstalter verknüpft.`
+            }
+          >
+
+            {shows.length === 0 ? (
+
+              <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center text-sm font-semibold text-zinc-400">
+                Für diesen Veranstalter gibt es aktuell keine verknüpfte Show.
+              </div>
+
+            ) : (
+
+              <div className="overflow-hidden rounded-2xl border border-black/10">
+
+                <div className="divide-y divide-black/5">
+
+                  {shows.map(
+                    (
+                      show
+                    ) => (
+
+                      <Link
+                        key={
+                          show.id
+                        }
+                        href={`/admin/shows/${show.id}`}
+                        className="group flex flex-col gap-3 bg-white px-5 py-4 transition hover:bg-zinc-50 md:flex-row md:items-center md:justify-between"
+                      >
+
+                        <div className="min-w-0">
+
+                          <div className="flex flex-wrap items-center gap-2">
+
+                            <span className="font-black text-zinc-950">
+                              {formatShowDate(
+                                show.show_date
+                              )}
+                            </span>
+
+                            {show.start_time && (
+                              <span className="text-sm font-semibold text-zinc-400">
+                                ·{" "}
+                                {formatShowTime(
+                                  show.start_time
+                                )}
+                              </span>
+                            )}
+
+                            <ShowStatus
+                              status={
+                                show.internal_status
+                              }
+                            />
+
+                          </div>
+
+                          {show.program && (
+                            <div className="mt-1 truncate text-sm font-semibold text-zinc-600">
+                              {show.program}
+                            </div>
+                          )}
+
+                          {(show.venue ||
+                            show.city) && (
+                            <div className="mt-1 truncate text-xs font-semibold text-zinc-400">
+                              📍{" "}
+                              {[
+                                show.venue,
+                                show.city,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
+                          )}
+
+                        </div>
+
+                        <span className="shrink-0 text-sm font-black text-zinc-400 transition group-hover:text-zinc-950">
+                          Show öffnen →
+                        </span>
+
+                      </Link>
+
+                    )
+                  )}
+
+                </div>
+
+              </div>
+
+            )}
+
+          </Card>
+
+          {/* ================================================= */}
           {/* NOTIZEN */}
           {/* ================================================= */}
 
@@ -1866,7 +2015,7 @@ function ContactView({
   contact: Contact;
 }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 
       <ReadField
         label="Name"
@@ -1948,7 +2097,7 @@ function ContactEditForm({
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 
         <Field
           label="Name"
@@ -2164,7 +2313,7 @@ function ContactNewForm({
   return (
     <div id="new-contact-fields">
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 
         <Field
           label="Name"
@@ -2413,13 +2562,13 @@ function VenueRow({
             <span>
 
               <span className="block text-sm font-black text-zinc-800">
-                Nur Spielort
+                Nur Spielstätte / nicht direkt akquirieren
               </span>
 
               <span className="mt-1 block text-xs font-semibold text-zinc-400">
                 {venueOnly
-                  ? "Status wird auf „🔴 Nicht relevant“ gesetzt."
-                  : "Status wird auf „⚪ Neu“ gesetzt."}
+                  ? "Diese Location ist bewusst nicht Ziel der direkten Akquise."
+                  : "Diese Location ist für direkte Akquise freigegeben."}
               </span>
 
             </span>
@@ -2541,10 +2690,7 @@ function VenueSearchResult({
     venueOnly,
     setVenueOnly,
   ] =
-    useState(
-      venue.acquisition_relevant ===
-        false
-    );
+    useState(false);
 
   return (
     <div className="border-b border-black/5 p-4 last:border-b-0">
@@ -2621,26 +2767,13 @@ function VenueSearchResult({
           }
         />
 
-        Nur Spielort / nicht direkt akquirieren
+        Nur Spielstätte / nicht direkt akquirieren
 
       </label>
 
-      {venue.relationship_status !==
-        (venueOnly
-          ? "🔴 Nicht relevant"
-          : "⚪ Neu") && (
-
-        <p className="mt-2 text-xs font-semibold text-amber-700">
-          ⚠️ Der aktuelle Status „{venue.relationship_status || "ohne Status"}“ wird beim Verknüpfen auf{" "}
-          <strong>
-            {venueOnly
-              ? "🔴 Nicht relevant"
-              : "⚪ Neu"}
-          </strong>{" "}
-          geändert.
-        </p>
-
-      )}
+      <p className="mt-2 text-xs font-semibold text-zinc-400">
+        Ohne Haken wird nur die Verknüpfung angelegt. Der bestehende Location-Status bleibt unverändert.
+      </p>
 
     </div>
   );
@@ -2718,11 +2851,11 @@ function NewVenueForm({
         <span>
 
           <span className="block text-sm font-black text-zinc-800">
-            Nur Spielort
+            Nur Spielstätte / nicht direkt akquirieren
           </span>
 
           <span className="mt-1 block text-xs font-semibold text-zinc-400">
-            Die Location wird als „🔴 Nicht relevant“ in Locations angelegt.
+            Wenn aktiviert, wird die Location bewusst als „🔴 Nicht relevant“ für direkte Akquise angelegt.
           </span>
 
         </span>
@@ -3101,7 +3234,7 @@ function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
+    <section className="min-w-0 rounded-[1.7rem] bg-white p-6 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
 
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 
@@ -3154,6 +3287,7 @@ function Field({
   type = "text",
   defaultValue,
   required = false,
+  autoComplete,
   className = "",
 }: {
   label: string;
@@ -3164,17 +3298,18 @@ function Field({
     | number
     | null;
   required?: boolean;
+  autoComplete?: string;
   className?: string;
 }) {
   return (
     <label
       className={[
-        "block",
+        "block min-w-0",
         className,
       ].join(" ")}
     >
 
-      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
+      <span className="mb-2 block truncate text-xs font-black uppercase tracking-wider text-zinc-400">
         {label}
       </span>
 
@@ -3184,11 +3319,14 @@ function Field({
         required={
           required
         }
+        autoComplete={
+          autoComplete
+        }
         defaultValue={
           defaultValue ??
           ""
         }
-        className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+        className="h-12 w-full min-w-0 max-w-full truncate rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
       />
 
     </label>
@@ -3213,17 +3351,25 @@ function ReadField({
 }) {
   return (
     <div
-      className={
-        className
-      }
+      className={[
+        "min-w-0 max-w-full",
+        className,
+      ].join(" ")}
     >
 
-      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
+      <span className="mb-2 block truncate text-xs font-black uppercase tracking-wider text-zinc-400">
         {label}
       </span>
 
-      <div className="flex min-h-12 items-center rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold text-zinc-800">
-        {value || "—"}
+      <div
+        className="flex min-h-12 w-full min-w-0 max-w-full items-center overflow-hidden rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold text-zinc-800"
+        title={
+          value || undefined
+        }
+      >
+        <span className="block min-w-0 max-w-full truncate">
+          {value || "—"}
+        </span>
       </div>
 
     </div>
@@ -3251,7 +3397,7 @@ function SelectField({
   return (
     <label
       className={[
-        "block",
+        "block min-w-0",
         className,
       ].join(" ")}
     >
@@ -3266,7 +3412,7 @@ function SelectField({
           defaultValue ||
           ""
         }
-        className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-bold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+        className="h-12 w-full min-w-0 max-w-full truncate rounded-xl bg-[#fbf7ef] px-4 text-sm font-bold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
       >
 
         {options.map(
@@ -3313,7 +3459,7 @@ function Textarea({
   return (
     <label
       className={[
-        "block",
+        "block min-w-0",
         className,
       ].join(" ")}
     >
@@ -3329,7 +3475,7 @@ function Textarea({
           ""
         }
         rows={4}
-        className="w-full rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+        className="w-full min-w-0 max-w-full break-words rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
       />
 
     </label>
@@ -3404,6 +3550,119 @@ function AcquisitionStatus({
       className={`rounded-full px-2.5 py-1 text-xs font-black ${classes}`}
     >
       {label}
+    </span>
+  );
+}
+
+
+// ============================================================
+// SHOW DATUM
+// ============================================================
+
+function formatShowDate(
+  date: string | null
+) {
+  if (!date) {
+    return "Datum offen";
+  }
+
+  return new Intl.DateTimeFormat(
+    "de-DE",
+    {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }
+  ).format(
+    new Date(
+      `${date}T12:00:00`
+    )
+  );
+}
+
+
+// ============================================================
+// SHOW UHRZEIT
+// ============================================================
+
+function formatShowTime(
+  time: string | null
+) {
+  if (!time) {
+    return "";
+  }
+
+  return `${time.slice(
+    0,
+    5
+  )} Uhr`;
+}
+
+
+// ============================================================
+// SHOW STATUS
+// ============================================================
+
+function ShowStatus({
+  status,
+}: {
+  status: string | null;
+}) {
+  const label =
+    status ||
+    "ohne Status";
+
+  const normalized =
+    label.toLowerCase();
+
+  let classes =
+    "bg-zinc-100 text-zinc-600";
+
+  if (
+    normalized === "option"
+  ) {
+    classes =
+      "bg-violet-50 text-violet-700";
+  } else if (
+    normalized === "fix" ||
+    normalized === "bestätigt" ||
+    normalized === "bestaetigt" ||
+    normalized === "confirmed"
+  ) {
+    classes =
+      "bg-emerald-50 text-emerald-700";
+  } else if (
+    normalized === "gespielt"
+  ) {
+    classes =
+      "bg-blue-50 text-blue-700";
+  } else if (
+    normalized === "abgeschlossen"
+  ) {
+    classes =
+      "bg-zinc-100 text-zinc-700";
+  } else if (
+    normalized === "abgesagt" ||
+    normalized === "cancelled"
+  ) {
+    classes =
+      "bg-red-50 text-red-700";
+  } else if (
+    normalized === "neu" ||
+    normalized === "in_arbeit"
+  ) {
+    classes =
+      "bg-amber-50 text-amber-700";
+  }
+
+  return (
+    <span
+      className={`rounded-full px-2.5 py-1 text-xs font-black ${classes}`}
+    >
+      {label.replaceAll(
+        "_",
+        " "
+      )}
     </span>
   );
 }
