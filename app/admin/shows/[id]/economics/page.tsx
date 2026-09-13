@@ -12,7 +12,20 @@ export default async function EconomicsPage({
   const { data: show } = await supabaseAdmin
     .schema("booking")
     .from("shows")
-    .select("id, artist, program, show_date, venue, city")
+    .select(`
+      id,
+      artist,
+      program,
+      show_date,
+      venue,
+      city,
+      fee_model,
+      fee_base_amount,
+      fee_artist_share,
+      fee_organizer_share,
+      fee_tax_mode,
+      fee_notes
+    `)
     .eq("id", id)
     .single();
 
@@ -31,67 +44,70 @@ export default async function EconomicsPage({
   const validRows =
     allEconomics?.filter((row) => row.revenue_total !== null) || [];
 
-  const avgRevenue = average(
-    validRows.map((row) => Number(row.revenue_total) || 0)
-  );
-
-  const avgProfit = average(
-    validRows.map((row) => Number(row.profit) || 0)
-  );
-
   const benchmark =
     validRows.length > 0
       ? {
-          avgRevenue,
-          avgProfit,
+          avgRevenue: average(validRows.map((row) => Number(row.revenue_total) || 0)),
+          avgProfit: average(validRows.map((row) => Number(row.profit) || 0)),
         }
       : undefined;
 
   return (
-    <div className="space-y-5 text-zinc-950">
-      <section className="relative overflow-hidden rounded-[2.4rem] bg-[#101014] p-10 text-white shadow-2xl shadow-black/10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(255,105,180,0.38),transparent_28%),radial-gradient(circle_at_35%_25%,rgba(255,145,60,0.28),transparent_35%),radial-gradient(circle_at_70%_95%,rgba(190,255,90,0.13),transparent_28%)]" />
-
-        <div className="absolute right-24 top-10 rotate-6 text-6xl text-pink-400">
-          💸
-        </div>
-
-        <div className="relative flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <main className="min-h-screen bg-[#fbf7ef] px-6 py-8 text-[#191917]">
+      <div className="mx-auto max-w-[1500px]">
+        <header className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm font-bold uppercase tracking-widest text-white/50">
-              primakavi · Nachbereitung
-            </p>
+            <div className="text-xs font-black uppercase tracking-[.14em] text-[#9a978f]">
+              primakavi · Booking CRM · Nachbereitung
+            </div>
 
-            <h1 className="mt-4 text-5xl font-black tracking-tight">
+            <h1 className="mt-2 text-4xl font-black tracking-tight">
               Wirtschaftlichkeit
             </h1>
 
-            <p className="mt-4 max-w-xl text-white/70">
-              Einnahmen, Kosten und Learnings zur Show.
+            <p className="mt-2 text-sm leading-6 text-[#77746c]">
+              Einnahmen, direkte Show-Kosten und Deckungsbeitrag der Show.
             </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-bold text-[#6f6c65]">
+              {show?.show_date && (
+                <span className="rounded-full bg-[#f4f1e9] px-3 py-1.5">
+                  {new Date(`${show.show_date}T12:00:00`).toLocaleDateString("de-DE")}
+                </span>
+              )}
+              {show?.venue && (
+                <span className="rounded-full bg-[#f4f1e9] px-3 py-1.5">
+                  {show.venue}{show.city ? ` · ${show.city}` : ""}
+                </span>
+              )}
+              {show?.program && (
+                <span className="rounded-full bg-[#f4f1e9] px-3 py-1.5">
+                  {show.program}
+                </span>
+              )}
+            </div>
           </div>
 
           <Link
             href={`/admin/shows/${id}`}
-            className="rounded-3xl bg-white/10 px-6 py-4 text-sm font-black text-white ring-1 ring-white/15 transition hover:bg-white/15"
+            className="inline-flex w-fit items-center rounded-full border border-[#ddd7ca] bg-white px-5 py-2.5 text-sm font-black transition hover:border-[#c9d65c] hover:bg-[#faf8f2]"
           >
-            ← Zurück zur Akte
+            ← Zurück zur Show-Akte
           </Link>
-        </div>
-      </section>
+        </header>
 
-      <EconomicsTab
-        showId={id}
-        show={show ?? undefined}
-        initialData={economics ?? undefined}
-        benchmark={benchmark}
-      />
-    </div>
+        <EconomicsTab
+          showId={id}
+          show={show ?? undefined}
+          initialData={economics ?? undefined}
+          benchmark={benchmark}
+        />
+      </div>
+    </main>
   );
 }
 
 function average(values: number[]) {
   if (!values.length) return 0;
-
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
