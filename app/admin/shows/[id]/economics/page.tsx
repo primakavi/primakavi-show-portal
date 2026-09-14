@@ -36,6 +36,21 @@ export default async function EconomicsPage({
     .eq("show_id", id)
     .maybeSingle();
 
+  const { data: travelLegs } = await supabaseAdmin
+    .schema("booking")
+    .from("show_travel_legs")
+    .select(`
+      id,
+      direction,
+      transport_type,
+      from_place,
+      to_place,
+      actual_cost
+    `)
+    .eq("show_id", id)
+    .order("direction")
+    .order("sort_order");
+
   const { data: allEconomics } = await supabaseAdmin
     .schema("booking")
     .from("show_economics")
@@ -100,6 +115,7 @@ export default async function EconomicsPage({
           showId={id}
           show={show ?? undefined}
           initialData={economics ?? undefined}
+          travelLegs={travelLegs ?? []}
           benchmark={benchmark}
         />
       </div>

@@ -24,6 +24,15 @@ type EconomicsRow = {
   cost_items?: unknown;
 };
 
+type TravelLegRow = {
+  show_id: string;
+  direction: string | null;
+  transport_type: string | null;
+  from_place: string | null;
+  to_place: string | null;
+  actual_cost: number | string | null;
+};
+
 type FixedCostRow = {
   id: string;
   name: string;
@@ -56,7 +65,7 @@ export default async function AnalyticsPage({
   const start = `${selectedYear}-01-01`;
   const end = `${selectedYear}-12-31`;
 
-  const [showsResult, economicsResult, fixedCostsResult] = await Promise.all([
+  const [showsResult, economicsResult, fixedCostsResult, travelResult] = await Promise.all([
     supabaseAdmin
       .schema("booking")
       .from("shows")
@@ -66,6 +75,10 @@ export default async function AnalyticsPage({
       .order("show_date", { ascending: true }),
     supabaseAdmin.schema("booking").from("show_economics").select("*"),
     supabaseAdmin.schema("booking").from("fixed_costs").select("*").order("name"),
+    supabaseAdmin
+      .schema("booking")
+      .from("show_travel_legs")
+      .select("show_id,direction,transport_type,from_place,to_place,actual_cost"),
   ]);
 
   const allShows = (showsResult.data || []) as ShowRow[];
@@ -73,6 +86,15 @@ export default async function AnalyticsPage({
   const cancelledShows = allShows.filter((show) => isCancelledStatus(show.internal_status));
   const shows = playedShows;
   const economics = (economicsResult.data || []) as EconomicsRow[];
+  const travelLegs = (travelResult.data || []) as TravelLegRow[];
+
+  const travelLegsByShow = new Map<string, TravelLegRow[]>();
+  for (const leg of travelLegs) {
+    const current = travelLegsByShow.get(leg.show_id) || [];
+    current.push(leg);
+    travelLegsByShow.set(leg.show_id, current);
+  }
+
   const fixedCostsTableMissing = Boolean(fixedCostsResult.error);
   const fixedCosts = fixedCostsTableMissing
     ? []
@@ -91,10 +113,15 @@ export default async function AnalyticsPage({
   );
 
   const economicsByShow = new Map(
-    Array.from(economicsRowsByShow.entries()).map(([showId, row]) => [
-      showId,
-      economicsValues(row),
-    ])
+    Array.from(economicsRowsByShow.entries()).map(([showId, row]) => {
+      const automaticTravelItems = travelCostItems(travelLegsByShow.get(showId) || []);
+      const manualCostItems = manualEconomicCostItems(row.cost_items, automaticTravelItems);
+
+      return [
+        showId,
+        economicsValues(row, automaticTravelItems, manualCostItems),
+      ];
+    })
   );
 
   const totalRevenue = sum(shows.map((show) => economicsByShow.get(show.id)?.revenue || 0));
@@ -154,6 +181,12 @@ export default async function AnalyticsPage({
   const showDetails = shows.map((show) => {
     const econ = economicsByShow.get(show.id);
     const rawEconomics = economicsRowsByShow.get(show.id);
+    const automaticTravelItems = travelCostItems(travelLegsByShow.get(show.id) || []);
+    const manualCostItems = manualEconomicCostItems(
+      rawEconomics?.cost_items,
+      automaticTravelItems
+    );
+
     return {
       ...show,
       hasEconomics: Boolean(econ),
@@ -161,20 +194,78 @@ export default async function AnalyticsPage({
       costs: econ?.costs || 0,
       contribution: (econ?.revenue || 0) - (econ?.costs || 0),
       revenueItems: economicItems(rawEconomics?.revenue_items),
-      costItems: economicItems(rawEconomics?.cost_items),
+      costItems: [...automaticTravelItems, ...manualCostItems],
     };
   });
 
-  function variableCostCategory(label: string) {
+  const variableCostCategoryLabels: Record<string, string> = {
+    travel: "Reisekosten",
+    accommodation: "Übernachtung",
+    musician: "Musiker / Begleitung",
+    tech: "Technik",
+    catering: "Verpflegung",
+    shipping: "Versand / Porto",
+    other: "Sonstige direkte Kosten",
+  };
+
+  function legacyVariableCostCategory(label: string) {
     const value = label.toLowerCase().trim();
-    if (/(hinfahrt|rückfahrt|rueckfahrt|reise|bahn|zug|ice|fahrt|fahrkarte|kilometer|km|flug|mietwagen)/.test(value)) return "Reise";
-    if (/(hotel|übernacht|uebernacht|unterkunft|pension)/.test(value)) return "Hotel";
-    if (/markus/.test(value)) return "Markus";
-    if (/(technik|ton|licht|mikro|sound)/.test(value)) return "Technik";
-    if (/(porto|versand|post)/.test(value)) return "Porto / Versand";
-    if (/(essen|verpflegung|catering|meal|restaurant)/.test(value)) return "Verpflegung";
-    if (/(taxi|uber|bolt)/.test(value)) return "Taxi";
-    return "Sonstiges";
+
+    if (
+      /(hinfahrt|rückfahrt|rueckfahrt|reise|bahn|zug|ice|fahrt|fahrkarte|kilometer|km|flug|mietwagen|taxi|uber|bolt)/.test(
+        value
+      )
+    ) {
+      return "Reisekosten";
+    }
+
+    if (/(hotel|übernacht|uebernacht|unterkunft|pension)/.test(value)) {
+      return "Übernachtung";
+    }
+
+    if (/(markus|musiker|begleitung|pianist)/.test(value)) {
+      return "Musiker / Begleitung";
+    }
+
+    if (/(technik|ton|licht|mikro|sound)/.test(value)) {
+      return "Technik";
+    }
+
+    if (/(essen|verpflegung|catering|meal|restaurant)/.test(value)) {
+      return "Verpflegung";
+    }
+
+    if (/(porto|versand|post)/.test(value)) {
+      return "Versand / Porto";
+    }
+
+    return "Sonstige direkte Kosten";
+  }
+
+  function variableCostCategory(item: {
+    label: string;
+    category?: string;
+  }) {
+    const storedCategory = String(item.category || "").trim();
+
+    // Neue Wirtschaftsdaten:
+    // Die in der Show-Akte gespeicherte Oberkategorie ist maßgeblich.
+    if (storedCategory && variableCostCategoryLabels[storedCategory]) {
+      return variableCostCategoryLabels[storedCategory];
+    }
+
+    // Zusätzliche Absicherung, falls einmal der sichtbare Kategoriename
+    // statt des technischen Keys gespeichert wurde.
+    const matchingLabel = Object.values(variableCostCategoryLabels).find(
+      (label) => label.toLowerCase() === storedCategory.toLowerCase()
+    );
+    if (matchingLabel) {
+      return matchingLabel;
+    }
+
+    // Historische Datensätze haben noch keine category.
+    // Nur für diese alten Einträge wird aus der Bezeichnung abgeleitet.
+    return legacyVariableCostCategory(item.label);
   }
 
   const variableCostMap = new Map<string, {
@@ -188,7 +279,7 @@ export default async function AnalyticsPage({
     if (!show.hasEconomics) continue;
     for (const item of show.costItems) {
       if (!item.amount) continue;
-      const category = variableCostCategory(item.label);
+      const category = variableCostCategory(item);
       const current = variableCostMap.get(category) || {
         category,
         amount: 0,
@@ -1553,43 +1644,204 @@ function economicItems(value: unknown) {
   if (!Array.isArray(value)) return [];
 
   return value
-    .map((item: any) => ({
-      label: String(item?.label || "Position").trim() || "Position",
-      amount: economicsNumber(item?.amount),
-    }))
+    .map((item: any) => {
+      const category =
+        typeof item?.category === "string"
+          ? item.category.trim()
+          : "";
+
+      return {
+        label: String(item?.label || "Position").trim() || "Position",
+        amount: economicsNumber(item?.amount),
+        ...(category ? { category } : {}),
+      };
+    })
     .filter((item) => item.amount !== 0);
 }
 
-function economicsValues(economics: EconomicsRow) {
-  const revenueItems = Array.isArray(economics.revenue_items) ? economics.revenue_items : [];
-  const costItems = Array.isArray(economics.cost_items) ? economics.cost_items : [];
+function travelCostItems(legs: TravelLegRow[]) {
+  return legs
+    .map((leg) => {
+      const amount = economicsNumber(leg.actual_cost);
+      if (amount === 0) return null;
+
+      const direction =
+        leg.direction === "return"
+          ? "Rückfahrt"
+          : leg.direction === "outbound"
+            ? "Hinfahrt"
+            : "Fahrt";
+
+      const transport = String(leg.transport_type || "").trim();
+      const route = [leg.from_place, leg.to_place]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .join(" → ");
+
+      return {
+        category: "travel",
+        label: [direction, transport, route].filter(Boolean).join(" · "),
+        amount,
+        source: "show_akte",
+      };
+    })
+    .filter(
+      (
+        item
+      ): item is {
+        category: string;
+        label: string;
+        amount: number;
+        source: string;
+      } => Boolean(item)
+    );
+}
+
+function manualEconomicCostItems(
+  value: unknown,
+  automaticTravelItems: { label: string; amount: number; category?: string }[]
+) {
+  const items = economicItems(value);
+
+  if (!automaticTravelItems.length) return items;
+
+  const unusedAutomatic = automaticTravelItems.map((item) => ({
+    ...item,
+    used: false,
+  }));
+
+  return items.filter((item) => {
+    const category =
+      item.category || inferLegacyVariableCostKey(item.label);
+
+    // Nur historische Reisekosten können Dubletten zu den
+    // Reisestrecken aus der Show-Akte sein.
+    if (category !== "travel") return true;
+
+    const itemLabel = normalizeVariableCostLabel(item.label);
+
+    const matchIndex = unusedAutomatic.findIndex((automatic) => {
+      if (automatic.used) return false;
+
+      const sameAmount =
+        Math.abs(automatic.amount - item.amount) < 0.01;
+
+      if (!sameAmount) return false;
+
+      const automaticLabel = normalizeVariableCostLabel(automatic.label);
+
+      const sameDirection =
+        (itemLabel.includes("hinfahrt") &&
+          automaticLabel.includes("hinfahrt")) ||
+        ((itemLabel.includes("rückfahrt") ||
+          itemLabel.includes("rueckfahrt")) &&
+          automaticLabel.includes("rückfahrt"));
+
+      return sameDirection || itemLabel === automaticLabel;
+    });
+
+    if (matchIndex === -1) return true;
+
+    unusedAutomatic[matchIndex].used = true;
+    return false;
+  });
+}
+
+function normalizeVariableCostLabel(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function inferLegacyVariableCostKey(label: string) {
+  const value = normalizeVariableCostLabel(label);
+
+  if (
+    /(hinfahrt|rückfahrt|rueckfahrt|reise|bahn|zug|ice|fahrt|fahrkarte|kilometer|km|flug|mietwagen|taxi|uber|bolt)/.test(
+      value
+    )
+  ) {
+    return "travel";
+  }
+
+  if (/(hotel|übernacht|uebernacht|unterkunft|pension)/.test(value)) {
+    return "accommodation";
+  }
+
+  if (/(markus|musiker|begleitung|pianist)/.test(value)) {
+    return "musician";
+  }
+
+  if (/(technik|ton|licht|mikro|sound)/.test(value)) {
+    return "tech";
+  }
+
+  if (/(essen|verpflegung|catering|meal|restaurant)/.test(value)) {
+    return "catering";
+  }
+
+  if (/(porto|versand|post)/.test(value)) {
+    return "shipping";
+  }
+
+  return "other";
+}
+
+function economicsValues(
+  economics: EconomicsRow,
+  automaticTravelItems: { amount: number }[] = [],
+  manualCostItems?: { amount: number }[]
+) {
+  const revenueItems = Array.isArray(economics.revenue_items)
+    ? economics.revenue_items
+    : [];
 
   const revenueItemValues = revenueItems
     .map((item: any) => economicsNumber(item?.amount))
     .filter((value: number) => value !== 0);
 
-  const costItemValues = costItems
-    .map((item: any) => economicsNumber(item?.amount))
-    .filter((value: number) => value !== 0);
-
   const revenueFromItems = sum(revenueItemValues);
-  const costsFromItems = sum(costItemValues);
 
-  // Einzelpositionen haben Vorrang, wenn dort tatsächlich Werte gepflegt sind.
-  // Leere Standardzeilen wie Reise/Hotel/Technik/Sonstiges zählen nicht als echte Kosten.
-  const revenue = revenueItemValues.length > 0
-    ? revenueFromItems
-    : economicsNumber(economics.revenue_total);
+  const revenue =
+    revenueItemValues.length > 0
+      ? revenueFromItems
+      : economicsNumber(economics.revenue_total);
 
-  const legacyCosts =
-    economicsNumber(economics.cost_travel) +
+  const automaticTravelCosts = sum(
+    automaticTravelItems.map((item) => item.amount)
+  );
+
+  const cleanManualCostItems =
+    manualCostItems ??
+    economicItems(economics.cost_items);
+
+  const manualCosts = sum(
+    cleanManualCostItems.map((item) => item.amount)
+  );
+
+  // Neue Logik:
+  // Reisekosten aus der Show-Akte + manuelle Zusatzkosten.
+  //
+  // Falls eine alte Show noch gar keine cost_items hat, bleiben die
+  // historischen Legacy-Felder zusätzlich als Fallback erhalten.
+  const hasManualItems = cleanManualCostItems.length > 0;
+
+  const legacyNonTravelCosts =
     economicsNumber(economics.cost_hotel) +
     economicsNumber(economics.cost_fee) +
     economicsNumber(economics.cost_misc);
 
-  const costs = costItemValues.length > 0
-    ? costsFromItems
-    : legacyCosts;
+  const legacyTravelFallback =
+    automaticTravelCosts === 0
+      ? economicsNumber(economics.cost_travel)
+      : 0;
+
+  const costs = hasManualItems
+    ? automaticTravelCosts + manualCosts
+    : automaticTravelCosts +
+      legacyTravelFallback +
+      legacyNonTravelCosts;
 
   return { revenue, costs };
 }

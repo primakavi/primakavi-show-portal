@@ -42,6 +42,15 @@ type ShowContext = {
   fee_notes?: string | null;
 };
 
+type TravelLeg = {
+  id?: string;
+  direction?: string | null;
+  transport_type?: string | null;
+  from_place?: string | null;
+  to_place?: string | null;
+  actual_cost?: string | number | null;
+};
+
 type Benchmark = {
   avgRevenue?: number;
   avgCosts?: number;
@@ -63,11 +72,13 @@ export default function EconomicsTab({
   showId,
   initialData,
   show,
+  travelLegs = [],
   benchmark,
 }: {
   showId: string;
   initialData?: EconomicsData;
   show?: ShowContext;
+  travelLegs?: TravelLeg[];
   benchmark?: Benchmark;
 }) {
   const [data, setData] = useState<EconomicsData>(initialData || {});
@@ -81,13 +92,16 @@ export default function EconomicsTab({
     getInitialExtraRevenueItems(initialData?.revenue_items || [], showRevenue.amount)
   );
 
+  const automaticTravelItems = useMemo(
+    () => getAutomaticTravelItems(travelLegs),
+    [travelLegs]
+  );
+
   const [costItems, setCostItems] = useState<MoneyItem[]>(
-    initialData?.cost_items?.length
-      ? initialData.cost_items.map((item) => ({
-          ...item,
-          category: item.category || inferLegacyCostCategory(item.label),
-        }))
-      : []
+    getInitialManualCostItems(
+      initialData?.cost_items || [],
+      automaticTravelItems
+    )
   );
 
   function update(field: keyof EconomicsData, value: string) {
@@ -95,7 +109,9 @@ export default function EconomicsTab({
   }
 
   const revenue = showRevenue.amount + sumMoneyItems(revenueItems);
-  const totalCosts = sumMoneyItems(costItems);
+  const automaticTravelCosts = sumMoneyItems(automaticTravelItems);
+  const manualCosts = sumMoneyItems(costItems);
+  const totalCosts = automaticTravelCosts + manualCosts;
   const contribution = revenue - totalCosts;
   const margin = revenue > 0 ? (contribution / revenue) * 100 : 0;
   const hasData = revenue > 0 || totalCosts > 0;
@@ -112,11 +128,13 @@ export default function EconomicsTab({
   const verdict =
     !hasData
       ? { label: "Noch offen", text: "Noch keine Wirtschaftsdaten vorhanden." }
-      : contribution > 0
-        ? { label: "Positiver DB", text: "Die Show leistet einen positiven Beitrag zur Deckung der Fixkosten." }
-        : contribution < 0
-          ? { label: "Negativer DB", text: "Die direkten Show-Kosten liegen über dem Umsatz." }
-          : { label: "DB = 0", text: "Umsatz und direkte Show-Kosten gleichen sich aus." };
+      : contribution < 0
+        ? { label: "Negativer DB", text: "Die Show deckt ihre direkten Kosten nicht." }
+        : contribution === 0
+          ? { label: "DB = 0", text: "Umsatz und direkte Show-Kosten gleichen sich aus." }
+          : margin < 20
+            ? { label: "Wirtschaftlich knapp", text: `${formatEuro(contribution)} Deckungsbeitrag vor Fixkosten · nur ${margin.toFixed(0)} % DB-Marge.` }
+            : { label: "Positiver DB", text: `${formatEuro(contribution)} Deckungsbeitrag vor Fixkosten.` };
 
   async function save() {
     setSaving(true);
@@ -241,7 +259,7 @@ export default function EconomicsTab({
               </div>
             </div>
 
-            {costItems.length > 0 && (
+            {(automaticTravelItems.length > 0 || costItems.length > 0) && (
               <div className="mt-5 space-y-2">
                 <div className="grid grid-cols-[165px_1fr_110px_34px] gap-2 px-1 text-[10px] font-black uppercase tracking-[.1em] text-[#9a978f]">
                   <div>Kostenart</div>
@@ -249,6 +267,36 @@ export default function EconomicsTab({
                   <div className="text-right">Betrag</div>
                   <div />
                 </div>
+
+                {automaticTravelItems.map((item, index) => (
+                  <div
+                    key={`travel-${index}-${item.label}-${item.amount}`}
+                    className="grid grid-cols-[165px_1fr_110px_34px] gap-2"
+                  >
+                    <div className="flex h-11 min-w-0 items-center rounded-xl border border-[#dce4b4] bg-[#f6f9e8] px-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-black text-[#425300]">
+                          Reisekosten
+                        </div>
+                        <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-[.08em] text-[#7d8c38]">
+                          aus Show-Akte
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex h-11 min-w-0 items-center rounded-xl border border-[#e2ddd1] bg-[#faf8f2] px-3 text-sm font-semibold text-[#25231f]">
+                      <span className="truncate">{item.label}</span>
+                    </div>
+
+                    <div className="flex h-11 items-center justify-end rounded-xl border border-[#e2ddd1] bg-[#faf8f2] px-3 text-sm font-black text-[#25231f]">
+                      {formatEuro(toNumber(item.amount))}
+                    </div>
+
+                    <div className="flex h-11 items-center justify-center text-xs font-black text-[#b0aca3]">
+                      ✓
+                    </div>
+                  </div>
+                ))}
 
                 {costItems.map((item, index) => (
                   <div key={index} className="grid grid-cols-[165px_1fr_110px_34px] gap-2">
@@ -288,7 +336,7 @@ export default function EconomicsTab({
               </div>
             )}
 
-            {costItems.length === 0 && (
+            {automaticTravelItems.length === 0 && costItems.length === 0 && (
               <div className="mt-5 rounded-2xl border border-dashed border-[#ddd7ca] bg-[#faf8f2] px-4 py-5 text-sm font-semibold text-[#88857d]">
                 Noch keine direkten Show-Kosten erfasst.
               </div>
@@ -306,71 +354,35 @@ export default function EconomicsTab({
       </section>
 
       <section className="rounded-[24px] border border-[#e2ddd1] bg-white p-6 shadow-[0_8px_20px_rgba(45,40,28,.04)]">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">
-              Wirtschaftlichkeit
+              Ergebnis
             </div>
-            <h2 className="mt-1 text-xl font-black text-[#191917]">Deckungsbeitrag der Show</h2>
+            <h2 className="mt-1 text-xl font-black text-[#191917]">Was bleibt von der Show?</h2>
           </div>
 
-          <span className={`inline-flex w-fit rounded-full px-3 py-1.5 text-xs font-black ${resultPillClass(resultVariant)}`}>
+          <span className={`inline-flex w-fit rounded-full px-3 py-1.5 text-xs font-black ${resultPillClass(resultVariant, margin)}`}>
             {verdict.label}
           </span>
         </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Kpi label="Umsatz" value={formatEuro(revenue)} />
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <Kpi label="Variable Kosten" value={formatEuro(totalCosts)} />
-          <Kpi label="Deckungsbeitrag" value={hasData ? formatEuro(contribution) : "—"} tone={resultVariant} />
+          <Kpi
+            label="Deckungsbeitrag"
+            value={hasData ? formatEuro(contribution) : "—"}
+            tone={resultVariant}
+          />
           <Kpi label="DB-Marge" value={hasData ? `${margin.toFixed(0)} %` : "—"} />
         </div>
 
         <div className="mt-4 rounded-2xl bg-[#faf8f2] px-4 py-3 text-sm font-bold text-[#56524b]">
           {verdict.text}
-          {benchmark?.avgProfit !== undefined && (
-            <span className="ml-2 font-semibold text-[#88857d]">
-              · Ø DB bisher {formatEuro(benchmark.avgProfit)}
-            </span>
-          )}
         </div>
       </section>
 
-      <section className="rounded-[24px] border border-[#e2ddd1] bg-white p-6 shadow-[0_8px_20px_rgba(45,40,28,.04)]">
-        <div>
-          <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">
-            Einordnung
-          </div>
-          <h2 className="mt-1 text-xl font-black text-[#191917]">Wie bewerten wir die Show?</h2>
-        </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <CompactSelect
-            label="Wirtschaftlich"
-            value={data.economic_rating}
-            onChange={(value) => update("economic_rating", value)}
-            options={["Sehr gut", "Gut", "Grenzwertig", "Schlecht"]}
-          />
-          <CompactSelect
-            label="Wieder buchen?"
-            value={data.would_book_again}
-            onChange={(value) => update("would_book_again", value)}
-            options={["Ja", "Vielleicht", "Nein"]}
-          />
-          <CompactSelect
-            label="Strategischer Wert"
-            value={data.strategic_value}
-            onChange={(value) => update("strategic_value", value)}
-            options={["Hoch", "Mittel", "Niedrig"]}
-          />
-          <CompactSelect
-            label="Ziel der Show"
-            value={data.show_goal}
-            onChange={(value) => update("show_goal", value)}
-            options={["Geld", "Netzwerk", "Sichtbarkeit", "Test", "Tour-Logik"]}
-          />
-        </div>
-      </section>
 
       <div className="flex flex-col gap-3 rounded-[22px] border border-[#e2ddd1] bg-white px-5 py-4 shadow-[0_8px_20px_rgba(45,40,28,.04)] sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -429,36 +441,6 @@ function Kpi({
       </div>
       <div className="mt-2 text-2xl font-black">{value}</div>
     </div>
-  );
-}
-
-function CompactSelect({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value?: string;
-  onChange: (value: string) => void;
-  options: string[];
-}) {
-  return (
-    <label className="grid gap-2 rounded-2xl bg-[#faf8f2] p-3">
-      <span className="text-[11px] font-black uppercase tracking-[.08em] text-[#77746c]">
-        {label}
-      </span>
-      <select
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-11 rounded-xl border border-[#ddd7ca] bg-white px-3 text-sm font-bold text-[#25231f] outline-none transition focus:border-[#c9d65c] focus:ring-4 focus:ring-[#dbe76e]/20"
-      >
-        <option value="">Bitte wählen</option>
-        {options.map((option) => (
-          <option key={option}>{option}</option>
-        ))}
-      </select>
-    </label>
   );
 }
 
@@ -582,6 +564,96 @@ function getInitialExtraRevenueItems(items: MoneyItem[], automaticRevenue: numbe
   });
 }
 
+function getAutomaticTravelItems(travelLegs: TravelLeg[]): MoneyItem[] {
+  return travelLegs
+    .filter((leg) => toNumber(leg.actual_cost) !== 0)
+    .map((leg) => {
+      const direction =
+        leg.direction === "return"
+          ? "Rückfahrt"
+          : leg.direction === "outbound"
+            ? "Hinfahrt"
+            : "Fahrt";
+
+      const route = [leg.from_place, leg.to_place]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .join(" → ");
+
+      const transport = String(leg.transport_type || "").trim();
+
+      const detail = [direction, transport, route]
+        .filter(Boolean)
+        .join(" · ");
+
+      return {
+        category: "travel",
+        label: detail || direction,
+        amount: leg.actual_cost || 0,
+      };
+    });
+}
+
+function getInitialManualCostItems(
+  items: MoneyItem[],
+  automaticTravelItems: MoneyItem[]
+) {
+  const normalizedItems = items.map((item) => ({
+    ...item,
+    category: item.category || inferLegacyCostCategory(item.label),
+  }));
+
+  if (!automaticTravelItems.length) return normalizedItems;
+
+  const unusedAutomatic = automaticTravelItems.map((item) => ({
+    ...item,
+    used: false,
+  }));
+
+  return normalizedItems.filter((item) => {
+    if ((item.category || inferLegacyCostCategory(item.label)) !== "travel") {
+      return true;
+    }
+
+    const itemAmount = toNumber(item.amount);
+    const itemLabel = normalizeCostLabel(item.label);
+
+    const matchIndex = unusedAutomatic.findIndex((automatic) => {
+      if (automatic.used) return false;
+
+      const sameAmount =
+        Math.abs(toNumber(automatic.amount) - itemAmount) < 0.01;
+
+      if (!sameAmount) return false;
+
+      const automaticLabel = normalizeCostLabel(automatic.label);
+
+      const directionMatches =
+        (itemLabel.includes("hinfahrt") &&
+          automaticLabel.includes("hinfahrt")) ||
+        (itemLabel.includes("rückfahrt") &&
+          automaticLabel.includes("rückfahrt")) ||
+        (itemLabel.includes("rueckfahrt") &&
+          automaticLabel.includes("rückfahrt"));
+
+      return directionMatches || itemLabel === automaticLabel;
+    });
+
+    if (matchIndex === -1) return true;
+
+    unusedAutomatic[matchIndex].used = true;
+    return false;
+  });
+}
+
+function normalizeCostLabel(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/ue/g, "ü")
+    .replace(/\s+/g, " ");
+}
+
 function inferLegacyCostCategory(label: string) {
   const value = String(label || "").toLowerCase();
 
@@ -670,8 +742,10 @@ function formatEuro(value: number) {
 }
 
 function resultPillClass(
-  variant: "open" | "positive" | "neutral" | "negative"
+  variant: "open" | "positive" | "neutral" | "negative",
+  margin = 0
 ) {
+  if (variant === "positive" && margin < 20) return "bg-[#f2ead2] text-[#7a6322]";
   if (variant === "positive") return "bg-[#e7f1c8] text-[#425300]";
   if (variant === "negative") return "bg-[#f4dddd] text-[#8b3535]";
   return "bg-[#efede6] text-[#5f5b54]";
