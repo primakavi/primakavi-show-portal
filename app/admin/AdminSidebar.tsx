@@ -55,6 +55,8 @@ export default function AdminSidebar({
         </div>
       </Link>
 
+      <div className="mb-4 border-t border-black/5" />
+
       {/* ======================================================
           NAVIGATION
       ====================================================== */}
@@ -139,11 +141,11 @@ export default function AdminSidebar({
 
             <NavSection title="Auswertung">
               <SidebarLink
-                href="/admin/insights"
+                href="/admin/analytics"
                 label="Auswertung"
                 icon="📊"
                 active={pathname.startsWith(
-                  "/admin/insights"
+                  "/admin/analytics"
                 )}
               />
             </NavSection>
