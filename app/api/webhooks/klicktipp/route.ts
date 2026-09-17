@@ -24,7 +24,10 @@ export async function POST(request: NextRequest) {
       );
 
       return NextResponse.json(
-        { ok: false, error: "Server configuration error" },
+        {
+          ok: false,
+          error: "Server configuration error",
+        },
         { status: 500 }
       );
     }
@@ -34,15 +37,19 @@ export async function POST(request: NextRequest) {
 
     if (!secret || secret !== expectedSecret) {
       return NextResponse.json(
-        { ok: false, error: "Unauthorized" },
+        {
+          ok: false,
+          error: "Unauthorized",
+        },
         { status: 401 }
       );
     }
 
     // ============================================================
     // BODY LESEN
+    //
     // KlickTipp kann Form Data oder JSON senden.
-    // Wir unterstützen direkt beides.
+    // Wir unterstützen beides.
     // ============================================================
 
     const contentType =
@@ -60,14 +67,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log("KlickTipp Webhook empfangen:", body);
+    console.log(
+      "KlickTipp Webhook empfangen:",
+      body
+    );
 
     // ============================================================
     // DATEN AUSLESEN
-    //
-    // Wir erlauben mehrere mögliche Feldnamen.
-    // Dann sind wir nicht davon abhängig, wie KlickTipp die
-    // Variablen im Webhook exakt benennt.
     // ============================================================
 
     const email = normalizeEmail(
@@ -85,14 +91,18 @@ export async function POST(request: NextRequest) {
         ""
     ).trim();
 
-const klicktippContactId = String(
-  body.id ||
-    body.external_user_id ||
-    body.contact_id ||
-    body.subscriber_id ||
-    body.klicktipp_contact_id ||
-    ""
-).trim();
+    const klicktippContactId = String(
+      body.id ||
+        body.external_user_id ||
+        body.contact_id ||
+        body.subscriber_id ||
+        body.klicktipp_contact_id ||
+        ""
+    ).trim();
+
+    // ============================================================
+    // VALIDIERUNG
+    // ============================================================
 
     if (!email) {
       console.warn(
@@ -112,11 +122,8 @@ const klicktippContactId = String(
     // ============================================================
     // EMPFÄNGER SUCHEN
     //
-    // Es können theoretisch mehrere Mailing-Runden dieselbe
-    // E-Mail enthalten. Wir nehmen bewusst nur noch nicht
-    // archivierte/alte Treffer nicht blind alle:
-    //
-    // Zunächst suchen wir alle Empfänger mit dieser E-Mail.
+    // Eine E-Mail-Adresse kann in mehreren Mailing-Runden
+    // vorkommen. Deshalb suchen wir zunächst alle Treffer.
     // ============================================================
 
     const {
@@ -130,6 +137,7 @@ const klicktippContactId = String(
         email,
         sent_at,
         scheduled_at,
+        opened_at,
         clicked_at,
         acquisition_rounds (
           id,
@@ -155,13 +163,17 @@ const klicktippContactId = String(
       );
     }
 
+    // ============================================================
+    // KEIN PASSENDER EMPFÄNGER
+    // ============================================================
+
     if (!recipients?.length) {
       console.warn(
         `Kein Mailing-Empfänger für ${email} gefunden.`
       );
 
-      // Trotzdem 200:
-      // KlickTipp soll den Webhook nicht endlos erneut versuchen.
+      // Bewusst HTTP 200:
+      // KlickTipp soll den Webhook nicht ständig erneut versuchen.
       return NextResponse.json({
         ok: true,
         matched: false,
@@ -172,9 +184,8 @@ const klicktippContactId = String(
     // PASSENDE MAILING-RUNDE BESTIMMEN
     //
     // Bevorzugt:
-    // 1. aktive Mailing-Runde
-    // 2. bereits versendet/geplant
-    // 3. jüngster Datensatz
+    // 1. aktive Akquise-/Mailing-Runde
+    // 2. zuletzt versendeter/geplanter Datensatz
     // ============================================================
 
     const sortedRecipients = [...recipients].sort(
@@ -210,24 +221,75 @@ const klicktippContactId = String(
 
     // ============================================================
     // KLICK SPEICHERN
+    //
+    // WICHTIG:
+    // Dieser Endpoint wird aktuell ausschließlich von der
+    // KlickTipp-Kampagne
+    //
+    // "CRM | Veranstalter Newsletter Klicks"
+    //
+    // ausgelöst.
+    //
+    // Deren Startbedingung lautet:
+    // Newsletter → geklickt
+    //
+    // Deshalb bedeutet jeder Aufruf dieses Webhooks:
+    // Der Empfänger hat den Newsletter geklickt.
     // ============================================================
 
     const now = new Date().toISOString();
 
     const updateData: Record<string, unknown> = {
-      clicked_at: now,
       updated_at: now,
     };
+
+    // ------------------------------------------------------------
+    // ÖFFNUNG
+    //
+    // Ein Klick impliziert eine vorherige Öffnung.
+    // Falls noch kein opened_at vorhanden ist, setzen wir ihn
+    // ebenfalls auf den Zeitpunkt des ersten bekannten Klicks.
+    // ------------------------------------------------------------
+
+    if (!recipient.opened_at) {
+      updateData.opened_at = now;
+    }
+
+    // ------------------------------------------------------------
+    // KLICK
+    //
+    // Nur den ersten Klick-Zeitpunkt speichern.
+    // Weitere Webhook-Aufrufe überschreiben ihn nicht.
+    // ------------------------------------------------------------
+
+    if (!recipient.clicked_at) {
+      updateData.clicked_at = now;
+    }
+
+    // ------------------------------------------------------------
+    // GEKLICKTE URL
+    //
+    // Nur speichern, wenn KlickTipp tatsächlich eine URL
+    // mitsendet.
+    // ------------------------------------------------------------
 
     if (clickedUrl) {
       updateData.last_clicked_url =
         clickedUrl;
     }
 
+    // ------------------------------------------------------------
+    // KLICKTIPP KONTAKT-ID
+    // ------------------------------------------------------------
+
     if (klicktippContactId) {
       updateData.klicktipp_contact_id =
         klicktippContactId;
     }
+
+    // ============================================================
+    // UPDATE IN SUPABASE
+    // ============================================================
 
     const { error: updateError } =
       await supabaseAdmin
@@ -237,7 +299,7 @@ const klicktippContactId = String(
 
     if (updateError) {
       console.error(
-        "Fehler beim Speichern des Klicks:",
+        "Fehler beim Speichern des Newsletter-Klicks:",
         updateError
       );
 
@@ -255,13 +317,14 @@ const klicktippContactId = String(
     // ============================================================
 
     console.log(
-      `KlickTipp-Klick gespeichert: ${email}`,
+      `Newsletter-Klick gespeichert: ${email}`,
       recipient.id
     );
 
     return NextResponse.json({
       ok: true,
       matched: true,
+      event: "clicked",
       recipient_id: recipient.id,
     });
   } catch (error) {
