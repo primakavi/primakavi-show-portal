@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import EconomicsTab from "@/components/EconomicsTab";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 
@@ -24,7 +25,14 @@ export default async function EconomicsPage({
       fee_artist_share,
       fee_organizer_share,
       fee_tax_mode,
-      fee_notes
+      fee_notes,
+
+      accommodation_status,
+      accommodation_hotel_name,
+      accommodation_actual_cost,
+
+      promo_print_cost,
+      promo_shipping_cost
     `)
     .eq("id", id)
     .single();
@@ -62,8 +70,12 @@ export default async function EconomicsPage({
   const benchmark =
     validRows.length > 0
       ? {
-          avgRevenue: average(validRows.map((row) => Number(row.revenue_total) || 0)),
-          avgProfit: average(validRows.map((row) => Number(row.profit) || 0)),
+          avgRevenue: average(
+            validRows.map((row) => Number(row.revenue_total) || 0)
+          ),
+          avgProfit: average(
+            validRows.map((row) => Number(row.profit) || 0)
+          ),
         }
       : undefined;
 
@@ -87,14 +99,19 @@ export default async function EconomicsPage({
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-bold text-[#6f6c65]">
               {show?.show_date && (
                 <span className="rounded-full bg-[#f4f1e9] px-3 py-1.5">
-                  {new Date(`${show.show_date}T12:00:00`).toLocaleDateString("de-DE")}
+                  {new Date(`${show.show_date}T12:00:00`).toLocaleDateString(
+                    "de-DE"
+                  )}
                 </span>
               )}
+
               {show?.venue && (
                 <span className="rounded-full bg-[#f4f1e9] px-3 py-1.5">
-                  {show.venue}{show.city ? ` · ${show.city}` : ""}
+                  {show.venue}
+                  {show.city ? ` · ${show.city}` : ""}
                 </span>
               )}
+
               {show?.program && (
                 <span className="rounded-full bg-[#f4f1e9] px-3 py-1.5">
                   {show.program}
@@ -117,10 +134,49 @@ export default async function EconomicsPage({
           initialData={economics ?? undefined}
           travelLegs={travelLegs ?? []}
           benchmark={benchmark}
+          completedAt={economics?.completed_at ?? null}
+          completeAction={completeEconomicsAction}
+          reopenAction={reopenEconomicsAction}
         />
       </div>
     </main>
   );
+}
+
+async function completeEconomicsAction(formData: FormData) {
+  "use server";
+  const showId = String(formData.get("show_id") || "");
+  if (!showId) return;
+
+  const { error } = await supabaseAdmin
+    .schema("booking")
+    .from("show_economics")
+    .update({ completed_at: new Date().toISOString() })
+    .eq("show_id", showId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/shows/${showId}/economics`);
+  revalidatePath(`/admin/shows/${showId}`);
+  revalidatePath("/admin/shows");
+}
+
+async function reopenEconomicsAction(formData: FormData) {
+  "use server";
+  const showId = String(formData.get("show_id") || "");
+  if (!showId) return;
+
+  const { error } = await supabaseAdmin
+    .schema("booking")
+    .from("show_economics")
+    .update({ completed_at: null })
+    .eq("show_id", showId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/shows/${showId}/economics`);
+  revalidatePath(`/admin/shows/${showId}`);
+  revalidatePath("/admin/shows");
 }
 
 function average(values: number[]) {

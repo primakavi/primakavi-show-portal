@@ -24,6 +24,7 @@ import Rating from "./Rating";
 import CheckTile from "./CheckTile";
 import FeeEditor from "./FeeEditor";
 import FeeExtrasEditor from "./FeeExtrasEditor";
+import ClickFeedbackButton from "./ClickFeedbackButton";
 
 type AreaState = "open" | "done";
 
@@ -68,10 +69,10 @@ export default async function ShowAkteV2Page({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string }>;
+  searchParams: Promise<{ saved?: string; wvlSaved?: string }>;
 }) {
   const { id } = await params;
-  const { saved } = await searchParams;
+  const { saved, wvlSaved } = await searchParams;
 
   const [
     showResult,
@@ -83,6 +84,7 @@ export default async function ShowAkteV2Page({
     paymentsResult,
     ticketCategoriesResult,
     feeExtrasResult,
+    manualTasksResult,
   ] = await Promise.all([
     supabaseAdmin
       .schema("booking")
@@ -178,10 +180,56 @@ export default async function ShowAkteV2Page({
       .select("*")
       .eq("show_id", id)
       .order("sort_order"),
+
+    supabaseAdmin
+      .schema("booking")
+      .from("show_tasks")
+      .select("*")
+      .eq("show_id", id)
+      .eq("is_done", false)
+      .order("follow_up_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true }),
   ]);
 
   const show = showResult.data;
   if (showResult.error || !show) notFound();
+
+  // Akquise-Ursprung der Show:
+  // acquisition_id existiert bereits in booking.shows und wird beim
+  // "Show aus Akquise erzeugen"-Workflow schon gesetzt.
+  const [linkedAcquisitionResult, acquisitionCandidatesResult] = await Promise.all([
+    show.acquisition_id
+      ? supabaseAdmin
+          .from("acquisition")
+          .select(`
+            id,
+            venue_id,
+            program,
+            status,
+            last_contact_at,
+            created_at
+          `)
+          .eq("id", show.acquisition_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    show.venue_id
+      ? supabaseAdmin
+          .from("acquisition")
+          .select(`
+            id,
+            venue_id,
+            program,
+            status,
+            last_contact_at,
+            created_at
+          `)
+          .eq("venue_id", show.venue_id)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const linkedAcquisition = linkedAcquisitionResult.data || null;
+  const acquisitionCandidates = acquisitionCandidatesResult.data || [];
 
   const venues = venuesResult.data || [];
   const organizers = organizersResult.data || [];
@@ -191,6 +239,7 @@ export default async function ShowAkteV2Page({
   const payments = paymentsResult.data || [];
   const ticketCategories = ticketCategoriesResult.data || [];
   const feeExtras = feeExtrasResult.data || [];
+  const manualTasks = manualTasksResult.data || [];
   const allowManualChecklist = ["gespielt", "abgeschlossen"].includes(
     String(show.internal_status || "")
   );
@@ -312,23 +361,66 @@ export default async function ShowAkteV2Page({
     invoiceAmount,
   });
 
-  const smartTasks = getSmartTasks({
+  const automaticShowFollowUpDate = defaultShowFollowUpDate(show.show_date);
+  const effectiveShowFollowUpDate =
+    show.show_follow_up_date || automaticShowFollowUpDate;
+
+  // Produktionsrhythmus:
+  // 90 Tage = Bearbeitung beginnt
+  // 30 Tage = Produktionscheck
+  // 7 Tage  = Finalcheck
+  // fertig  = Spielbereit
+  const showIsDeferred =
+    isFutureDate(effectiveShowFollowUpDate) &&
+    !isShowWithinDays(show.show_date, 7);
+
+  const finalCheck = buildFinalCheck({
     show,
     sectionStates,
     checklistState: checklist.state,
   });
 
+  const productionPhase = getProductionPhase({
+    show,
+    effectiveShowFollowUpDate,
+    finalCheck,
+  });
+
+  const smartTasks = getSmartTasks({
+    show,
+    sectionStates,
+    checklistState: checklist.state,
+    files,
+    travelLegs,
+    economics,
+    ticketsSoldEntered,
+    showIsDeferred,
+    finalCheck,
+  });
+
   const economicsSummary = getEconomicsSummary(economics);
+
+  // Nach der Show: erst komplett abgeschlossen, wenn die Nachbereitung
+  // (inkl. Rechnung verschickt, Zahlung vollständig und Show bewertet)
+  // UND die Wirtschaftlichkeit bewusst abgeschlossen wurden.
+  const afterShowChecklistComplete = CHECKLIST_AFTER.every(
+    (label) => checklist.state[label] === true
+  );
+  const economicsComplete = Boolean(economics?.completed_at);
+  const showFullyComplete =
+    ["gespielt", "abgeschlossen"].includes(String(show.internal_status || "")) &&
+    afterShowChecklistComplete &&
+    economicsComplete;
 
   return (
     <main className="pb-32 text-zinc-950">
-      <form action={saveShowV2Action}>
+      <form id="show-main-form" action={saveShowV2Action}>
         <input type="hidden" name="id" value={show.id} />
 
         <div className="space-y-5 sm:space-y-6">
 
           {/* HEADER */}
-          <header className="overflow-hidden rounded-[1.55rem] bg-white shadow-sm ring-1 ring-black/5">
+          <header className="relative z-30 overflow-visible rounded-[1.55rem] bg-white shadow-sm ring-1 ring-black/5">
             <div className="grid lg:grid-cols-[minmax(0,1fr)_340px]">
               <div className="px-6 py-6 sm:px-7">
                 <p className="text-xs font-black uppercase tracking-[.18em] text-zinc-400">
@@ -372,6 +464,160 @@ export default async function ShowAkteV2Page({
                   ) : (
                     <span className="rounded-full bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">
                       ☎ Showtag-Kontakt offen
+                    </span>
+                  )}
+
+                  {!['gespielt', 'abgeschlossen', 'abgesagt'].includes(String(show.internal_status || '')) && effectiveShowFollowUpDate && (
+                    <details className="group relative">
+                      <summary
+                        className={`list-none cursor-pointer rounded-full px-3 py-2 text-xs font-black ring-1 [&::-webkit-details-marker]:hidden ${productionPhase.className}`}
+                      >
+                        {productionPhase.label}
+                      </summary>
+                      <div className="absolute left-0 top-full z-[100] mt-2 w-[360px] max-w-[calc(100vw-2rem)] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-black/10">
+                        <p className="text-sm font-black text-zinc-900">Produktionsstatus</p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-zinc-500">
+                          {productionPhase.description}
+                        </p>
+
+                        <label className="mt-3 grid gap-1.5 text-[11px] font-semibold text-zinc-500">
+                          Bearbeitung beginnt am
+                          <input
+                            form="show-wvl-form"
+                            name="show_follow_up_date"
+                            type="date"
+                            defaultValue={show.show_follow_up_date || automaticShowFollowUpDate || ""}
+                            className="h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm font-bold text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-100"
+                          />
+                        </label>
+
+                        <p className="mt-2 text-[11px] font-bold text-zinc-400">
+                          Automatisch: {formatDate(automaticShowFollowUpDate)}
+                        </p>
+
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            type="submit"
+                            form="show-wvl-form"
+                            formAction={saveShowFollowUpAction}
+                            className="rounded-full bg-zinc-950 px-4 py-2 text-xs font-black text-white"
+                          >
+                            WVL speichern
+                          </button>
+                          <button
+                            type="submit"
+                            form="show-wvl-form"
+                            formAction={clearShowFollowUpAction}
+                            className="rounded-full bg-white px-4 py-2 text-xs font-black text-zinc-600 ring-1 ring-black/10"
+                          >
+                            Automatik
+                          </button>
+                        </div>
+
+                        <p className="mt-3 border-t border-zinc-100 pt-3 text-[11px] font-semibold leading-4 text-zinc-500">
+                          ⓘ Rhythmus: 3 Monate Bearbeitungsstart · 30 Tage Produktionscheck · 7 Tage Finalcheck. Aufgaben mit eigener WVL bleiben unabhängig davon fällig.
+                        </p>
+                      </div>
+                    </details>
+                  )}
+
+                  {["gespielt", "abgeschlossen"].includes(
+                    String(show.internal_status || "")
+                  ) && (
+                    <>
+                      {showFullyComplete ? (
+                        <span className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">
+                          ✅ Show abgeschlossen
+                        </span>
+                      ) : (
+                        <>
+                          <span
+                            className={`rounded-full px-3 py-2 text-xs font-black ring-1 ${
+                              afterShowChecklistComplete
+                                ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+                                : "bg-amber-50 text-amber-700 ring-amber-100"
+                            }`}
+                          >
+                            {afterShowChecklistComplete
+                              ? "✓ Nachbereitung erledigt"
+                              : "🟠 Nachbereitung offen"}
+                          </span>
+
+                          <Link
+                            href={`/admin/shows/${show.id}/economics`}
+                            className={`rounded-full px-3 py-2 text-xs font-black ring-1 ${
+                              economicsComplete
+                                ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+                                : "bg-amber-50 text-amber-700 ring-amber-100"
+                            }`}
+                          >
+                            {economicsComplete
+                              ? "✓ Wirtschaftlichkeit erledigt"
+                              : "💶 Wirtschaftlichkeit offen"}
+                          </Link>
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {linkedAcquisition ? (
+                    <a
+                      href={`/admin/acquisition/${linkedAcquisition.id}`}
+                      className="rounded-full bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 ring-1 ring-violet-100 transition hover:bg-violet-100"
+                      title="Akquise-Vorgang öffnen"
+                    >
+                      🎯 Aus Akquise: {linkedAcquisition.program || "Akquise"}
+                    </a>
+                  ) : acquisitionCandidates.length > 0 ? (
+                    <details className="group relative">
+                      <summary className="list-none cursor-pointer rounded-full bg-white px-3 py-2 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-[#fbf7ef] [&::-webkit-details-marker]:hidden">
+                        🎯 Akquise zuordnen
+                      </summary>
+                      <div className="absolute left-0 top-full z-[100] mt-2 w-[390px] max-w-[calc(100vw-2rem)] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-black/10">
+                        <p className="text-sm font-black text-zinc-900">
+                          Aus welcher Akquise ist diese Show entstanden?
+                        </p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-zinc-500">
+                          Es werden nur Akquise-Vorgänge dieser Location angeboten.
+                        </p>
+
+                        <label className="mt-3 grid gap-1.5 text-[11px] font-semibold text-zinc-500">
+                          Akquise-Vorgang
+                          <select
+                            form="show-acquisition-form"
+                            name="acquisition_id"
+                            defaultValue=""
+                            className="h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm font-bold text-zinc-700 outline-none transition focus:border-zinc-400"
+                          >
+                            <option value="">Bitte auswählen</option>
+                            {acquisitionCandidates.map((item: any) => (
+                              <option key={item.id} value={item.id}>
+                                {item.program || "Akquise"}
+                                {item.status ? ` · ${item.status}` : ""}
+                                {item.last_contact_at
+                                  ? ` · ${formatDate(item.last_contact_at)}`
+                                  : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <button
+                          type="submit"
+                          form="show-acquisition-form"
+                          formAction={saveShowAcquisitionAction}
+                          className="mt-3 rounded-full bg-zinc-950 px-4 py-2 text-xs font-black text-white"
+                        >
+                          Akquise verknüpfen
+                        </button>
+                      </div>
+                    </details>
+                  ) : (
+                    <span
+                      className="rounded-full bg-zinc-50 px-3 py-2 text-xs font-black text-zinc-400 ring-1 ring-black/5"
+                      title="Für diese Location ist aktuell kein Akquise-Vorgang hinterlegt."
+                    >
+                      🎯 Keine Akquise zugeordnet
                     </span>
                   )}
                 </div>
@@ -480,118 +726,100 @@ export default async function ShowAkteV2Page({
           {/* COMMAND CENTER */}
           <section className="rounded-[1.55rem] bg-white p-5 shadow-sm ring-1 ring-black/5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef4ff] text-xl font-black text-[#2867d8]">
-                  ✓
-                </span>
-
-                <div className="min-w-0">
-                  <h2 className="text-2xl font-black tracking-tight">
-                    Was ist jetzt zu tun?
-                  </h2>
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef4ff] text-xl font-black text-[#2867d8]">✓</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h2 className="text-2xl font-black tracking-tight">Was ist jetzt zu tun?</h2>
+                    <div className="max-w-2xl rounded-xl bg-[#f7faff] px-3.5 py-2 text-xs font-semibold leading-5 text-zinc-600 ring-1 ring-[#e6eefb]">
+                      <span className="font-black text-[#2867d8]">ⓘ Tipp:</span>{" "}
+                      Konkrete Aufgaben hier eintragen – z. B. „Nicole wegen Vertrag anrufen“.
+                    </div>
+                  </div>
                   <p className="mt-1 text-sm font-black text-zinc-600">
-                    {workStatusTitle(
-                      show.work_status,
-                      show.internal_status,
-                      smartTasks.length
-                    )}
+                    {workStatusTitle(show.work_status, show.internal_status, smartTasks.length + manualTasks.length)}
                   </p>
 
-                  {show.next_step ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <p className="text-sm font-black text-zinc-900">
-                        {show.next_step}
-                      </p>
-                      {show.follow_up_date && (
-                        <span className="text-xs font-bold text-zinc-400">
-                          WVL {formatDate(show.follow_up_date)}
-                        </span>
-                      )}
+                  {manualTasks.length ? (
+                    <div className="mt-3 space-y-2">
+                      {manualTasks.map((task: any) => (
+                        <div key={task.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-[#fbf7ef] px-3 py-2 ring-1 ring-black/5">
+                          <span className="text-sm font-black text-zinc-900">○ {task.title}</span>
+                          {task.follow_up_date && <span className="text-xs font-bold text-zinc-400">WVL {formatDate(task.follow_up_date)}</span>}
+                          <div className="ml-auto flex items-center gap-2">
+                            <details className="relative">
+                              <summary className="cursor-pointer list-none text-[11px] font-black text-zinc-500 [&::-webkit-details-marker]:hidden">Bearbeiten</summary>
+                              <div className="absolute right-0 z-30 mt-2 w-[min(520px,80vw)] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-black/10">
+                                <div className="grid gap-3 sm:grid-cols-[1fr_170px]">
+                                  <Input name={`task_title_${task.id}`} label="Aufgabe" defaultValue={task.title} />
+                                  <Input name={`task_date_${task.id}`} label="WVL" type="date" defaultValue={task.follow_up_date} />
+                                </div>
+                                <button formAction={updateManualTaskAction.bind(null, task.id)} className="mt-3 rounded-full bg-zinc-950 px-4 py-2 text-xs font-black text-white">Speichern</button>
+                              </div>
+                            </details>
+                            <button formAction={completeManualTaskAction.bind(null, task.id)} className="text-[11px] font-black text-emerald-700">✓ Erledigt</button>
+                            <button formAction={deleteManualTaskAction.bind(null, task.id)} className="text-[11px] font-black text-zinc-400">Löschen</button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ) : (
-                    <p className="mt-2 text-sm font-semibold text-zinc-400">
-                      Noch kein individueller nächster Schritt hinterlegt.
-                    </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
               <details className="group relative">
-                <summary className="list-none cursor-pointer rounded-xl bg-white px-4 py-2.5 text-xs font-black text-zinc-700 ring-1 ring-black/10 transition hover:bg-[#fbf7ef] [&::-webkit-details-marker]:hidden">
-                  + Nächster Schritt / WVL
-                </summary>
-
+                <summary className="list-none cursor-pointer rounded-xl bg-white px-4 py-2.5 text-xs font-black text-zinc-700 ring-1 ring-black/10 transition hover:bg-[#fbf7ef] [&::-webkit-details-marker]:hidden">+ Aufgabe</summary>
                 <div className="absolute right-0 z-20 mt-2 w-[min(560px,85vw)] rounded-2xl bg-white p-4 shadow-2xl ring-1 ring-black/10">
                   <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
-                    <Input
-                      name="next_step"
-                      label="Nächster Schritt"
-                      defaultValue={show.next_step}
-                    />
-                    <Input
-                      name="follow_up_date"
-                      label="Wiedervorlage"
-                      type="date"
-                      defaultValue={show.follow_up_date}
-                    />
+                    <Input name="new_task_title" label="Aufgabe" />
+                    <Input name="new_task_date" label="Wiedervorlage" type="date" />
                   </div>
+                  <button formAction={addManualTaskAction} className="mt-3 rounded-full bg-zinc-950 px-4 py-2 text-xs font-black text-white">Speichern</button>
                 </div>
               </details>
             </div>
 
-            {!show.next_step && (
-              <div className="mt-4 rounded-xl bg-[#f7faff] px-4 py-3 text-xs font-semibold leading-5 text-zinc-600 ring-1 ring-[#e6eefb]">
-                <span className="font-black text-[#2867d8]">ⓘ Tipp:</span>{" "}
-                Trage einen nächsten Schritt ein, wenn es eine konkrete Aufgabe
-                gibt – z. B. „Nicole wegen Vertrag anrufen“.
-              </div>
-            )}
-
             <div className="mt-5 border-t border-black/5 pt-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-black">Offene Punkte</p>
-                <a
-                  href="#arbeitsliste"
-                  className="text-xs font-black text-[#2867d8] hover:underline"
-                >
-                  Zur Arbeitsliste →
-                </a>
+                <a href="#arbeitsliste" className="text-xs font-black text-[#2867d8] hover:underline">Zur Arbeitsliste →</a>
               </div>
-
               <div className="mt-3 grid gap-x-8 gap-y-2 md:grid-cols-2">
-                {smartTasks.map((task) =>
-                  task.manual ? (
-                    <QuickChecklistToggle
-                      key={task.label}
-                      targetId={checklistInputId(task.label)}
-                      initialChecked={
-                        checklist.state[task.label] === true
-                      }
-                      label={task.label}
-                    />
-                  ) : (
-                    <a
-                      key={task.label}
-                      href={task.href}
-                      className="flex items-center gap-3 text-sm font-semibold text-zinc-700 transition hover:text-[#2867d8]"
-                    >
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-[9px]">
-                        ○
-                      </span>
-                      <span>{task.label}</span>
-                      <span className="ml-auto text-zinc-300">→</span>
-                    </a>
-                  )
-                )}
-
-                {!smartTasks.length && (
-                  <p className="text-sm font-black text-emerald-700">
-                    ✓ Aktuell nichts offen.
-                  </p>
-                )}
+                {smartTasks.map((task) => task.manual ? (
+                  <QuickChecklistToggle key={task.label} targetId={checklistInputId(task.label)} initialChecked={checklist.state[task.label] === true} label={task.label} />
+                ) : (
+                  <a key={`${task.label}-${task.href}`} href={task.href} className="flex items-center gap-3 text-sm font-semibold text-zinc-700 transition hover:text-[#2867d8]">
+                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-white text-[9px]">○</span>
+                    <span>{task.label}</span>
+                    {task.followUpDate && <span className="ml-auto text-xs font-black text-amber-600">WVL {formatDate(task.followUpDate)}</span>}
+                    <span className={task.followUpDate ? "text-zinc-300" : "ml-auto text-zinc-300"}>→</span>
+                  </a>
+                ))}
+                {!smartTasks.length && <p className="text-sm font-black text-emerald-700">✓ Aktuell nichts automatisch offen.</p>}
               </div>
             </div>
           </section>
+
+          {finalCheck.visible && (
+            <section id="finalcheck" className={`rounded-[1.55rem] p-5 shadow-sm ring-1 sm:p-6 ${finalCheck.ready ? "bg-emerald-50 ring-emerald-200" : "bg-[#fffaf0] ring-amber-200"}`}>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[.14em] text-zinc-400">7 Tage vor der Show</p>
+                  <h2 className="mt-1 text-xl font-black">🧭 Finalcheck · Sind wir wirklich spielbereit?</h2>
+                </div>
+                <span className={`rounded-full px-3 py-1.5 text-xs font-black ${finalCheck.ready ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                  {finalCheck.ready ? "✓ Spielbereit" : `${finalCheck.openCount} Punkte offen`}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {finalCheck.items.map((item: any) => (
+                  <a key={item.label} href={item.href} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold ring-1 ${item.done ? "bg-white text-emerald-800 ring-emerald-100" : "bg-white text-zinc-700 ring-black/5 hover:text-[#2867d8]"}`}>
+                    <span>{item.done ? "✓" : "○"}</span><span>{item.label}</span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* ① VOR DER SHOW */}
           <PhaseHeader
@@ -849,10 +1077,7 @@ export default async function ShowAkteV2Page({
               preview={[
                 show.ticket_link ? "Ticketlink ✓" : "Ticketlink offen",
                 show.homepage_ticket_linked ? "Homepage ✓" : null,
-                promoLabel(
-                  show.promo_send_status,
-                  show.promo_follow_up_date
-                ),
+                promoStatusPreview(show),
                 show.flyer_amount
                   ? `Flyer ${show.flyer_amount}`
                   : null,
@@ -1142,6 +1367,19 @@ export default async function ShowAkteV2Page({
               categories={ticketCategories}
             />
 
+            <div className="mt-3 max-w-sm">
+              <Select
+                name="ticket_sales_knowledge_status"
+                label="Ticketzahlen-Status"
+                defaultValue={show.ticket_sales_knowledge_status || (ticketsSoldEntered ? "known" : "open")}
+                options={[
+                  ["open", "Noch offen"],
+                  ["known", "Erfasst"],
+                  ["unknown", "Nicht bekannt / Veranstalter meldet nicht"],
+                ]}
+              />
+            </div>
+
             <SmallHeading>Show-Bewertung</SmallHeading>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -1385,24 +1623,159 @@ export default async function ShowAkteV2Page({
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
             <div>
               <p className="text-sm font-black">
-                {saved === "1" ? "✓ Gespeichert" : "Show-Akte"}
+                {saved ? "✓ Gespeichert" : "Show-Akte"}
               </p>
               <p className="mt-0.5 text-xs font-semibold text-zinc-400">
                 Änderungen werden direkt in der Show-Akte gespeichert.
               </p>
             </div>
 
-            <button
-              type="submit"
+            <ClickFeedbackButton
+              idleLabel="Speichern →"
+              clickLabel="Wird gespeichert …"
               className="rounded-full bg-[#dff66d] px-6 py-3 text-sm font-black text-zinc-950 transition hover:scale-[1.01]"
-            >
-              Speichern →
-            </button>
+            />
           </div>
         </div>
       </form>
+
+      {/* Eigene Form für die Show-WVL. Die Controls im Header gehören über form="show-wvl-form"
+          ausschließlich zu dieser Form und nicht zum großen Show-Akten-Formular. */}
+      <form id="show-wvl-form" className="hidden">
+        <input type="hidden" name="id" value={show.id} />
+      </form>
+
+      <form id="show-acquisition-form" className="hidden">
+        <input type="hidden" name="id" value={show.id} />
+      </form>
     </main>
   );
+}
+
+async function addManualTaskAction(formData: FormData) {
+  "use server";
+  const showId = str(formData.get("id"));
+  const title = str(formData.get("new_task_title")).trim();
+  if (!showId || !title) return;
+  const result = await supabaseAdmin.schema("booking").from("show_tasks").insert({ show_id: showId, title, follow_up_date: nullable(formData.get("new_task_date")), is_done: false });
+  if (result.error) throw new Error(result.error.message);
+  revalidatePath(`/admin/shows/${showId}`);
+}
+
+async function updateManualTaskAction(taskId: string, formData: FormData) {
+  "use server";
+  const showId = str(formData.get("id"));
+  const title = str(formData.get(`task_title_${taskId}`)).trim();
+  if (!showId || !taskId || !title) return;
+  const result = await supabaseAdmin.schema("booking").from("show_tasks").update({ title, follow_up_date: nullable(formData.get(`task_date_${taskId}`)), updated_at: new Date().toISOString() }).eq("id", taskId).eq("show_id", showId);
+  if (result.error) throw new Error(result.error.message);
+  revalidatePath(`/admin/shows/${showId}`);
+}
+
+async function completeManualTaskAction(taskId: string, formData: FormData) {
+  "use server";
+  const showId = str(formData.get("id"));
+  if (!showId || !taskId) return;
+  const result = await supabaseAdmin.schema("booking").from("show_tasks").update({ is_done: true, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", taskId).eq("show_id", showId);
+  if (result.error) throw new Error(result.error.message);
+  revalidatePath(`/admin/shows/${showId}`);
+}
+
+async function deleteManualTaskAction(taskId: string, formData: FormData) {
+  "use server";
+  const showId = str(formData.get("id"));
+  if (!showId || !taskId) return;
+  const result = await supabaseAdmin.schema("booking").from("show_tasks").delete().eq("id", taskId).eq("show_id", showId);
+  if (result.error) throw new Error(result.error.message);
+  revalidatePath(`/admin/shows/${showId}`);
+}
+
+async function saveShowFollowUpAction(formData: FormData) {
+  "use server";
+  const id = str(formData.get("id"));
+  if (!id) return;
+  const value = nullable(formData.get("show_follow_up_date"));
+  const result = await supabaseAdmin.schema("booking").from("shows").update({ show_follow_up_date: value }).eq("id", id);
+  if (result.error) throw new Error(result.error.message);
+  revalidatePath(`/admin/shows/${id}`);
+  revalidatePath("/admin/shows");
+  redirect(`/admin/shows/${id}?wvlSaved=${Date.now()}`);
+}
+
+async function clearShowFollowUpAction(formData: FormData) {
+  "use server";
+  const id = str(formData.get("id"));
+  if (!id) return;
+  const result = await supabaseAdmin.schema("booking").from("shows").update({ show_follow_up_date: null }).eq("id", id);
+  if (result.error) throw new Error(result.error.message);
+  revalidatePath(`/admin/shows/${id}`);
+  revalidatePath("/admin/shows");
+  redirect(`/admin/shows/${id}?wvlSaved=${Date.now()}`);
+}
+
+async function saveShowAcquisitionAction(formData: FormData) {
+  "use server";
+
+  const showId = str(formData.get("id"));
+  const acquisitionId = nullable(formData.get("acquisition_id"));
+
+  if (!showId || !acquisitionId) return;
+
+  const { data: show, error: showError } = await supabaseAdmin
+    .schema("booking")
+    .from("shows")
+    .select("id, venue_id")
+    .eq("id", showId)
+    .single();
+
+  if (showError || !show) {
+    throw new Error(showError?.message || "Show konnte nicht geladen werden.");
+  }
+
+  const { data: acquisition, error: acquisitionError } = await supabaseAdmin
+    .from("acquisition")
+    .select("id, venue_id")
+    .eq("id", acquisitionId)
+    .single();
+
+  if (acquisitionError || !acquisition) {
+    throw new Error(
+      acquisitionError?.message || "Akquise konnte nicht geladen werden."
+    );
+  }
+
+  if (
+    show.venue_id &&
+    acquisition.venue_id &&
+    show.venue_id !== acquisition.venue_id
+  ) {
+    throw new Error("Diese Akquise gehört zu einer anderen Location.");
+  }
+
+  const { data: alreadyLinked } = await supabaseAdmin
+    .schema("booking")
+    .from("shows")
+    .select("id")
+    .eq("acquisition_id", acquisitionId)
+    .neq("id", showId)
+    .maybeSingle();
+
+  if (alreadyLinked) {
+    throw new Error("Diese Akquise ist bereits mit einer anderen Show verknüpft.");
+  }
+
+  const { error } = await supabaseAdmin
+    .schema("booking")
+    .from("shows")
+    .update({ acquisition_id: acquisitionId })
+    .eq("id", showId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/admin/shows/${showId}`);
+  revalidatePath("/admin/shows");
+  revalidatePath(`/admin/acquisition/${acquisitionId}`);
+  redirect(`/admin/shows/${showId}?saved=acquisition-${Date.now()}`);
 }
 
 /* ============================================================
@@ -1429,6 +1802,9 @@ async function saveShowV2Action(formData: FormData) {
       contact_email,
       contact_phone,
       fee,
+      internal_status,
+      follow_up_date,
+      show_follow_up_date,
       checklist
     `)
     .eq("id", id)
@@ -1518,7 +1894,24 @@ async function saveShowV2Action(formData: FormData) {
     ...(current.checklist || {}),
   };
 
-  const submittedInternalStatus = last(formData, "internal_status");
+  const rawSubmittedInternalStatus = last(formData, "internal_status");
+  const validInternalStatuses = new Set(["option", "fix", "gespielt", "abgeschlossen", "abgesagt"]);
+  let submittedInternalStatus = validInternalStatuses.has(String(rawSubmittedInternalStatus || ""))
+    ? String(rawSubmittedInternalStatus)
+    : String(current.internal_status || "option");
+
+  // Failsafe: Eine bereits echte Buchung darf durch einen normalen Akten-Save
+  // niemals unbemerkt wieder zur Option werden.
+  if (String(current.internal_status || "") !== "option" && submittedInternalStatus === "option") {
+    submittedInternalStatus = String(current.internal_status || "fix");
+  }
+
+  // Show-WVL ist bewusst getrennt vom alten follow_up_date.
+  // Das alte Feld kann historische/andere Wiedervorlagen enthalten und bleibt unangetastet.
+  const submittedShowFollowUpDate = formData.has("show_follow_up_date")
+    ? nullable(formData.get("show_follow_up_date"))
+    : current.show_follow_up_date;
+
   const allowManualChecklist = ["gespielt", "abgeschlossen"].includes(
     String(submittedInternalStatus || "")
   );
@@ -1627,17 +2020,18 @@ async function saveShowV2Action(formData: FormData) {
     flyers_needed: nullable(formData.get("flyers_needed")),
     flyer_amount: nullable(formData.get("flyer_amount")),
     posters_needed: nullable(formData.get("posters_needed")),
+    // Legacy-Felder bleiben als Snapshot erhalten; neue Mehrformat-Logik liegt in promo_poster_sizes.
     poster_amount_text: nullable(formData.get("poster_amount_text")),
     poster_format: nullable(formData.get("poster_format")),
-    poster_format_other: nullable(
-      formData.get("poster_format_other")
-    ),
-    promo_send_status: nullable(
-      formData.get("promo_send_status")
-    ),
-    promo_follow_up_date: nullable(
-      formData.get("promo_follow_up_date")
-    ),
+    poster_format_other: nullable(formData.get("poster_format_other")),
+    promo_poster_sizes: parseJsonArray(formData.get("promo_poster_sizes_json")),
+    promo_print_cost: numOrNull(formData.get("promo_print_cost")),
+    promo_shipping_cost: numOrNull(formData.get("promo_shipping_cost")),
+    promo_sent_at: nullable(formData.get("promo_sent_at")),
+    promo_send_status: nullable(formData.get("promo_sent_at"))
+      ? "sent"
+      : (nullable(formData.get("promo_follow_up_date")) ? "follow_up" : "open"),
+    promo_follow_up_date: nullable(formData.get("promo_follow_up_date")),
     promotion: nullable(formData.get("promotion")),
 
     tech_sound_status: nullable(
@@ -1770,10 +2164,12 @@ async function saveShowV2Action(formData: FormData) {
     work_status: last(formData, "work_status"),
     contract_status: last(formData, "contract_status"),
     billing_status: last(formData, "billing_status"),
-    next_step: nullable(formData.get("next_step")),
-    follow_up_date: nullable(
-      formData.get("follow_up_date")
+    ticket_sales_knowledge_status: nullable(
+      formData.get("ticket_sales_knowledge_status")
     ),
+    show_follow_up_date: ["gespielt", "abgeschlossen", "abgesagt"].includes(String(submittedInternalStatus || ""))
+      ? current.show_follow_up_date
+      : submittedShowFollowUpDate,
 
     checklist: existingChecklist,
   };
@@ -1832,7 +2228,7 @@ async function saveShowV2Action(formData: FormData) {
   revalidatePath(`/admin/shows/${id}`);
   revalidatePath("/admin/shows");
 
-  redirect(`/admin/shows/${id}?saved=1`);
+  redirect(`/admin/shows/${id}?saved=${Date.now()}`);
 }
 
 async function replaceCast(showId: string, rows: any[]) {
@@ -2096,16 +2492,23 @@ function getSectionStates({
   const state = (ready: boolean): AreaState =>
     ready ? "done" : "open";
 
+  const phaseOver = ["gespielt", "abgeschlossen", "abgesagt"].includes(
+    String(show.internal_status || "")
+  );
+
+  const promoMaterialsKnown =
+    ["Ja", "Nein"].includes(String(show.flyers_needed || "")) &&
+    ["Ja", "Nein"].includes(String(show.posters_needed || ""));
+
+  const promoNeeded =
+    String(show.flyers_needed || "") === "Ja" ||
+    String(show.posters_needed || "") === "Ja";
+
   const promoReady =
     Boolean(show.ticket_link) &&
     show.homepage_ticket_linked === true &&
-    ["Ja", "Nein"].includes(
-      String(show.flyers_needed || "")
-    ) &&
-    ["Ja", "Nein"].includes(
-      String(show.posters_needed || "")
-    ) &&
-    show.promo_send_status === "sent";
+    promoMaterialsKnown &&
+    (!promoNeeded || Boolean(show.promo_sent_at) || show.promo_send_status === "sent");
 
   const techReady =
     ["available", "unavailable"].includes(
@@ -2131,7 +2534,7 @@ function getSectionStates({
 
   return {
     showdata: state(
-      Boolean(
+      phaseOver || Boolean(
         show.program &&
           show.venue_id &&
           show.show_date &&
@@ -2141,7 +2544,7 @@ function getSectionStates({
     ),
 
     contact: state(
-      Boolean(show.contact_name && show.contact_email)
+      phaseOver || Boolean(show.contact_name && show.contact_email)
     ),
 
     contract: state(
@@ -2151,18 +2554,18 @@ function getSectionStates({
         Boolean(show.invoice_recipient_source)
     ),
 
-    cast: state(show.cast_confirmed === true),
+    cast: state(phaseOver || show.cast_confirmed === true),
 
-    promo: state(promoReady),
+    promo: state(phaseOver || promoReady),
 
-    tech: state(techReady),
+    tech: state(phaseOver || techReady),
 
-    backstage: state(backstageReady),
+    backstage: state(phaseOver || backstageReady),
 
-    travel: state(travelReadyState),
+    travel: state(phaseOver || travelReadyState),
 
     schedule: state(
-      Boolean(
+      phaseOver || Boolean(
         show.arrival_time &&
           show.setup_time &&
           show.soundcheck_time &&
@@ -2196,7 +2599,8 @@ function buildChecklistView({
     "Ticketlink vorhanden": Boolean(show.ticket_link),
 
     "Ticketlink auf Homepage verlinkt":
-      show.homepage_ticket_linked === true,
+      show.homepage_ticket_linked === true ||
+      Boolean(show.checklist?.["Ticketlink auf Homepage verlinkt"]),
 
     "Technik geklärt":
       sectionStates.tech === "done",
@@ -2216,7 +2620,8 @@ function buildChecklistView({
       sectionStates.backstage === "done",
 
     "Besetzung vollständig":
-      show.cast_confirmed === true,
+      show.cast_confirmed === true ||
+      Boolean(show.checklist?.["Besetzung vollständig"]),
 
     "Markus / Team informiert":
       Boolean(
@@ -2225,7 +2630,13 @@ function buildChecklistView({
       ),
 
     "Promo erledigt":
-      show.promo_send_status === "sent",
+      !(
+        String(show.flyers_needed || "") === "Ja" ||
+        String(show.posters_needed || "") === "Ja"
+      ) ||
+      Boolean(show.promo_sent_at) ||
+      show.promo_send_status === "sent" ||
+      Boolean(show.checklist?.["Promo erledigt"]),
 
     "GEMA geklärt":
       Boolean(
@@ -2234,10 +2645,12 @@ function buildChecklistView({
       ),
 
     "Rechnung verschickt":
-      show.invoice_sent === true,
+      show.invoice_sent === true ||
+      Boolean(show.checklist?.["Rechnung verschickt"]),
 
     "Zahlung vollständig":
-      invoiceAmount > 0 && paid >= invoiceAmount,
+      (invoiceAmount > 0 && paid >= invoiceAmount) ||
+      Boolean(show.checklist?.["Zahlung vollständig"]),
 
     "Show bewertet":
       Boolean(
@@ -2247,120 +2660,216 @@ function buildChecklistView({
           show.review_effort &&
           show.review_tech &&
           show.play_again
-      ),
+      ) ||
+      Boolean(show.checklist?.["Show bewertet"]),
   };
 
   return { state };
 }
 
 function getSmartTasks({
-  show,
-  sectionStates,
-  checklistState,
+  show, sectionStates, checklistState, files, travelLegs, economics, ticketsSoldEntered, showIsDeferred, finalCheck,
 }: {
-  show: any;
-  sectionStates: Record<string, AreaState>;
-  checklistState: Record<string, boolean>;
+  show: any; sectionStates: Record<string, AreaState>; checklistState: Record<string, boolean>;
+  files: any[]; travelLegs: any[]; economics: any; ticketsSoldEntered: boolean; showIsDeferred: boolean; finalCheck: any;
 }) {
-  const tasks: {
-    label: string;
-    href: string;
-    manual: boolean;
-  }[] = [];
+  const tasks: { label: string; href: string; manual: boolean; followUpDate?: string | null }[] = [];
+  const played = ["gespielt", "abgeschlossen"].includes(String(show.internal_status || ""));
+  const cancelled = String(show.internal_status || "") === "abgesagt";
+  const promoNeeded = String(show.flyers_needed || "") === "Ja" || String(show.posters_needed || "") === "Ja";
+  const hasContractFile = files.some((file: any) => /vertrag|contract/i.test(String(file.file_name || file.file_type || "")));
 
-  function push(
-    label: string,
-    href: string,
-    manual = false
-  ) {
-    if (!checklistState[label]) {
-      tasks.push({ label, href, manual });
+  function push(label: string, href: string, manual = false, followUpDate?: string | null) {
+    if (!checklistState[label]) tasks.push({ label, href, manual, followUpDate });
+  }
+
+  if (!played && !cancelled && !showIsDeferred) {
+    push("Showdaten geprüft", "#showdaten", true);
+    push("Vertrag geklärt", "#vertrag-finanzen", true);
+    if (!show.ticket_link) push("Ticketlink vorhanden", "#promo-ticketing");
+    else if (!show.homepage_ticket_linked) push("Ticketlink auf Homepage verlinkt", "#promo-ticketing");
+    if (sectionStates.tech !== "done") push("Technik geklärt", "#technik");
+    if (!checklistState["Ablauf geklärt"]) push("Ablauf geklärt", "#ablauf", true);
+    if (!checklistState["Zugang zur Spielstätte geklärt"]) push("Zugang zur Spielstätte geklärt", "#ablauf", true);
+    if (sectionStates.travel !== "done") push("Anreise / Unterkunft geklärt", "#anreise");
+    if (sectionStates.backstage !== "done") push("Backstage / Catering geklärt", "#backstage");
+    if (!show.cast_confirmed) push("Besetzung vollständig", "#besetzung");
+    push("Markus / Team informiert", "#arbeitsliste", true);
+    if (promoNeeded && !show.promo_sent_at && show.promo_send_status !== "sent") tasks.push({ label: "Promo verschicken", href: "#promo-ticketing", manual: false, followUpDate: show.promo_follow_up_date });
+    push("GEMA geklärt", "#arbeitsliste", true);
+  }
+
+  if (show.contract_status === "erledigt" && !hasContractFile) tasks.push({ label: "Vertrag hochladen", href: "#vertrag-finanzen", manual: false });
+
+  if (finalCheck?.visible && !finalCheck.ready) {
+    tasks.unshift({ label: "🧭 Finalcheck: Sind wir wirklich spielbereit?", href: "#finalcheck", manual: false });
+  }
+
+  if (played) {
+    const travelCostMissing = travelLegs.some((leg: any) => leg?.transport_type && (leg.actual_cost === null || leg.actual_cost === undefined || String(leg.actual_cost).trim() === ""));
+    if (travelCostMissing) tasks.push({ label: "Reisekosten nachtragen", href: "#anreise", manual: false });
+
+    const hotelCostMissing = String(show.accommodation_status || "") === "buyout" && (show.accommodation_actual_cost === null || show.accommodation_actual_cost === undefined || String(show.accommodation_actual_cost).trim() === "");
+    if (hotelCostMissing) tasks.push({ label: "Hotelkosten nachtragen", href: "#anreise", manual: false });
+
+    if (
+      show.billing_status !== "nicht_relevant" &&
+      !checklistState["Rechnung verschickt"]
+    ) {
+      tasks.push({ label: "Rechnung verschicken", href: "#nachbereitung", manual: false });
+    } else if (show.billing_status !== "nicht_relevant" && Number(show.invoice_amount || 0) > 0 && !checklistState["Zahlung vollständig"]) {
+      const due = show.invoice_due_date ? new Date(`${show.invoice_due_date}T23:59:59`) : null;
+      if (!due || due.getTime() <= Date.now()) tasks.push({ label: "Zahlung nachhalten", href: "#nachbereitung", manual: false, followUpDate: show.invoice_due_date });
+    }
+
+    const ticketStatus = show.ticket_sales_knowledge_status || (ticketsSoldEntered ? "known" : "open");
+    if (ticketStatus === "open") tasks.push({ label: "Ticketzahlen klären", href: "#nachbereitung", manual: false });
+    if (!checklistState["Show bewertet"]) tasks.push({ label: "Show bewerten", href: "#nachbereitung", manual: false });
+
+    const economicsIncomplete =
+      !economics ||
+      economics.profit === null ||
+      economics.profit === undefined ||
+      !economics.completed_at;
+
+    if (economicsIncomplete && !travelCostMissing && !hotelCostMissing) {
+      tasks.push({
+        label:
+          economics?.profit !== null && economics?.profit !== undefined
+            ? "Wirtschaftlichkeit abschließen"
+            : "Wirtschaftlichkeit vervollständigen",
+        href: `/admin/shows/${show.id}/economics`,
+        manual: false,
+      });
     }
   }
 
-  push("Showdaten geprüft", "#showdaten", true);
+  return tasks.slice(0, 10);
+}
 
-  push(
-    "Vertrag geklärt",
-    "#vertrag-finanzen",
-    true
+function getProductionPhase({
+  show,
+  effectiveShowFollowUpDate,
+  finalCheck,
+}: {
+  show: any;
+  effectiveShowFollowUpDate?: string | null;
+  finalCheck: { visible: boolean; ready: boolean };
+}) {
+  const terminal = ["gespielt", "abgeschlossen", "abgesagt"].includes(
+    String(show.internal_status || "")
   );
 
-  if (!show.ticket_link) {
-    push("Ticketlink vorhanden", "#promo-ticketing");
-  } else if (!show.homepage_ticket_linked) {
-    push(
-      "Ticketlink auf Homepage verlinkt",
-      "#promo-ticketing"
-    );
+  if (terminal) {
+    return {
+      key: "finished",
+      label:
+        String(show.internal_status || "") === "abgesagt"
+          ? "❌ Abgesagt"
+          : "✓ Show abgeschlossen",
+      description: "Die Produktionsphase dieser Show ist abgeschlossen.",
+      className: "bg-zinc-100 text-zinc-600 ring-zinc-200",
+    };
   }
 
-  if (sectionStates.tech !== "done") {
-    push("Technik geklärt", "#technik");
+  if (isShowWithinDays(show.show_date, 7)) {
+    if (finalCheck.ready) {
+      return {
+        key: "ready",
+        label: "🎭 Spielbereit",
+        description:
+          "Der Finalcheck ist vollständig. Die Show ist aus Produktionssicht spielbereit.",
+        className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+      };
+    }
+
+    return {
+      key: "finalcheck",
+      label: "🧭 Finalcheck",
+      description:
+        "7 Tage vor der Show: Jetzt zählt nur noch, ob wir wirklich spielbereit sind.",
+      className: "bg-sky-50 text-sky-700 ring-sky-100",
+    };
   }
 
-  if (!checklistState["Ablauf geklärt"]) {
-    push("Ablauf geklärt", "#ablauf", true);
+  if (isShowWithinDays(show.show_date, 30)) {
+    return {
+      key: "production-check",
+      label: "🟠 Produktionscheck",
+      description:
+        "30 Tage vor der Show: Sind Technik, Promo, Anreise, Kontakt und Ablauf auf Kurs?",
+      className: "bg-amber-50 text-amber-800 ring-amber-100",
+    };
   }
 
-  if (!checklistState["Zugang zur Spielstätte geklärt"]) {
-    push(
-      "Zugang zur Spielstätte geklärt",
-      "#ablauf",
-      true
-    );
+  if (!isFutureDate(effectiveShowFollowUpDate)) {
+    return {
+      key: "preparation",
+      label: "🔧 In Vorbereitung",
+      description:
+        "Die Bearbeitungsphase läuft. Offene Produktionspunkte werden jetzt aktiv geklärt.",
+      className: "bg-orange-50 text-orange-700 ring-orange-100",
+    };
   }
 
-  if (sectionStates.travel !== "done") {
-    push(
-      "Anreise / Unterkunft geklärt",
-      "#anreise"
-    );
-  }
+  return {
+    key: "deferred",
+    label: `📅 Bearbeitung ab ${formatDate(effectiveShowFollowUpDate)}`,
+    description:
+      "Bis dahin bleibt die Show im Blick, die eigentliche Produktionsbearbeitung startet aber erst an diesem Datum.",
+    className: "bg-[#eef5ff] text-[#2867d8] ring-[#dce9ff]",
+  };
+}
 
-  if (sectionStates.backstage !== "done") {
-    push(
-      "Backstage / Catering geklärt",
-      "#backstage"
-    );
-  }
+function buildFinalCheck({ show, sectionStates, checklistState }: { show: any; sectionStates: Record<string, AreaState>; checklistState: Record<string, boolean> }) {
+  const playedOrCancelled = ["gespielt", "abgeschlossen", "abgesagt"].includes(String(show.internal_status || ""));
+  const visible = !playedOrCancelled && isShowWithinDays(show.show_date, 7);
+  const promoNeeded = String(show.flyers_needed || "") === "Ja" || String(show.posters_needed || "") === "Ja";
+  const hasMarkus = Boolean(show.markus_included);
+  const items = [
+    { label: "Technik bestätigt", done: sectionStates.tech === "done", href: "#technik" },
+    { label: "Ablauf klar", done: sectionStates.schedule === "done" || checklistState["Ablauf geklärt"] === true, href: "#ablauf" },
+    { label: "Hotel klar", done: ["organizer", "buyout", "not_required"].includes(String(show.accommodation_status || "")), href: "#anreise" },
+    { label: "Homepage online", done: show.homepage_ticket_linked === true, href: "#promo-ticketing" },
+    { label: "Ticketlink vorhanden", done: Boolean(show.ticket_link), href: "#promo-ticketing" },
+    { label: "Promo gelaufen", done: !promoNeeded || Boolean(show.promo_sent_at) || show.promo_send_status === "sent", href: "#promo-ticketing" },
+    { label: "Markus informiert", done: !hasMarkus || checklistState["Markus / Team informiert"] === true, href: "#arbeitsliste" },
+  ];
+  return { visible, items, ready: items.every((item) => item.done), openCount: items.filter((item) => !item.done).length };
+}
 
-  if (!show.cast_confirmed) {
-    push("Besetzung vollständig", "#besetzung");
-  }
+function promoStatusPreview(show: any) {
+  if (show.promo_sent_at) return `Verschickt ${formatDate(show.promo_sent_at)}`;
+  if (show.promo_follow_up_date) return `Promo-WVL ${formatDate(show.promo_follow_up_date)}`;
+  const needed = String(show.flyers_needed || "") === "Ja" || String(show.posters_needed || "") === "Ja";
+  return needed ? "Promo offen" : null;
+}
 
-  push(
-    "Markus / Team informiert",
-    "#arbeitsliste",
-    true
-  );
+function defaultShowFollowUpDate(showDate?: string | null) {
+  if (!showDate) return null;
+  const parts = String(showDate).split("-").map(Number);
+  if (parts.length !== 3 || parts.some((v) => !Number.isFinite(v))) return null;
+  const [year, month, day] = parts;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  d.setUTCMonth(d.getUTCMonth() - 3);
+  return d.toISOString().slice(0, 10);
+}
 
-  if (show.promo_send_status !== "sent") {
-    push("Promo erledigt", "#promo-ticketing");
-  }
+function isFutureDate(date?: string | null) {
+  if (!date) return false;
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return String(date) > todayKey;
+}
 
-  push("GEMA geklärt", "#arbeitsliste", true);
-
-  if (
-    ["gespielt", "abgeschlossen"].includes(
-      String(show.internal_status || "")
-    )
-  ) {
-    push(
-      "Rechnung verschickt",
-      "#nachbereitung"
-    );
-    push(
-      "Zahlung vollständig",
-      "#nachbereitung"
-    );
-    push(
-      "Show bewertet",
-      "#nachbereitung"
-    );
-  }
-
-  return tasks.slice(0, 8);
+function isShowWithinDays(showDate?: string | null, days = 14) {
+  if (!showDate) return false;
+  const target = new Date(`${showDate}T12:00:00`);
+  if (Number.isNaN(target.getTime())) return false;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const diffDays = (target.getTime() - today.getTime()) / 86400000;
+  return diffDays >= 0 && diffDays <= days;
 }
 
 function postState(
@@ -2741,6 +3250,7 @@ function ChecklistRow({
           id={checklistInputId(label)}
           type="checkbox"
           name={`checklist_${label}`}
+          form="show-main-form"
           defaultChecked={checked}
           className="h-4 w-4 rounded accent-[#2867d8]"
         />

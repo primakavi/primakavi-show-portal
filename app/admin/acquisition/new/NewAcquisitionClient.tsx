@@ -68,7 +68,6 @@ const PROGRAM_OPTIONS = [
   "Jetzt mal Tacheles",
   "Süßer die Glocken nie hingen",
   "TYPisch FRAU?!",
-  "Volljährig",
   "Mix",
 ];
 
@@ -78,6 +77,8 @@ export default function NewAcquisitionClient({
   createAcquisition,
   initialVenueId,
   initialOrganizerId,
+  rounds,
+  initialRoundId,
 }: {
   venues: Venue[];
   organizers: Organizer[];
@@ -86,6 +87,13 @@ export default function NewAcquisitionClient({
   ) => Promise<void>;
   initialVenueId?: string;
   initialOrganizerId?: string;
+  rounds: {
+    id: string;
+    name: string;
+    type: "acquisition" | "mailing";
+    active: boolean;
+  }[];
+  initialRoundId?: string;
 }) {
   // ============================================================
   // INITIAL TARGET
@@ -165,6 +173,18 @@ export default function NewAcquisitionClient({
     priority,
     setPriority,
   ] = useState("Normal");
+
+  const acquisitionRounds = useMemo(
+    () => rounds.filter((round) => round.active && round.type === "acquisition"),
+    [rounds]
+  );
+
+  const [selectedRoundId, setSelectedRoundId] = useState(
+    initialRoundId &&
+      acquisitionRounds.some((round) => round.id === initialRoundId)
+      ? initialRoundId
+      : acquisitionRounds[0]?.id || ""
+  );
 
   // ============================================================
   // AUSGEWÄHLTE DATENSÄTZE
@@ -844,6 +864,39 @@ export default function NewAcquisitionClient({
             )}
           </section>
 
+          {/* AKQUISE-RUNDE */}
+
+          <section className="rounded-[1.7rem] bg-white p-6 shadow-xl shadow-black/[0.04] ring-1 ring-black/5">
+            <div className="mb-5">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
+                Akquise-Runde
+              </p>
+              <h2 className="mt-1 text-xl font-black">
+                Zu welcher Runde gehört der Vorgang?
+              </h2>
+            </div>
+
+            <input type="hidden" name="round_id" value={selectedRoundId} />
+
+            {acquisitionRounds.length > 0 ? (
+              <select
+                value={selectedRoundId}
+                onChange={(e) => setSelectedRoundId(e.target.value)}
+                className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-bold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+              >
+                {acquisitionRounds.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    {round.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                Es gibt aktuell keine aktive Akquise-Runde.
+              </div>
+            )}
+          </section>
+
           {/* VORGANG */}
 
           <section className="rounded-[1.7rem] bg-white p-6 shadow-xl shadow-black/[0.04] ring-1 ring-black/5">
@@ -973,7 +1026,7 @@ export default function NewAcquisitionClient({
           <div className="sticky bottom-5 z-10 flex justify-end">
             <button
               type="submit"
-              disabled={!hasTarget}
+              disabled={!hasTarget || !selectedRoundId}
               className="inline-flex items-center justify-center rounded-full bg-lime-300 px-7 py-3.5 text-sm font-black text-zinc-950 shadow-xl shadow-black/10 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
             >
               Vorgang anlegen

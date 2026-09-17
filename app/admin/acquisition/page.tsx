@@ -3,7 +3,13 @@ import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 import AcquisitionClient from "./AcquisitionClient";
 
-export default async function AcquisitionPage() {
+export default async function AcquisitionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ round?: string }>;
+}) {
+  const params = await searchParams;
+  const initialRoundId = params.round || "";
   // ============================================================
   // AKQUISE
   // ============================================================
@@ -14,6 +20,7 @@ export default async function AcquisitionPage() {
       id,
       venue_id,
       organizer_id,
+      round_id,
       program,
       status,
       priority,
@@ -231,6 +238,531 @@ export default async function AcquisitionPage() {
   }
 
   // ============================================================
+  // AKQUISE-RUNDEN
+  // ============================================================
+
+  const { data: rounds, error: roundsError } = await supabaseAdmin
+    .from("acquisition_rounds")
+    .select(`
+      id,
+      name,
+      type,
+      active,
+      created_at,
+      archived_at
+    `)
+    .order("active", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (roundsError) {
+    return (
+      <div className="rounded-[2rem] bg-white p-8 font-bold text-red-600 shadow-xl">
+        Fehler beim Laden der Akquise-Runden: {roundsError.message}
+      </div>
+    );
+  }
+
+
+  // ============================================================
+  // MAILING / NEWSLETTER
+  // ============================================================
+
+  const { data: mailingRecipientsRaw, error: mailingRecipientsError } =
+    await supabaseAdmin
+      .from("mailing_recipients")
+      .select(`
+        id,
+        round_id,
+        venue_id,
+        organizer_id,
+        email,
+        sent_at,
+        scheduled_at,
+        reaction,
+        notes,
+        show_id,
+        created_at,
+        updated_at
+      `)
+      .order("created_at", { ascending: false });
+
+  if (mailingRecipientsError) {
+    return (
+      <div className="rounded-[2rem] bg-white p-8 font-bold text-red-600 shadow-xl">
+        Fehler beim Laden der Mailing-Empfänger: {mailingRecipientsError.message}
+      </div>
+    );
+  }
+
+  const { data: mailingVenues, error: mailingVenuesError } =
+    await supabaseAdmin
+      .from("venues")
+      .select(`
+        id,
+        name,
+        city,
+        state,
+        contact_name,
+        contact_email,
+        booking_email,
+        capacity,
+        played_before,
+        relationship_status,
+        program_focus,
+        acquisition_relevant
+      `)
+      .neq("acquisition_relevant", false)
+      .order("name", { ascending: true });
+
+  if (mailingVenuesError) {
+    return (
+      <div className="rounded-[2rem] bg-white p-8 font-bold text-red-600 shadow-xl">
+        Fehler beim Laden der Mailing-Locations: {mailingVenuesError.message}
+      </div>
+    );
+  }
+
+  const { data: mailingOrganizers, error: mailingOrganizersError } =
+    await supabaseAdmin
+      .from("organizers")
+      .select(`
+        id,
+        name,
+        city,
+        email,
+        organizer_type
+      `)
+      .order("name", { ascending: true });
+
+  if (mailingOrganizersError) {
+    return (
+      <div className="rounded-[2rem] bg-white p-8 font-bold text-red-600 shadow-xl">
+        Fehler beim Laden der Mailing-Veranstalter: {mailingOrganizersError.message}
+      </div>
+    );
+  }
+
+  const mailingVenueMap = new Map(
+    (mailingVenues || []).map((venue) => [venue.id, venue])
+  );
+
+  const mailingOrganizerMap = new Map(
+    (mailingOrganizers || []).map((organizer) => [organizer.id, organizer])
+  );
+
+  const mailingRecipients = (mailingRecipientsRaw || []).map((recipient) => ({
+    ...recipient,
+    venue: recipient.venue_id
+      ? mailingVenueMap.get(recipient.venue_id) || null
+      : null,
+    organizer: recipient.organizer_id
+      ? mailingOrganizerMap.get(recipient.organizer_id) || null
+      : null,
+  }));
+
+  async function addMailingRecipient(formData: FormData) {
+    "use server";
+
+    const roundId = String(formData.get("round_id") || "").trim();
+    const targetType = String(formData.get("target_type") || "").trim();
+    const targetId = String(formData.get("target_id") || "").trim();
+
+    if (!roundId || !targetId || !["venue", "organizer"].includes(targetType)) {
+      throw new Error("Bitte einen Empfänger auswählen.");
+    }
+
+    const { data: round, error: roundError } = await supabaseAdmin
+      .from("acquisition_rounds")
+      .select("id, type, active, archived_at")
+      .eq("id", roundId)
+      .single();
+
+    if (
+      roundError ||
+      !round ||
+      round.type !== "mailing" ||
+      !round.active ||
+      round.archived_at
+    ) {
+      throw new Error("Diese Mailing-Runde ist nicht aktiv.");
+    }
+
+    let venueId: string | null = null;
+    let organizerId: string | null = null;
+    let email: string | null = null;
+
+    if (targetType === "venue") {
+      const { data: venue, error } = await supabaseAdmin
+        .from("venues")
+        .select("id, contact_email, booking_email")
+        .eq("id", targetId)
+        .single();
+
+      if (error || !venue) {
+        throw new Error(error?.message || "Location konnte nicht geladen werden.");
+      }
+
+      venueId = venue.id;
+      email = venue.booking_email || venue.contact_email || null;
+    } else {
+      const { data: organizer, error } = await supabaseAdmin
+        .from("organizers")
+        .select("id, email")
+        .eq("id", targetId)
+        .single();
+
+      if (error || !organizer) {
+        throw new Error(
+          error?.message || "Veranstalter konnte nicht geladen werden."
+        );
+      }
+
+      organizerId = organizer.id;
+
+      const { data: primaryContact } = await supabaseAdmin
+        .from("organizer_contacts")
+        .select("email, is_primary")
+        .eq("organizer_id", organizer.id)
+        .not("email", "is", null)
+        .order("is_primary", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      email = primaryContact?.email || organizer.email || null;
+    }
+
+    const duplicateQuery = supabaseAdmin
+      .from("mailing_recipients")
+      .select("id")
+      .eq("round_id", roundId);
+
+    const { data: existing, error: existingError } =
+      targetType === "venue"
+        ? await duplicateQuery.eq("venue_id", targetId).maybeSingle()
+        : await duplicateQuery.eq("organizer_id", targetId).maybeSingle();
+
+    if (existingError) throw new Error(existingError.message);
+
+    if (existing) {
+      throw new Error("Dieser Empfänger ist bereits in der Mailing-Runde.");
+    }
+
+    const { error: insertError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .insert({
+        round_id: roundId,
+        venue_id: venueId,
+        organizer_id: organizerId,
+        email,
+        updated_at: new Date().toISOString(),
+      });
+
+    if (insertError) throw new Error(insertError.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+
+  async function addMailingRecipientsBulk(formData: FormData) {
+    "use server";
+
+    const roundId = String(formData.get("round_id") || "").trim();
+    const rawTargets = String(formData.get("targets") || "").trim();
+
+    if (!roundId || !rawTargets) {
+      throw new Error("Bitte mindestens einen Empfänger auswählen.");
+    }
+
+    const { data: round, error: roundError } = await supabaseAdmin
+      .from("acquisition_rounds")
+      .select("id, type, active, archived_at")
+      .eq("id", roundId)
+      .single();
+
+    if (
+      roundError ||
+      !round ||
+      round.type !== "mailing" ||
+      !round.active ||
+      round.archived_at
+    ) {
+      throw new Error("Diese Mailing-Runde ist nicht aktiv.");
+    }
+
+    let targets: Array<{ type: "venue" | "organizer"; id: string }> = [];
+
+    try {
+      targets = JSON.parse(rawTargets);
+    } catch {
+      throw new Error("Die Empfängerauswahl konnte nicht gelesen werden.");
+    }
+
+    targets = targets.filter(
+      (target) =>
+        target &&
+        (target.type === "venue" || target.type === "organizer") &&
+        Boolean(target.id)
+    );
+
+    if (!targets.length) {
+      throw new Error("Bitte mindestens einen Empfänger auswählen.");
+    }
+
+    const venueIds = targets
+      .filter((target) => target.type === "venue")
+      .map((target) => target.id);
+
+    const organizerIds = targets
+      .filter((target) => target.type === "organizer")
+      .map((target) => target.id);
+
+    const [{ data: selectedVenues, error: venueError }, { data: selectedOrganizers, error: organizerError }] =
+      await Promise.all([
+        venueIds.length
+          ? supabaseAdmin
+              .from("venues")
+              .select("id, contact_email, booking_email")
+              .in("id", venueIds)
+          : Promise.resolve({ data: [], error: null }),
+        organizerIds.length
+          ? supabaseAdmin
+              .from("organizers")
+              .select("id, email")
+              .in("id", organizerIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+    if (venueError) throw new Error(venueError.message);
+    if (organizerError) throw new Error(organizerError.message);
+
+    const { data: organizerContacts, error: contactsError } = organizerIds.length
+      ? await supabaseAdmin
+          .from("organizer_contacts")
+          .select("organizer_id, email, is_primary")
+          .in("organizer_id", organizerIds)
+          .not("email", "is", null)
+      : { data: [], error: null };
+
+    if (contactsError) throw new Error(contactsError.message);
+
+    const primaryEmailByOrganizer = new Map<string, string>();
+    for (const contact of organizerContacts || []) {
+      if (!contact.email) continue;
+      if (contact.is_primary || !primaryEmailByOrganizer.has(contact.organizer_id)) {
+        primaryEmailByOrganizer.set(contact.organizer_id, contact.email);
+      }
+    }
+
+    const { data: existing, error: existingError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .select("venue_id, organizer_id")
+      .eq("round_id", roundId);
+
+    if (existingError) throw new Error(existingError.message);
+
+    const existingVenueIds = new Set(
+      (existing || []).map((item) => item.venue_id).filter(Boolean)
+    );
+    const existingOrganizerIds = new Set(
+      (existing || []).map((item) => item.organizer_id).filter(Boolean)
+    );
+
+    const rows = [
+      ...(selectedVenues || [])
+        .filter((venue) => !existingVenueIds.has(venue.id))
+        .map((venue) => ({
+          round_id: roundId,
+          venue_id: venue.id,
+          organizer_id: null,
+          email: venue.booking_email || venue.contact_email || null,
+          updated_at: new Date().toISOString(),
+        })),
+      ...(selectedOrganizers || [])
+        .filter((organizer) => !existingOrganizerIds.has(organizer.id))
+        .map((organizer) => ({
+          round_id: roundId,
+          venue_id: null,
+          organizer_id: organizer.id,
+          email:
+            primaryEmailByOrganizer.get(organizer.id) ||
+            organizer.email ||
+            null,
+          updated_at: new Date().toISOString(),
+        })),
+    ];
+
+    if (!rows.length) {
+      revalidatePath("/admin/acquisition");
+      return;
+    }
+
+    const { error: insertError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .insert(rows);
+
+    if (insertError) throw new Error(insertError.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function updateMailingRecipient(formData: FormData) {
+    "use server";
+
+    const id = String(formData.get("id") || "").trim();
+    if (!id) return;
+
+    const reaction = String(formData.get("reaction") || "").trim() || null;
+    const notes = String(formData.get("notes") || "").trim() || null;
+
+    const { error } = await supabaseAdmin
+      .from("mailing_recipients")
+      .update({
+        reaction,
+        notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function markMailingSent(formData: FormData) {
+    "use server";
+
+    const id = String(formData.get("id") || "").trim();
+    if (!id) return;
+
+    const { error } = await supabaseAdmin
+      .from("mailing_recipients")
+      .update({
+        sent_at: new Date().toISOString(),
+        scheduled_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function markWholeMailingSent(formData: FormData) {
+    "use server";
+
+    const roundId = String(formData.get("round_id") || "").trim();
+    if (!roundId) return;
+
+    const now = new Date().toISOString();
+
+    const { error } = await supabaseAdmin
+      .from("mailing_recipients")
+      .update({
+        sent_at: now,
+        scheduled_at: null,
+        updated_at: now,
+      })
+      .eq("round_id", roundId);
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function scheduleWholeMailing(formData: FormData) {
+    "use server";
+
+    const roundId = String(formData.get("round_id") || "").trim();
+    const scheduledAt = String(formData.get("scheduled_at") || "").trim();
+
+    if (!roundId || !scheduledAt) {
+      throw new Error("Bitte Datum und Uhrzeit für den Versand auswählen.");
+    }
+
+    const parsed = new Date(scheduledAt);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error("Der geplante Versandzeitpunkt ist ungültig.");
+    }
+
+    const now = new Date().toISOString();
+
+    // Wichtig: Planung hebt einen versehentlich gesetzten Versandstatus auf.
+    const { error } = await supabaseAdmin
+      .from("mailing_recipients")
+      .update({
+        scheduled_at: parsed.toISOString(),
+        sent_at: null,
+        updated_at: now,
+      })
+      .eq("round_id", roundId);
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function addNoteToWholeMailing(formData: FormData) {
+    "use server";
+
+    const roundId = String(formData.get("round_id") || "").trim();
+    const note = String(formData.get("note") || "").trim();
+
+    if (!roundId || !note) {
+      throw new Error("Bitte eine Notiz eingeben.");
+    }
+
+    const { data: rows, error: loadError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .select("id, notes")
+      .eq("round_id", roundId);
+
+    if (loadError) throw new Error(loadError.message);
+    if (!rows?.length) return;
+
+    const stamp = new Intl.DateTimeFormat("de-DE", {
+      dateStyle: "short",
+    }).format(new Date());
+
+    const updates = rows.map((row) => {
+      const existing = String(row.notes || "").trim();
+      const addition = `${stamp}: ${note}`;
+      const nextNotes = existing ? `${existing}\n${addition}` : addition;
+
+      return supabaseAdmin
+        .from("mailing_recipients")
+        .update({
+          notes: nextNotes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", row.id);
+    });
+
+    const results = await Promise.all(updates);
+    const failed = results.find((result) => result.error);
+
+    if (failed?.error) throw new Error(failed.error.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function deleteMailingRecipient(formData: FormData) {
+    "use server";
+
+    const id = String(formData.get("id") || "").trim();
+    if (!id) return;
+
+    const { error } = await supabaseAdmin
+      .from("mailing_recipients")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  // ============================================================
   // CLIENT-DATEN
   // ============================================================
 
@@ -307,6 +839,81 @@ export default async function AcquisitionPage() {
 
     revalidatePath("/admin/acquisition");
     revalidatePath("/admin");
+  }
+
+  // ============================================================
+  // AKQUISE-RUNDEN
+  // ============================================================
+
+  async function createRound(formData: FormData) {
+    "use server";
+
+    const name = String(formData.get("name") || "").trim();
+    const type = String(formData.get("type") || "acquisition").trim();
+
+    if (!name) {
+      throw new Error("Bitte einen Namen für die Runde eingeben.");
+    }
+
+    if (!["acquisition", "mailing"].includes(type)) {
+      throw new Error("Ungültiger Rundentyp.");
+    }
+
+    const { data: newRound, error } = await supabaseAdmin
+      .from("acquisition_rounds")
+      .insert({
+        name,
+        type,
+        active: true,
+        archived_at: null,
+      })
+      .select("id")
+      .single();
+
+    if (error || !newRound) {
+      throw new Error(error?.message || "Runde konnte nicht angelegt werden.");
+    }
+
+    revalidatePath("/admin/acquisition");
+    redirect(`/admin/acquisition?round=${newRound.id}`);
+  }
+
+  async function archiveRound(formData: FormData) {
+    "use server";
+
+    const id = String(formData.get("round_id") || "");
+    if (!id) return;
+
+    const { error } = await supabaseAdmin
+      .from("acquisition_rounds")
+      .update({
+        active: false,
+        archived_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function restoreRound(formData: FormData) {
+    "use server";
+
+    const id = String(formData.get("round_id") || "");
+    if (!id) return;
+
+    const { error } = await supabaseAdmin
+      .from("acquisition_rounds")
+      .update({
+        active: true,
+        archived_at: null,
+      })
+      .eq("id", id);
+
+    if (error) throw new Error(error.message);
+
+    revalidatePath("/admin/acquisition");
   }
 
   // ============================================================
@@ -643,12 +1250,31 @@ export default async function AcquisitionPage() {
   }
 
   return (
-    <AcquisitionClient
-      acquisition={acquisition}
-      archiveAcquisition={archiveAcquisition}
-      restoreAcquisition={restoreAcquisition}
-      createShowFromAcquisition={createShowFromAcquisition}
-    />
+<AcquisitionClient
+  acquisition={acquisition}
+  rounds={rounds || []}
+  initialRoundId={initialRoundId}
+
+  mailingRecipients={mailingRecipients}
+  mailingVenues={mailingVenues || []}
+  mailingOrganizers={mailingOrganizers || []}
+
+  addMailingRecipient={addMailingRecipient}
+  addMailingRecipientsBulk={addMailingRecipientsBulk}
+  updateMailingRecipient={updateMailingRecipient}
+  markMailingSent={markMailingSent}
+  markWholeMailingSent={markWholeMailingSent}
+  scheduleWholeMailing={scheduleWholeMailing}
+  addNoteToWholeMailing={addNoteToWholeMailing}
+  deleteMailingRecipient={deleteMailingRecipient}
+
+  createRound={createRound}
+  archiveRound={archiveRound}
+  restoreRound={restoreRound}
+  archiveAcquisition={archiveAcquisition}
+  restoreAcquisition={restoreAcquisition}
+  createShowFromAcquisition={createShowFromAcquisition}
+/>
   );
 }
 

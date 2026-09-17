@@ -22,7 +22,8 @@ type ShowRow = {
   internal_status?: string | null;
   billing_status?: string | null;
   contract_status?: string | null;
-  follow_up_date?: string | null;   // <-- NEU
+  follow_up_date?: string | null;
+  show_follow_up_date?: string | null;
   checklist?: Record<string, boolean> | null;
   markus_included?: boolean | null;
   last_portal_update?: string | null;
@@ -431,6 +432,10 @@ function ShowCard({
   const router = useRouter();
   const status = getStatus(show);
   const actions = getActionItems(show);
+  const visibleActions =
+    status.key === "finalcheck"
+      ? actions.filter((item) => item !== "Finalcheck")
+      : actions;
   const missing = getMissingFields(show);
   const isPast = isPastDate(show.show_date);
   const newPortalInfo = hasNewPortalInfo(show);
@@ -504,7 +509,7 @@ function ShowCard({
       </div>
 
       <div className="flex min-w-0 flex-wrap gap-1.5">
-        {actions.slice(0, 2).map((item) => {
+        {visibleActions.slice(0, 2).map((item) => {
           let tone: "red" | "green" | "blue" | "purple" | "zinc" = "red";
 
           if (item.includes("WVL")) tone = "blue";
@@ -520,7 +525,11 @@ function ShowCard({
           );
         })}
 
-        {actions.length === 0 && missing.length > 0 && (
+        {visibleActions.length > 2 && (
+          <Badge tone="zinc">+{visibleActions.length - 2}</Badge>
+        )}
+
+        {visibleActions.length === 0 && missing.length > 0 && (
           <Badge tone="zinc">
             {missing.length} Info{missing.length === 1 ? "" : "s"} fehlen
           </Badge>
@@ -685,8 +694,8 @@ function isEmptyShowAkte(show: ShowRow) {
 function getActionItems(show: ShowRow) {
   const items: string[] = [];
   const isPast = isPastDate(show.show_date);
-  const isSoon = isWithinNextDays(show.show_date, 7);
-  const hasFutureFollowUp = hasFollowUpInFuture(show.follow_up_date);
+  const finalcheckDue = isFinalcheckDue(show);
+  const finalcheckComplete = isFinalcheckComplete(show);
 
   if (show.internal_status === "abgesagt") {
     items.push("Abgesagt");
@@ -711,10 +720,8 @@ function getActionItems(show: ShowRow) {
     return items;
   }
 
-  if (hasFutureFollowUp && !isSoon && !isPast) {
-    items.push(`WVL ${formatDate(show.follow_up_date)}`);
-    return items;
-  }
+  // Eine manuelle Aufgaben-WVL darf die Show zurückstellen.
+  // Der Finalcheck hat in den letzten 7 Tagen aber immer Vorrang.
 
   if (hasNewPortalInfo(show)) {
     items.push("Neue Infos prüfen");
@@ -739,16 +746,8 @@ function getActionItems(show: ShowRow) {
     items.push("Beginn fehlt");
   }
 
-  if (isSoon && show.internal_status !== "fertig") {
+  if (finalcheckDue && !finalcheckComplete) {
     items.push("Finalcheck");
-  }
-
-  if (items.length === 0 && show.internal_status === "fertig") {
-    items.push("Spielbereit");
-  }
-
-  if (items.length === 0) {
-    items.push("Offene Punkte vorhanden");
   }
 
   return items;
@@ -802,17 +801,6 @@ function getStatus(show: ShowRow) {
   }
 
   if (
-    isWithinNextDays(show.show_date, 7) &&
-    !isPastDate(show.show_date)
-  ) {
-    return {
-      key: "finalcheck",
-      label: "🧭 Finalcheck",
-      className: "bg-sky-100 text-sky-700",
-    };
-  }
-
-  if (
     isPastDate(show.show_date) &&
     show.billing_status !== "bezahlt" &&
     show.billing_status !== "nicht_relevant"
@@ -824,22 +812,51 @@ function getStatus(show: ShowRow) {
     };
   }
 
- if (show.internal_status === "fertig") {
+// 7 Tage vor der Show: Finalcheck
+if (isFinalcheckDue(show)) {
+  if (isFinalcheckComplete(show)) {
+    return {
+      key: "spielbereit",
+      label: "🎭 Spielbereit",
+      className: "bg-emerald-100 text-emerald-700",
+    };
+  }
+
   return {
-    key: "fertig",
-    label: "🎭 Spielbereit",
-    className: "bg-emerald-100 text-emerald-700",
+    key: "finalcheck",
+    label: "🧭 Finalcheck",
+    className: "bg-sky-100 text-sky-700",
   };
 }
 
+// 30 Tage vor der Show: Produktionscheck
+if (isProductionCheckDue(show)) {
+  return {
+    key: "produktionscheck",
+    label: "🟠 Produktionscheck",
+    className: "bg-amber-100 text-amber-800",
+  };
+}
+
+  // Vor dem Bearbeitungsstart: Show ist bewusst zurückgestellt.
+  const processingStart = getProcessingStartDate(show);
   if (
-    show.internal_status === "in_arbeit" ||
-    show.internal_status === "wartet_auf_veranstalter" ||
-    show.internal_status === "wartet_auf_sonja"
+    processingStart &&
+    processingStart > startOfToday() &&
+    !isPastDate(show.show_date)
   ) {
     return {
-      key: "arbeit",
-      label: "🟠 In Arbeit",
+      key: "zurueckgestellt",
+      label: `📅 Ab ${formatShortDate(show.show_follow_up_date || formatISODate(processingStart))}`,
+      className: "bg-sky-50 text-sky-700",
+    };
+  }
+
+  // Sobald der Bearbeitungsstart erreicht ist, ist die Show in Vorbereitung.
+  if (show.show_date && !isPastDate(show.show_date)) {
+    return {
+      key: "vorbereitung",
+      label: "🔧 In Vorbereitung",
       className: "bg-orange-100 text-orange-700",
     };
   }
@@ -880,6 +897,71 @@ function getLatestSubmission(show: ShowRow) {
       new Date(a.submitted_at || "").getTime()
     );
   })[0];
+}
+
+function isFinalcheckComplete(show: ShowRow) {
+  const checklist = show.checklist || {};
+
+  const checked = (...keys: string[]) =>
+    keys.some((key) => checklist[key] === true);
+
+  const required = [
+    checked("Technik bestätigt", "Technik bestaetigt", "finalcheck_technik"),
+    checked("Ablauf klar", "finalcheck_ablauf"),
+    checked("Hotel klar", "Unterkunft klar", "finalcheck_hotel"),
+    checked("Homepage online", "finalcheck_homepage"),
+    checked("Ticketlink vorhanden", "finalcheck_ticketlink"),
+    checked("Promo gelaufen", "finalcheck_promo"),
+    !show.markus_included ||
+      checked("Markus informiert", "finalcheck_markus"),
+  ];
+
+  return required.every(Boolean);
+}
+
+function isFinalcheckDue(show: ShowRow) {
+  return (
+    isWithinNextDays(show.show_date, 7) &&
+    !isPastDate(show.show_date)
+  );
+}
+
+function isProductionCheckDue(show: ShowRow) {
+  return (
+    isWithinNextDays(show.show_date, 30) &&
+    !isWithinNextDays(show.show_date, 7) &&
+    !isPastDate(show.show_date)
+  );
+}
+
+function getProcessingStartDate(show: ShowRow) {
+  const manual = parseDate(show.show_follow_up_date);
+  if (manual) return manual;
+
+  const showDate = parseDate(show.show_date);
+  if (!showDate) return null;
+
+  const result = new Date(showDate);
+  result.setMonth(result.getMonth() - 3);
+  return result;
+}
+
+function formatISODate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatShortDate(date?: string | null) {
+  if (!date) return "später";
+  const parsed = parseDate(date);
+  if (!parsed) return date;
+
+  return parsed.toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+  });
 }
 
 function isContractDone(value?: string | null) {

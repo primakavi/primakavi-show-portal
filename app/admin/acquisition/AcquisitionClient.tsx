@@ -46,6 +46,7 @@ type Acquisition = {
 
   venue_id: string | null;
   organizer_id: string | null;
+  round_id: string | null;
 
   program: string | null;
   status: string | null;
@@ -77,6 +78,59 @@ type Acquisition = {
   organizer: Organizer[];
   organizer_venues: OrganizerVenue[];
 };
+
+
+type AcquisitionRound = {
+  id: string;
+  name: string;
+  type: "acquisition" | "mailing";
+  active: boolean;
+  created_at: string | null;
+  archived_at: string | null;
+};
+
+
+type MailingVenue = {
+  id: string;
+  name: string;
+  city: string | null;
+  state: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  booking_email: string | null;
+  capacity: number | null;
+  played_before: boolean | null;
+  relationship_status: string | null;
+  program_focus: string[] | null;
+  acquisition_relevant: boolean | null;
+};
+
+type MailingOrganizer = {
+  id: string;
+  name: string;
+  city: string | null;
+  email: string | null;
+  organizer_type: string | null;
+};
+
+type MailingRecipient = {
+  id: string;
+  round_id: string;
+  venue_id: string | null;
+  organizer_id: string | null;
+  email: string | null;
+  sent_at: string | null;
+  scheduled_at: string | null;
+  reaction: string | null;
+  notes: string | null;
+  show_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  venue: MailingVenue | null;
+  organizer: MailingOrganizer | null;
+};
+
+type RoundSelection = "all" | "legacy" | string;
 
 type ViewMode = "active" | "archive";
 
@@ -117,11 +171,43 @@ function isCompletedStatus(status?: string | null) {
 
 export default function AcquisitionClient({
   acquisition,
+  rounds,
+  initialRoundId,
+  mailingRecipients,
+  mailingVenues,
+  mailingOrganizers,
+  addMailingRecipient,
+  addMailingRecipientsBulk,
+  updateMailingRecipient,
+  markMailingSent,
+  markWholeMailingSent,
+  scheduleWholeMailing,
+  addNoteToWholeMailing,
+  deleteMailingRecipient,
+  createRound,
+  archiveRound,
+  restoreRound,
   archiveAcquisition,
   restoreAcquisition,
   createShowFromAcquisition,
 }: {
   acquisition: Acquisition[];
+  rounds: AcquisitionRound[];
+  initialRoundId?: string;
+  mailingRecipients: MailingRecipient[];
+  mailingVenues: MailingVenue[];
+  mailingOrganizers: MailingOrganizer[];
+  addMailingRecipient: (formData: FormData) => Promise<void>;
+  addMailingRecipientsBulk: (formData: FormData) => Promise<void>;
+  updateMailingRecipient: (formData: FormData) => Promise<void>;
+  markMailingSent: (formData: FormData) => Promise<void>;
+  markWholeMailingSent: (formData: FormData) => Promise<void>;
+  scheduleWholeMailing: (formData: FormData) => Promise<void>;
+  addNoteToWholeMailing: (formData: FormData) => Promise<void>;
+  deleteMailingRecipient: (formData: FormData) => Promise<void>;
+  createRound: (formData: FormData) => Promise<void>;
+  archiveRound: (formData: FormData) => Promise<void>;
+  restoreRound: (formData: FormData) => Promise<void>;
   archiveAcquisition: (
     formData: FormData
   ) => Promise<void>;
@@ -159,18 +245,60 @@ export default function AcquisitionClient({
 
   const router = useRouter();
 
+  const activeRounds = useMemo(
+    () => rounds.filter((round) => round.active),
+    [rounds]
+  );
+
+  const archivedRounds = useMemo(
+    () => rounds.filter((round) => !round.active),
+    [rounds]
+  );
+
+  const [selectedRound, setSelectedRound] = useState<RoundSelection>(
+    initialRoundId && rounds.some((round) => round.id === initialRoundId)
+      ? initialRoundId
+      : activeRounds[0]?.id || "all"
+  );
+  const [showNewRound, setShowNewRound] = useState(false);
+
+  const selectedRoundData =
+    rounds.find((round) => round.id === selectedRound) || null;
+
+  const isMailingRound = selectedRoundData?.type === "mailing";
+
+ const selectedMailingRecipients = useMemo(
+  () =>
+    selectedRoundData?.type === "mailing"
+      ? (mailingRecipients ?? []).filter(
+          (recipient) =>
+            recipient.round_id === selectedRoundData.id
+        )
+      : [],
+  [mailingRecipients, selectedRoundData]
+);
+
+
+  const roundScopedAcquisition = useMemo(() => {
+    if (selectedRound === "all") return acquisition;
+    if (selectedRound === "legacy") {
+      return acquisition.filter((item) => !item.round_id);
+    }
+    return acquisition.filter((item) => item.round_id === selectedRound);
+  }, [acquisition, selectedRound]);
+
   // ============================================================
   // AKTIV / ARCHIV
   // ============================================================
 
   const activeAcquisition = useMemo(
     () =>
-      acquisition.filter(
+      roundScopedAcquisition.filter(
         (item) =>
           !item.archived_at &&
           !isCompletedStatus(item.status)
       ),
-    [acquisition]
+    [roundScopedAcquisition]
   );
 
   /*
@@ -182,12 +310,12 @@ export default function AcquisitionClient({
    */
   const archivedAcquisition = useMemo(
     () =>
-      acquisition.filter(
+      roundScopedAcquisition.filter(
         (item) =>
           !!item.archived_at ||
           isCompletedStatus(item.status)
       ),
-    [acquisition]
+    [roundScopedAcquisition]
   );
 
   const currentAcquisition =
@@ -482,30 +610,6 @@ export default function AcquisitionClient({
   // STATS
   // ============================================================
 
-  const followUpsDue =
-    activeAcquisition.filter(
-      (item) =>
-        isDue(
-          item.next_follow_up_at
-        )
-    ).length;
-
-  const withInterest =
-    activeAcquisition.filter(
-      (item) => {
-        const status = String(
-          item.status || ""
-        ).toLowerCase();
-
-        return (
-          status.includes("interesse") ||
-          status.includes(
-            "verhandlung"
-          )
-        );
-      }
-    ).length;
-
   const todayKey =
     localDateOnly(new Date());
 
@@ -619,128 +723,257 @@ export default function AcquisitionClient({
           </p>
         </div>
 
-        <Link
-          href="/admin/acquisition/new"
-          className="inline-flex items-center justify-center rounded-full bg-lime-300 px-5 py-3 text-sm font-black text-zinc-950 shadow-sm transition hover:-translate-y-0.5"
-        >
-          + Neuer Vorgang
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/admin/acquisition/new"
+            className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-zinc-800"
+          >
+            + Neue Akquise
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowNewRound(true)}
+            className="inline-flex items-center justify-center rounded-full bg-lime-300 px-5 py-3 text-sm font-black text-zinc-950 shadow-sm transition hover:-translate-y-0.5"
+          >
+            + Neue Runde
+          </button>
+        </div>
       </header>
 
-      {/* STATS */}
+      {/* RUNDENSTEUERUNG */}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          icon="🎯"
-          value={
-            activeAcquisition.length
-          }
-          label="aktive Vorgänge"
-        />
+      <section className="rounded-[1.7rem] bg-white p-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
+              Akquise-Runde
+            </div>
 
-        <StatCard
-          icon="⏰"
-          value={followUpsDue}
-          label="Follow-up fällig"
-        />
-
-        <StatCard
-          icon="💚"
-          value={withInterest}
-          label="mit Interesse"
-        />
-
-        <StatCard
-          icon="📦"
-          value={
-            archivedAcquisition.length
-          }
-          label="abgeschlossen / Archiv"
-        />
-      </section>
-
-      {/* ARBEITSMODUS */}
-
-      {view === "active" && (
-        <section className="rounded-[1.7rem] bg-white p-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-              Arbeitsmodus
-            </span>
-
-            <WorkFilterButton
-              active={
-                workFilter ===
-                "overdue"
-              }
-              onClick={() =>
-                changeWorkFilter(
-                  "overdue"
-                )
-              }
-              label="🔥 Überfällig"
-              count={
-                workCounts.overdue
-              }
-              critical
-            />
-
-            <WorkFilterButton
-              active={
-                workFilter === "today"
-              }
-              onClick={() =>
-                changeWorkFilter(
-                  "today"
-                )
-              }
-              label="📅 Heute"
-              count={workCounts.today}
-            />
-
-            <WorkFilterButton
-              active={
-                workFilter === "week"
-              }
-              onClick={() =>
-                changeWorkFilter(
-                  "week"
-                )
-              }
-              label="⏭ Diese Woche"
-              count={workCounts.week}
-            />
-
-            <WorkFilterButton
-              active={
-                workFilter ===
-                "no_follow_up"
-              }
-              onClick={() =>
-                changeWorkFilter(
-                  "no_follow_up"
-                )
-              }
-              label="💤 Ohne Wiedervorlage"
-              count={
-                workCounts.no_follow_up
-              }
-            />
-
-            {workFilter !== "alle" && (
-              <button
-                type="button"
-                onClick={() =>
-                  changeWorkFilter(
-                    "alle"
-                  )
-                }
-                className="ml-auto rounded-full px-3 py-2 text-xs font-black text-zinc-400 transition hover:bg-[#fbf7ef] hover:text-zinc-800"
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <select
+                value={selectedRound}
+                onChange={(event) => {
+                  setSelectedRound(event.target.value);
+                  setView(event.target.value === "legacy" ? "archive" : "active");
+                  setPage(1);
+                }}
+                className="h-11 min-w-0 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-bold text-zinc-800 outline-none transition focus:border-zinc-400 sm:min-w-[310px]"
               >
-                Alle anzeigen
-              </button>
+                <option value="all">Alle aktiven Runden</option>
+                {activeRounds.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    {round.type === "mailing" ? "📨 " : "🎯 "}
+                    {round.name}
+                  </option>
+                ))}
+                <option disabled>──────────</option>
+                <option value="legacy">📦 Alte Akquise</option>
+                {archivedRounds.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    📦 {round.name}
+                  </option>
+                ))}
+              </select>
+
+              {selectedRoundData && (
+                <span className={`w-fit rounded-full px-3 py-1.5 text-xs font-black ${
+                  selectedRoundData.active
+                    ? "bg-lime-100 text-zinc-800"
+                    : "bg-zinc-100 text-zinc-500"
+                }`}>
+                  {selectedRoundData.type === "mailing" ? "Mailing" : "Akquise"}
+                  {" · "}
+                  {selectedRoundData.active ? "aktiv" : "archiviert"}
+                </span>
+              )}
+            </div>
+
+            <p className="mt-3 text-sm text-zinc-500">
+              {selectedRoundData
+                ? selectedRoundData.type === "mailing"
+                  ? `${selectedMailingRecipients.length} Empfänger in „${selectedRoundData.name}“.`
+                  : `${roundScopedAcquisition.length} Vorgänge in „${selectedRoundData.name}“.`
+                : selectedRound === "legacy"
+                ? `${roundScopedAcquisition.length} ältere Vorgänge ohne Rundenzuordnung.`
+                : `${activeRounds.length} aktive Runden im Überblick.`}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedRoundData?.active && selectedRoundData.type === "acquisition" && (
+              <Link
+                href={`/admin/acquisition/new?round=${selectedRoundData.id}`}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-950 px-5 text-sm font-black text-white transition hover:bg-zinc-800"
+              >
+                + Eintrag
+              </Link>
+            )}
+
+            {selectedRoundData?.active && (
+              <form action={archiveRound}>
+                <input type="hidden" name="round_id" value={selectedRoundData.id} />
+                <button
+                  type="submit"
+                  className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-500 ring-1 ring-black/10 transition hover:bg-zinc-50"
+                >
+                  Runde abschließen
+                </button>
+              </form>
+            )}
+
+            {selectedRoundData && !selectedRoundData.active && (
+              <form action={restoreRound}>
+                <input type="hidden" name="round_id" value={selectedRoundData.id} />
+                <button
+                  type="submit"
+                  className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50"
+                >
+                  Runde reaktivieren
+                </button>
+              </form>
             )}
           </div>
+        </div>
+      </section>
+
+      {showNewRound && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-lg rounded-[1.8rem] bg-[#fbf7ef] p-5 shadow-2xl ring-1 ring-black/10 sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
+                  Neue Aktion
+                </div>
+                <h2 className="mt-1 text-2xl font-black tracking-tight">
+                  Was möchtest du starten?
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewRound(false)}
+                className="grid h-9 w-9 place-items-center rounded-full bg-white text-lg font-bold text-zinc-500 ring-1 ring-black/5"
+              >
+                ×
+              </button>
+            </div>
+
+            <form action={createRound} className="mt-5 space-y-4">
+              <label className="grid gap-1.5 text-[11px] font-semibold text-zinc-500">
+                Typ
+                <select
+                  name="type"
+                  defaultValue="acquisition"
+                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 outline-none focus:border-zinc-400"
+                >
+                  <option value="acquisition">🎯 Akquise-Runde</option>
+                  <option value="mailing">📨 Mailing / Newsletter</option>
+                </select>
+              </label>
+
+              <label className="grid gap-1.5 text-[11px] font-semibold text-zinc-500">
+                Name
+                <input
+                  name="name"
+                  required
+                  autoFocus
+                  placeholder="z. B. Frühjahrstour 2027"
+                  className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 outline-none placeholder:text-zinc-300 focus:border-zinc-400"
+                />
+              </label>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowNewRound(false)}
+                  className="rounded-full bg-white px-4 py-2.5 text-sm font-black text-zinc-500 ring-1 ring-black/10"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-full bg-lime-300 px-5 py-2.5 text-sm font-black text-zinc-950"
+                >
+                  Runde anlegen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+
+      {isMailingRound && selectedRoundData && (
+        <MailingPanel
+          round={selectedRoundData}
+          recipients={selectedMailingRecipients}
+          venues={mailingVenues}
+          organizers={mailingOrganizers}
+          addMailingRecipient={addMailingRecipient}
+          addMailingRecipientsBulk={addMailingRecipientsBulk}
+          updateMailingRecipient={updateMailingRecipient}
+          markMailingSent={markMailingSent}
+          markWholeMailingSent={markWholeMailingSent}
+          scheduleWholeMailing={scheduleWholeMailing}
+          addNoteToWholeMailing={addNoteToWholeMailing}
+          deleteMailingRecipient={deleteMailingRecipient}
+        />
+      )}
+
+      {!isMailingRound && (
+        <>
+
+      {/* ARBEITSÜBERSICHT */}
+
+      {view === "active" && (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <WorkStatCard
+            icon="🔥"
+            value={workCounts.overdue}
+            label="Überfällig"
+            active={workFilter === "overdue"}
+            critical
+            onClick={() =>
+              changeWorkFilter(
+                workFilter === "overdue" ? "alle" : "overdue"
+              )
+            }
+          />
+
+          <WorkStatCard
+            icon="📅"
+            value={workCounts.today}
+            label="Heute"
+            active={workFilter === "today"}
+            onClick={() =>
+              changeWorkFilter(
+                workFilter === "today" ? "alle" : "today"
+              )
+            }
+          />
+
+          <WorkStatCard
+            icon="⏭"
+            value={workCounts.week}
+            label="Diese Woche"
+            active={workFilter === "week"}
+            onClick={() =>
+              changeWorkFilter(
+                workFilter === "week" ? "alle" : "week"
+              )
+            }
+          />
+
+          <WorkStatCard
+            icon="💤"
+            value={workCounts.no_follow_up}
+            label="Ohne Wiedervorlage"
+            active={workFilter === "no_follow_up"}
+            onClick={() =>
+              changeWorkFilter(
+                workFilter === "no_follow_up" ? "alle" : "no_follow_up"
+              )
+            }
+          />
         </section>
       )}
 
@@ -1450,6 +1683,9 @@ export default function AcquisitionClient({
         )}
       </section>
 
+        </>
+      )}
+
       {view === "archive" &&
         archivedAcquisition.length >
           0 && (
@@ -1461,6 +1697,852 @@ export default function AcquisitionClient({
         )}
     </div>
   );
+}
+
+
+function MailingPanel({
+  round,
+  recipients,
+  venues,
+  organizers,
+  addMailingRecipientsBulk,
+  updateMailingRecipient,
+  markMailingSent,
+  markWholeMailingSent,
+  scheduleWholeMailing,
+  addNoteToWholeMailing,
+  deleteMailingRecipient,
+}: {
+  round: AcquisitionRound;
+  recipients: MailingRecipient[];
+  venues: MailingVenue[];
+  organizers: MailingOrganizer[];
+  addMailingRecipient: (formData: FormData) => Promise<void>;
+  addMailingRecipientsBulk: (formData: FormData) => Promise<void>;
+  updateMailingRecipient: (formData: FormData) => Promise<void>;
+  markMailingSent: (formData: FormData) => Promise<void>;
+  markWholeMailingSent: (formData: FormData) => Promise<void>;
+  scheduleWholeMailing: (formData: FormData) => Promise<void>;
+  addNoteToWholeMailing: (formData: FormData) => Promise<void>;
+  deleteMailingRecipient: (formData: FormData) => Promise<void>;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "venue" | "organizer">("all");
+  const [stateFilter, setStateFilter] = useState("all");
+  const [minCapacity, setMinCapacity] = useState("");
+  const [maxCapacity, setMaxCapacity] = useState("");
+  const [onlyWithEmail, setOnlyWithEmail] = useState(true);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [playedFilter, setPlayedFilter] = useState<"all" | "played" | "not_played">("all");
+  const [relationshipFilter, setRelationshipFilter] = useState("all");
+  const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showBulkNote, setShowBulkNote] = useState(false);
+  const [scheduleValue, setScheduleValue] = useState("");
+
+  const sentCount = recipients.filter((item) => item.sent_at).length;
+  const reactionCount = recipients.filter((item) => item.reaction?.trim()).length;
+  const showCount = recipients.filter((item) => item.show_id).length;
+  const plannedRecipients = recipients.filter(
+    (item) => item.scheduled_at && !item.sent_at
+  );
+  const plannedCount = plannedRecipients.length;
+  const plannedAt = plannedRecipients[0]?.scheduled_at || null;
+
+  const existingKeys = useMemo(
+    () =>
+      new Set(
+        recipients.flatMap((recipient) => [
+          recipient.venue_id ? `venue:${recipient.venue_id}` : "",
+          recipient.organizer_id ? `organizer:${recipient.organizer_id}` : "",
+        ]).filter(Boolean)
+      ),
+    [recipients]
+  );
+
+  const candidates = useMemo(() => {
+    const venueCandidates = venues.map((venue) => ({
+      key: `venue:${venue.id}`,
+      type: "venue" as const,
+      id: venue.id,
+      name: venue.name,
+      city: venue.city,
+      state: venue.state,
+      email: venue.booking_email || venue.contact_email,
+      capacity: venue.capacity,
+      played_before: venue.played_before,
+      relationship_status: venue.relationship_status,
+      program_focus: venue.program_focus || [],
+    }));
+
+    const organizerCandidates = organizers.map((organizer) => ({
+      key: `organizer:${organizer.id}`,
+      type: "organizer" as const,
+      id: organizer.id,
+      name: organizer.name,
+      city: organizer.city,
+      state: null as string | null,
+      email: organizer.email,
+      capacity: null as number | null,
+      played_before: null as boolean | null,
+      relationship_status: null as string | null,
+      program_focus: [] as string[],
+    }));
+
+    return [...venueCandidates, ...organizerCandidates];
+  }, [venues, organizers]);
+
+  const states = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          venues.map((venue) => venue.state).filter(Boolean) as string[]
+        )
+      ).sort((a, b) => a.localeCompare(b, "de")),
+    [venues]
+  );
+
+  const relationships = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          venues
+            .map((venue) => venue.relationship_status)
+            .filter(Boolean) as string[]
+        )
+      ).sort((a, b) => a.localeCompare(b, "de")),
+    [venues]
+  );
+
+  const filteredCandidates = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const min = minCapacity ? Number(minCapacity) : null;
+    const max = maxCapacity ? Number(maxCapacity) : null;
+
+    return candidates.filter((candidate) => {
+      if (typeFilter !== "all" && candidate.type !== typeFilter) return false;
+
+      if (
+        needle &&
+        ![candidate.name, candidate.city, candidate.state, candidate.email]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(needle)
+      ) {
+        return false;
+      }
+
+      if (onlyWithEmail && !candidate.email) return false;
+
+      // Location-spezifische Filter: Veranstalter bleiben bei "Alle" sichtbar.
+      if (candidate.type === "venue") {
+        if (stateFilter !== "all" && candidate.state !== stateFilter) return false;
+        if (min !== null && (candidate.capacity === null || candidate.capacity < min)) return false;
+        if (max !== null && (candidate.capacity === null || candidate.capacity > max)) return false;
+        if (playedFilter === "played" && candidate.played_before !== true) return false;
+        if (playedFilter === "not_played" && candidate.played_before === true) return false;
+        if (
+          relationshipFilter !== "all" &&
+          candidate.relationship_status !== relationshipFilter
+        ) return false;
+      }
+
+      return true;
+    });
+  }, [
+    candidates,
+    search,
+    typeFilter,
+    stateFilter,
+    minCapacity,
+    maxCapacity,
+    onlyWithEmail,
+    playedFilter,
+    relationshipFilter,
+  ]);
+
+  const selectableVisible = filteredCandidates.filter(
+    (candidate) => !existingKeys.has(candidate.key) && Boolean(candidate.email)
+  );
+
+  const allVisibleSelected =
+    selectableVisible.length > 0 &&
+    selectableVisible.every((candidate) => selectedTargets.has(candidate.key));
+
+  function toggleTarget(key: string) {
+    setSelectedTargets((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleAllVisible() {
+    setSelectedTargets((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) {
+        selectableVisible.forEach((candidate) => next.delete(candidate.key));
+      } else {
+        selectableVisible.forEach((candidate) => next.add(candidate.key));
+      }
+      return next;
+    });
+  }
+
+  const selectedPayload = candidates
+    .filter((candidate) => selectedTargets.has(candidate.key))
+    .map((candidate) => ({ type: candidate.type, id: candidate.id }));
+
+  const alreadyCount = filteredCandidates.filter((candidate) =>
+    existingKeys.has(candidate.key)
+  ).length;
+
+  const missingEmailCount = filteredCandidates.filter(
+    (candidate) => !candidate.email
+  ).length;
+
+  // ============================================================
+  // KLICKTIPP CSV EXPORT
+  // ============================================================
+
+  const exportableRecipients = useMemo(() => {
+    const seenEmails = new Set<string>();
+
+    return recipients
+      .map((recipient) => {
+        const email = recipient.email?.trim() || "";
+        if (!email) return null;
+
+        const normalizedEmail = email.toLowerCase();
+        if (seenEmails.has(normalizedEmail)) return null;
+        seenEmails.add(normalizedEmail);
+
+        const venue = recipient.venue;
+        const organizer = recipient.organizer;
+
+        return {
+          email,
+          company: venue?.name || organizer?.name || "",
+          city: venue?.city || organizer?.city || "",
+          state: venue?.state || "",
+          contactName: venue?.contact_name || "",
+          recipientType: venue ? "Location" : organizer ? "Veranstalter" : "",
+          capacity:
+            venue?.capacity !== null && venue?.capacity !== undefined
+              ? String(venue.capacity)
+              : "",
+        };
+      })
+      .filter(
+        (item): item is {
+          email: string;
+          company: string;
+          city: string;
+          state: string;
+          contactName: string;
+          recipientType: string;
+          capacity: string;
+        } => Boolean(item)
+      );
+  }, [recipients]);
+
+  function escapeCsv(value: string) {
+    return `"${String(value ?? "").replace(/"/g, '""')}"`;
+  }
+
+  function exportKlickTippCsv() {
+    if (!exportableRecipients.length) {
+      window.alert("In dieser Mailing-Runde gibt es keine Empfänger mit E-Mail-Adresse.");
+      return;
+    }
+
+    const headers = [
+      "E-Mail",
+      "Firma",
+      "Ansprechpartner",
+      "Ort",
+      "Bundesland",
+      "Typ",
+      "Kapazität",
+    ];
+
+    const rows = exportableRecipients.map((recipient) => [
+      recipient.email,
+      recipient.company,
+      recipient.contactName,
+      recipient.city,
+      recipient.state,
+      recipient.recipientType,
+      recipient.capacity,
+    ]);
+
+    const csv = [
+      headers.map(escapeCsv).join(";"),
+      ...rows.map((row) => row.map(escapeCsv).join(";")),
+    ].join("\r\n");
+
+    const blob = new Blob(["\uFEFF", csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    const safeRoundName = round.name
+      .toLowerCase()
+      .replace(/ä/g, "ae")
+      .replace(/ö/g, "oe")
+      .replace(/ü/g, "ue")
+      .replace(/ß/g, "ss")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    link.href = url;
+    link.download = `klicktipp-${safeRoundName || "mailing"}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MailingStat value={recipients.length} label="Empfänger" icon="👥" />
+        <MailingStat value={sentCount} label="Versendet" icon="📨" />
+        <MailingStat value={reactionCount} label="Reaktionen" icon="💬" />
+        <MailingStat value={showCount} label="Shows" icon="🎉" />
+      </section>
+
+      <section className="overflow-hidden rounded-[1.7rem] bg-white shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
+        <div className="flex flex-col gap-3 border-b border-black/5 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
+              Mailing / Newsletter
+            </p>
+            <h2 className="mt-1 text-xl font-black">{round.name}</h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Empfänger, Versand und Reaktionen an einem Ort.
+            </p>
+          </div>
+
+          {round.active && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={exportKlickTippCsv}
+                disabled={exportableRecipients.length === 0}
+                className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ↓ CSV für KlickTipp · {exportableRecipients.length}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSchedule((current) => !current);
+                  setShowBulkNote(false);
+                }}
+                disabled={recipients.length === 0}
+                className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:opacity-40"
+              >
+                📅 Versand planen
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBulkNote((current) => !current);
+                  setShowSchedule(false);
+                }}
+                disabled={recipients.length === 0}
+                className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:opacity-40"
+              >
+                📝 Notiz für alle
+              </button>
+
+              <form action={markWholeMailingSent}>
+                <input type="hidden" name="round_id" value={round.id} />
+                <button
+                  type="submit"
+                  disabled={recipients.length === 0}
+                  className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:opacity-40"
+                >
+                  ✓ Jetzt als versendet markieren
+                </button>
+              </form>
+
+              <button
+                type="button"
+                onClick={() => setShowAdd((current) => !current)}
+                className="h-11 rounded-full bg-zinc-950 px-5 text-sm font-black text-white transition hover:bg-zinc-800"
+              >
+                + Empfänger
+              </button>
+            </div>
+          )}
+        </div>
+
+        {(plannedAt || plannedCount > 0) && (
+          <div className="border-b border-black/5 bg-lime-50 px-5 py-3">
+            <p className="text-sm font-black text-zinc-800">
+              📅 Geplant · {formatMailingDateTime(plannedAt)}
+              {plannedCount > 0 ? ` · ${plannedCount} Empfänger` : ""}
+            </p>
+          </div>
+        )}
+
+        {showSchedule && round.active && (
+          <div className="border-b border-black/5 bg-[#fbf7ef] p-5">
+            <form action={scheduleWholeMailing} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <input type="hidden" name="round_id" value={round.id} />
+              <input
+                type="hidden"
+                name="scheduled_at"
+                value={scheduleValue ? new Date(scheduleValue).toISOString() : ""}
+              />
+
+              <label className="flex-1">
+                <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-zinc-400">
+                  Geplanter Versand
+                </span>
+                <input
+                  type="datetime-local"
+                  value={scheduleValue}
+                  onChange={(event) => setScheduleValue(event.target.value)}
+                  required
+                  className="h-11 w-full rounded-xl bg-white px-4 text-sm font-bold outline-none ring-1 ring-black/5"
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={!scheduleValue}
+                className="h-11 rounded-full bg-zinc-950 px-5 text-sm font-black text-white disabled:opacity-40"
+              >
+                Für alle eintragen
+              </button>
+            </form>
+
+            <p className="mt-3 text-xs font-semibold text-zinc-500">
+              Planung setzt einen bereits versehentlich gesetzten Versandstatus zurück.
+              Erst nach dem tatsächlichen Versand auf „Jetzt als versendet markieren“ klicken.
+            </p>
+          </div>
+        )}
+
+        {showBulkNote && round.active && (
+          <div className="border-b border-black/5 bg-[#fbf7ef] p-5">
+            <form action={addNoteToWholeMailing} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <input type="hidden" name="round_id" value={round.id} />
+
+              <label className="flex-1">
+                <span className="mb-2 block text-xs font-black uppercase tracking-[0.12em] text-zinc-400">
+                  Notiz für alle Empfänger
+                </span>
+                <input
+                  name="note"
+                  required
+                  placeholder="z. B. Newsletter in KlickTipp für morgen früh geplant"
+                  className="h-11 w-full rounded-xl bg-white px-4 text-sm font-semibold outline-none ring-1 ring-black/5"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="h-11 rounded-full bg-lime-300 px-5 text-sm font-black text-zinc-950"
+              >
+                Bei allen ergänzen
+              </button>
+            </form>
+
+            <p className="mt-3 text-xs font-semibold text-zinc-500">
+              Vorhandene individuelle Notizen bleiben erhalten; die Sammelnotiz wird angehängt.
+            </p>
+          </div>
+        )}
+
+        {showAdd && round.active && (
+          <div className="border-b border-black/5 bg-[#fbf7ef] p-5">
+            <div className="mb-4 flex flex-col gap-3 xl:flex-row">
+              <div className="relative flex-1">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">
+                  🔎
+                </span>
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Name, Ort oder E-Mail suchen …"
+                  className="h-11 w-full rounded-xl bg-white pl-11 pr-4 text-sm font-semibold outline-none ring-1 ring-black/5"
+                />
+              </div>
+
+              <div className="inline-flex h-11 shrink-0 rounded-full bg-white p-1 ring-1 ring-black/5">
+                {[
+                  ["all", "Alle"],
+                  ["venue", "Locations"],
+                  ["organizer", "Veranstalter"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setTypeFilter(value as "all" | "venue" | "organizer")}
+                    className={[
+                      "rounded-full px-4 text-xs font-black transition",
+                      typeFilter === value ? "bg-zinc-950 text-white" : "text-zinc-500",
+                    ].join(" ")}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <select
+                value={stateFilter}
+                onChange={(event) => setStateFilter(event.target.value)}
+                className="h-11 rounded-xl bg-white px-3 text-sm font-bold outline-none ring-1 ring-black/5"
+              >
+                <option value="all">Alle Bundesländer</option>
+                {states.map((state) => (
+                  <option key={state} value={state}>{state}</option>
+                ))}
+              </select>
+
+              <input
+                type="number"
+                min="0"
+                value={minCapacity}
+                onChange={(event) => setMinCapacity(event.target.value)}
+                placeholder="Kapazität von"
+                className="h-11 rounded-xl bg-white px-3 text-sm font-bold outline-none ring-1 ring-black/5"
+              />
+
+              <input
+                type="number"
+                min="0"
+                value={maxCapacity}
+                onChange={(event) => setMaxCapacity(event.target.value)}
+                placeholder="Kapazität bis"
+                className="h-11 rounded-xl bg-white px-3 text-sm font-bold outline-none ring-1 ring-black/5"
+              />
+
+              <label className="flex h-11 items-center gap-3 rounded-xl bg-white px-4 text-sm font-bold ring-1 ring-black/5">
+                <input
+                  type="checkbox"
+                  checked={onlyWithEmail}
+                  onChange={(event) => setOnlyWithEmail(event.target.checked)}
+                  className="h-4 w-4 accent-zinc-950"
+                />
+                Nur mit E-Mail
+              </label>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowMoreFilters((current) => !current)}
+              className="mt-3 text-xs font-black text-zinc-500"
+            >
+              {showMoreFilters ? "− Weitere Filter ausblenden" : "+ Weitere Filter"}
+            </button>
+
+            {showMoreFilters && (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <select
+                  value={playedFilter}
+                  onChange={(event) =>
+                    setPlayedFilter(event.target.value as "all" | "played" | "not_played")
+                  }
+                  className="h-11 rounded-xl bg-white px-3 text-sm font-bold outline-none ring-1 ring-black/5"
+                >
+                  <option value="all">Schon gespielt: alle</option>
+                  <option value="played">Schon gespielt</option>
+                  <option value="not_played">Noch nicht gespielt</option>
+                </select>
+
+                <select
+                  value={relationshipFilter}
+                  onChange={(event) => setRelationshipFilter(event.target.value)}
+                  className="h-11 rounded-xl bg-white px-3 text-sm font-bold outline-none ring-1 ring-black/5"
+                >
+                  <option value="all">Beziehungsstatus: alle</option>
+                  {relationships.map((relationship) => (
+                    <option key={relationship} value={relationship}>
+                      {relationship}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-col gap-3 rounded-xl bg-white px-4 py-3 ring-1 ring-black/5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs font-bold text-zinc-500">
+                <span className="font-black text-zinc-950">{filteredCandidates.length} Treffer</span>
+                {alreadyCount > 0 && <> · {alreadyCount} bereits dabei</>}
+                {missingEmailCount > 0 && <> · {missingEmailCount} ohne E-Mail</>}
+              </div>
+
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-black">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleAllVisible}
+                  className="h-4 w-4 accent-zinc-950"
+                />
+                Alle sichtbaren auswählen
+              </label>
+            </div>
+
+            <div className="mt-3 max-h-[420px] overflow-y-auto rounded-xl bg-white ring-1 ring-black/5">
+              {filteredCandidates.map((candidate) => {
+                const alreadyAdded = existingKeys.has(candidate.key);
+                const noEmail = !candidate.email;
+                const disabled = alreadyAdded || noEmail;
+                const checked = selectedTargets.has(candidate.key);
+
+                return (
+                  <label
+                    key={candidate.key}
+                    className={[
+                      "flex items-center gap-4 border-b border-black/5 px-4 py-3 last:border-b-0",
+                      disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer hover:bg-[#fffdf8]",
+                    ].join(" ")}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={disabled}
+                      checked={checked}
+                      onChange={() => toggleTarget(candidate.key)}
+                      className="h-4 w-4 shrink-0 accent-zinc-950"
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-black">{candidate.name}</p>
+                        <span className="rounded-full bg-[#fbf7ef] px-2 py-1 text-[10px] font-black text-zinc-500">
+                          {candidate.type === "venue" ? "Location" : "Veranstalter"}
+                        </span>
+                        {alreadyAdded && (
+                          <span className="rounded-full bg-lime-100 px-2 py-1 text-[10px] font-black text-zinc-700">
+                            bereits dabei
+                          </span>
+                        )}
+                        {noEmail && (
+                          <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">
+                            keine E-Mail
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 truncate text-xs text-zinc-400">
+                        {[candidate.city, candidate.state, candidate.email]
+                          .filter(Boolean)
+                          .join(" · ") || "Keine weiteren Angaben"}
+                      </p>
+                    </div>
+
+                    {candidate.type === "venue" && (
+                      <div className="shrink-0 text-right">
+                        <p className="text-xs font-black text-zinc-600">
+                          {candidate.capacity ? `${candidate.capacity} Plätze` : "Kapazität offen"}
+                        </p>
+                      </div>
+                    )}
+                  </label>
+                );
+              })}
+
+              {filteredCandidates.length === 0 && (
+                <div className="px-5 py-10 text-center text-sm font-bold text-zinc-400">
+                  Keine passenden Empfänger gefunden.
+                </div>
+              )}
+            </div>
+
+            <form action={addMailingRecipientsBulk} className="mt-4 flex items-center justify-between gap-4">
+              <input type="hidden" name="round_id" value={round.id} />
+              <input
+                type="hidden"
+                name="targets"
+                value={JSON.stringify(selectedPayload)}
+              />
+              <p className="text-xs font-bold text-zinc-500">
+                <span className="font-black text-zinc-950">{selectedPayload.length}</span>{" "}
+                ausgewählt
+              </p>
+              <button
+                type="submit"
+                disabled={selectedPayload.length === 0}
+                className="h-11 rounded-full bg-lime-300 px-5 text-sm font-black text-zinc-950 transition disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {selectedPayload.length || 0} Empfänger hinzufügen
+              </button>
+            </form>
+          </div>
+        )}
+
+        {recipients.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left">
+              <thead className="bg-[#fbf7ef] text-[10px] font-black uppercase tracking-[0.12em] text-zinc-400">
+                <tr>
+                  <th className="px-5 py-3">Empfänger</th>
+                  <th className="px-5 py-3">E-Mail</th>
+                  <th className="px-5 py-3">Versand</th>
+                  <th className="px-5 py-3">Reaktion / Notiz</th>
+                  <th className="px-5 py-3 text-right">Aktion</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/5">
+                {recipients.map((recipient) => {
+                  const target = recipient.venue || recipient.organizer;
+                  const city = target?.city || null;
+
+                  return (
+                    <tr key={recipient.id} className="align-top hover:bg-[#fffdf8]">
+                      <td className="px-5 py-4">
+                        <p className="font-black">
+                          {recipient.venue ? "🏛️ " : "🏢 "}
+                          {target?.name || "Unbekannter Empfänger"}
+                        </p>
+                        {city && <p className="mt-1 text-xs text-zinc-400">{city}</p>}
+                      </td>
+                      <td className="px-5 py-4 text-sm font-semibold text-zinc-600">
+                        {recipient.email || <span className="text-amber-600">Keine E-Mail</span>}
+                      </td>
+                      <td className="px-5 py-4">
+                        {recipient.sent_at ? (
+                          <span className="inline-flex rounded-full bg-lime-100 px-3 py-1.5 text-xs font-black text-zinc-700">
+                            ✓ {formatMailingDateTime(recipient.sent_at)}
+                          </span>
+                        ) : recipient.scheduled_at ? (
+                          <span className="inline-flex rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800">
+                            📅 {formatMailingDateTime(recipient.scheduled_at)}
+                          </span>
+                        ) : round.active ? (
+                          <form action={markMailingSent}>
+                            <input type="hidden" name="id" value={recipient.id} />
+                            <button type="submit" className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-zinc-500 ring-1 ring-black/10">
+                              Versand eintragen
+                            </button>
+                          </form>
+                        ) : (
+                          <span className="text-xs text-zinc-400">nicht versendet</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-4">
+                        <form action={updateMailingRecipient} className="flex min-w-[330px] gap-2">
+                          <input type="hidden" name="id" value={recipient.id} />
+                          <select
+                            name="reaction"
+                            defaultValue={recipient.reaction || ""}
+                            disabled={!round.active}
+                            className="h-10 rounded-xl bg-[#fbf7ef] px-3 text-xs font-bold outline-none"
+                          >
+                            <option value="">Keine Reaktion</option>
+                            <option value="Interesse">Interesse</option>
+                            <option value="Termin angefragt">Termin angefragt</option>
+                            <option value="Rückfrage">Rückfrage</option>
+                            <option value="Absage">Absage</option>
+                            <option value="Gebucht">Gebucht</option>
+                          </select>
+                          <input
+                            name="notes"
+                            defaultValue={recipient.notes || ""}
+                            disabled={!round.active}
+                            placeholder="Notiz …"
+                            className="h-10 min-w-0 flex-1 rounded-xl bg-[#fbf7ef] px-3 text-xs font-semibold outline-none"
+                          />
+                          {round.active && (
+                            <button type="submit" className="h-10 rounded-full bg-zinc-950 px-4 text-xs font-black text-white">
+                              Speichern
+                            </button>
+                          )}
+                        </form>
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        {recipient.show_id ? (
+                          <Link
+                            href={`/admin/shows/${recipient.show_id}`}
+                            className="inline-flex rounded-full bg-lime-100 px-3 py-1.5 text-xs font-black text-zinc-700"
+                          >
+                            🎉 Show
+                          </Link>
+                        ) : round.active ? (
+                          <form action={deleteMailingRecipient}>
+                            <input type="hidden" name="id" value={recipient.id} />
+                            <button type="submit" className="rounded-full px-3 py-1.5 text-xs font-black text-zinc-400 transition hover:bg-red-50 hover:text-red-600">
+                              Entfernen
+                            </button>
+                          </form>
+                        ) : (
+                          <span className="text-xs text-zinc-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="px-6 py-12 text-center">
+            <div className="text-4xl">📨</div>
+            <h3 className="mt-3 text-lg font-black">Noch keine Empfänger</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              Füge passende Locations oder Veranstalter gesammelt hinzu.
+            </p>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function MailingStat({
+  value,
+  label,
+  icon,
+}: {
+  value: number;
+  label: string;
+  icon: string;
+}) {
+  return (
+    <div className="rounded-[1.4rem] bg-white px-5 py-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
+      <div className="flex items-center gap-4">
+        <div className="text-3xl">{icon}</div>
+        <div>
+          <p className="text-2xl font-black leading-none">{value}</p>
+          <p className="mt-1 text-xs font-semibold text-zinc-400">{label}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatMailingDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("de-DE");
+}
+
+function formatMailingDateTime(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Berlin",
+  }).format(date);
 }
 
 // ============================================================
@@ -1523,20 +2605,22 @@ function getTarget(
 }
 
 // ============================================================
-// ARBEITSMODUS
+// ARBEITS-KACHEL
 // ============================================================
 
-function WorkFilterButton({
+function WorkStatCard({
+  icon,
+  value,
+  label,
   active,
   onClick,
-  label,
-  count,
   critical = false,
 }: {
+  icon: string;
+  value: number;
+  label: string;
   active: boolean;
   onClick: () => void;
-  label: string;
-  count: number;
   critical?: boolean;
 }) {
   return (
@@ -1544,28 +2628,58 @@ function WorkFilterButton({
       type="button"
       onClick={onClick}
       className={[
-        "inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-full px-3 text-xs font-black transition",
+        "group w-full rounded-[1.4rem] px-5 py-4 text-left shadow-lg shadow-black/[0.03] ring-1 transition",
         active
           ? critical
-            ? "bg-red-500 text-white"
-            : "bg-zinc-950 text-white"
-          : critical && count > 0
-            ? "bg-red-50 text-red-600 ring-1 ring-red-100 hover:bg-red-100"
-            : "bg-[#fbf7ef] text-zinc-600 ring-1 ring-black/5 hover:bg-[#f3eee4]",
+            ? "bg-red-50 ring-red-200"
+            : "bg-lime-100 ring-lime-200"
+          : critical && value > 0
+            ? "bg-white ring-red-100 hover:-translate-y-0.5 hover:bg-red-50"
+            : "bg-white ring-black/5 hover:-translate-y-0.5 hover:bg-[#faf8f2]",
       ].join(" ")}
     >
-      <span>{label}</span>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="shrink-0 text-3xl">{icon}</div>
 
-      <span
-        className={[
-          "inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px]",
-          active
-            ? "bg-white/20 text-current"
-            : "bg-white text-zinc-500 ring-1 ring-black/5",
-        ].join(" ")}
-      >
-        {count}
-      </span>
+          <div className="min-w-0">
+            <p
+              className={[
+                "text-2xl font-black leading-none",
+                active && critical ? "text-red-700" : "text-zinc-950",
+              ].join(" ")}
+            >
+              {value}
+            </p>
+
+            <p
+              className={[
+                "mt-1 truncate text-xs font-semibold",
+                active && critical
+                  ? "text-red-600"
+                  : active
+                    ? "text-zinc-700"
+                    : "text-zinc-400",
+              ].join(" ")}
+            >
+              {label}
+            </p>
+          </div>
+        </div>
+
+        <div
+          className={[
+            "grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black transition",
+            active
+              ? critical
+                ? "bg-red-500 text-white"
+                : "bg-zinc-950 text-white"
+              : "bg-[#fbf7ef] text-zinc-300 group-hover:text-zinc-600",
+          ].join(" ")}
+        >
+          {active ? "✓" : "→"}
+        </div>
+      </div>
     </button>
   );
 }
@@ -1637,40 +2751,6 @@ function TableHead({
     <th className="px-5 py-3 text-[11px] font-black uppercase tracking-wider text-zinc-400">
       {children}
     </th>
-  );
-}
-
-// ============================================================
-// STAT
-// ============================================================
-
-function StatCard({
-  icon,
-  value,
-  label,
-}: {
-  icon: string;
-  value: number;
-  label: string;
-}) {
-  return (
-    <div className="rounded-[1.4rem] bg-white px-5 py-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-      <div className="flex items-center gap-4">
-        <div className="text-3xl">
-          {icon}
-        </div>
-
-        <div>
-          <p className="text-2xl font-black leading-none">
-            {value}
-          </p>
-
-          <p className="mt-1 text-xs font-semibold text-zinc-400">
-            {label}
-          </p>
-        </div>
-      </div>
-    </div>
   );
 }
 

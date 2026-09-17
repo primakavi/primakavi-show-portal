@@ -40,6 +40,11 @@ type ShowContext = {
   fee_organizer_share?: string | number | null;
   fee_tax_mode?: string | null;
   fee_notes?: string | null;
+  accommodation_status?: string | null;
+  accommodation_hotel_name?: string | null;
+  accommodation_actual_cost?: string | number | null;
+  promo_print_cost?: string | number | null;
+  promo_shipping_cost?: string | number | null;
 };
 
 type TravelLeg = {
@@ -64,6 +69,7 @@ const COST_CATEGORIES = [
   { value: "musician", label: "Musiker / Begleitung" },
   { value: "tech", label: "Technik" },
   { value: "catering", label: "Verpflegung" },
+  { value: "promo", label: "Promo / Druck" },
   { value: "shipping", label: "Versand / Porto" },
   { value: "other", label: "Sonstige direkte Kosten" },
 ] as const;
@@ -74,12 +80,18 @@ export default function EconomicsTab({
   show,
   travelLegs = [],
   benchmark,
+  completedAt,
+  completeAction,
+  reopenAction,
 }: {
   showId: string;
   initialData?: EconomicsData;
   show?: ShowContext;
   travelLegs?: TravelLeg[];
   benchmark?: Benchmark;
+  completedAt?: string | null;
+  completeAction: (formData: FormData) => void | Promise<void>;
+  reopenAction: (formData: FormData) => void | Promise<void>;
 }) {
   const [data, setData] = useState<EconomicsData>(initialData || {});
   const [saving, setSaving] = useState(false);
@@ -92,15 +104,15 @@ export default function EconomicsTab({
     getInitialExtraRevenueItems(initialData?.revenue_items || [], showRevenue.amount)
   );
 
-  const automaticTravelItems = useMemo(
-    () => getAutomaticTravelItems(travelLegs),
-    [travelLegs]
+  const automaticShowCostItems = useMemo(
+    () => getAutomaticShowCostItems(show, travelLegs),
+    [show, travelLegs]
   );
 
   const [costItems, setCostItems] = useState<MoneyItem[]>(
     getInitialManualCostItems(
       initialData?.cost_items || [],
-      automaticTravelItems
+      automaticShowCostItems
     )
   );
 
@@ -109,9 +121,9 @@ export default function EconomicsTab({
   }
 
   const revenue = showRevenue.amount + sumMoneyItems(revenueItems);
-  const automaticTravelCosts = sumMoneyItems(automaticTravelItems);
+  const automaticShowCosts = sumMoneyItems(automaticShowCostItems);
   const manualCosts = sumMoneyItems(costItems);
-  const totalCosts = automaticTravelCosts + manualCosts;
+  const totalCosts = automaticShowCosts + manualCosts;
   const contribution = revenue - totalCosts;
   const margin = revenue > 0 ? (contribution / revenue) * 100 : 0;
   const hasData = revenue > 0 || totalCosts > 0;
@@ -188,50 +200,88 @@ export default function EconomicsTab({
               </div>
             </div>
 
-            <div className="mt-5">
-              {showRevenue.automatic ? (
-                <div className="flex items-center justify-between gap-4 rounded-2xl bg-[#faf8f2] px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-[#dfe99a] px-2.5 py-1 text-[10px] font-black uppercase tracking-[.08em] text-[#425300]">
-                        aus Show-Akte
-                      </span>
-                      <span className="font-black text-[#25231f]">{showRevenue.label}</span>
-                    </div>
-                    {showRevenue.detail && (
-                      <div className="mt-1 text-xs font-semibold text-[#88857d]">
-                        {showRevenue.detail}
-                      </div>
-                    )}
-                  </div>
-                  <div className="shrink-0 font-black">{formatEuro(showRevenue.amount)}</div>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-[#d8d2c4] bg-[#fffdf7] px-4 py-3 text-xs font-semibold leading-5 text-[#77746c]">
-                  {showRevenue.detail}
-                </div>
-              )}
+            <div className="mt-5 grid grid-cols-[165px_1fr_110px_34px] gap-2 px-1 text-[10px] font-black uppercase tracking-[.1em] text-[#aaa69d]">
+              <div>Einnahmeart</div>
+              <div>Bezeichnung</div>
+              <div className="text-right">Betrag</div>
+              <div />
             </div>
 
+            {showRevenue.automatic ? (
+              <div className="mt-2 grid grid-cols-[165px_1fr_110px_34px] gap-2">
+                <div className="flex h-11 min-w-0 items-center rounded-xl border border-[#dce4b4] bg-[#f6f9e8] px-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-black text-[#425300]">
+                      {showRevenue.label}
+                    </div>
+                    <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-[.08em] text-[#7d8c38]">
+                      aus Show-Akte
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex h-11 min-w-0 items-center rounded-xl border border-[#e2ddd1] bg-[#faf8f2] px-3 text-sm font-semibold text-[#25231f]">
+                  <span className="truncate text-[#88857d]">
+                    {getRevenueDetail(show, showRevenue)}
+                  </span>
+                </div>
+
+                <div className="flex h-11 items-center justify-end rounded-xl border border-[#e2ddd1] bg-[#faf8f2] px-3 text-sm font-black text-[#25231f]">
+                  {formatEuro(showRevenue.amount)}
+                </div>
+
+                <div className="flex h-11 items-center justify-center text-xs font-black text-[#b0aca3]">
+                  ✓
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 rounded-2xl border border-dashed border-[#d8d2c4] bg-[#fffdf7] px-4 py-3 text-xs font-semibold leading-5 text-[#77746c]">
+                {showRevenue.detail}
+              </div>
+            )}
+
             {revenueItems.length > 0 && (
-              <div className="mt-4 space-y-2">
+              <div className="mt-2 space-y-2">
                 {revenueItems.map((item, index) => (
-                  <div key={index} className="grid grid-cols-[1fr_120px_34px] gap-2">
+                  <div
+                    key={index}
+                    className="grid grid-cols-[165px_1fr_110px_34px] gap-2"
+                  >
+                    <div className="flex h-11 items-center rounded-xl border border-[#e2ddd1] bg-[#faf8f2] px-3 text-sm font-black text-[#25231f]">
+                      Zusätzliche Einnahme
+                    </div>
+
                     <input
                       value={item.label}
                       onChange={(e) =>
-                        updateMoneyItem(revenueItems, setRevenueItems, index, "label", e.target.value)
+                        updateMoneyItem(
+                          revenueItems,
+                          setRevenueItems,
+                          index,
+                          "label",
+                          e.target.value
+                        )
                       }
                       placeholder="z. B. Merch"
                       className={inputClass}
                     />
+
                     <MoneyInput
                       value={item.amount}
                       onChange={(value) =>
-                        updateMoneyItem(revenueItems, setRevenueItems, index, "amount", value)
+                        updateMoneyItem(
+                          revenueItems,
+                          setRevenueItems,
+                          index,
+                          "amount",
+                          value
+                        )
                       }
                     />
-                    <RemoveButton onClick={() => removeMoneyItem(setRevenueItems, index)} />
+
+                    <RemoveButton
+                      onClick={() => removeMoneyItem(setRevenueItems, index)}
+                    />
                   </div>
                 ))}
               </div>
@@ -259,7 +309,7 @@ export default function EconomicsTab({
               </div>
             </div>
 
-            {(automaticTravelItems.length > 0 || costItems.length > 0) && (
+            {(automaticShowCostItems.length > 0 || costItems.length > 0) && (
               <div className="mt-5 space-y-2">
                 <div className="grid grid-cols-[165px_1fr_110px_34px] gap-2 px-1 text-[10px] font-black uppercase tracking-[.1em] text-[#9a978f]">
                   <div>Kostenart</div>
@@ -268,15 +318,15 @@ export default function EconomicsTab({
                   <div />
                 </div>
 
-                {automaticTravelItems.map((item, index) => (
+                {automaticShowCostItems.map((item, index) => (
                   <div
-                    key={`travel-${index}-${item.label}-${item.amount}`}
+                    key={`automatic-${item.category || "other"}-${index}-${item.label}-${item.amount}`}
                     className="grid grid-cols-[165px_1fr_110px_34px] gap-2"
                   >
                     <div className="flex h-11 min-w-0 items-center rounded-xl border border-[#dce4b4] bg-[#f6f9e8] px-3">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-black text-[#425300]">
-                          Reisekosten
+                          {automaticCostCategoryLabel(item.category)}
                         </div>
                         <div className="mt-0.5 truncate text-[9px] font-black uppercase tracking-[.08em] text-[#7d8c38]">
                           aus Show-Akte
@@ -336,7 +386,7 @@ export default function EconomicsTab({
               </div>
             )}
 
-            {automaticTravelItems.length === 0 && costItems.length === 0 && (
+            {automaticShowCostItems.length === 0 && costItems.length === 0 && (
               <div className="mt-5 rounded-2xl border border-dashed border-[#ddd7ca] bg-[#faf8f2] px-4 py-5 text-sm font-semibold text-[#88857d]">
                 Noch keine direkten Show-Kosten erfasst.
               </div>
@@ -383,6 +433,38 @@ export default function EconomicsTab({
       </section>
 
 
+
+      <section className="rounded-[24px] border border-[#e2ddd1] bg-white p-5 shadow-[0_8px_20px_rgba(45,40,28,.04)]">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">
+              Abschluss
+            </div>
+            <h3 className="mt-1 text-lg font-black text-[#191917]">
+              {completedAt ? "✓ Wirtschaftlichkeit abgeschlossen" : "Wirtschaftlichkeit geprüft?"}
+            </h3>
+            <p className="mt-1 text-xs font-semibold leading-5 text-[#88857d]">
+              {completedAt
+                ? `Geprüft und abgeschlossen am ${new Date(completedAt).toLocaleDateString("de-DE")}.`
+                : "Erst abschließen, wenn Einnahmen und alle tatsächlichen Show-Kosten geprüft sind."}
+            </p>
+          </div>
+
+          <form action={completedAt ? reopenAction : completeAction}>
+            <input type="hidden" name="show_id" value={showId} />
+            <button
+              type="submit"
+              className={`rounded-full px-5 py-2.5 text-sm font-black transition ${
+                completedAt
+                  ? "bg-[#f4f1e9] text-[#5f5b54] hover:bg-[#ebe7dc]"
+                  : "bg-[#191917] text-white hover:bg-black"
+              }`}
+            >
+              {completedAt ? "Abschluss zurücknehmen" : "✓ Wirtschaftlichkeit abschließen"}
+            </button>
+          </form>
+        </div>
+      </section>
 
       <div className="flex flex-col gap-3 rounded-[22px] border border-[#e2ddd1] bg-white px-5 py-4 shadow-[0_8px_20px_rgba(45,40,28,.04)] sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -594,49 +676,138 @@ function getAutomaticTravelItems(travelLegs: TravelLeg[]): MoneyItem[] {
     });
 }
 
+function getAutomaticShowCostItems(
+  show: ShowContext | undefined,
+  travelLegs: TravelLeg[]
+): MoneyItem[] {
+  const items: MoneyItem[] = [...getAutomaticTravelItems(travelLegs)];
+
+  const hotelCost = toNumber(show?.accommodation_actual_cost);
+  if (hotelCost !== 0) {
+    const hotelName = String(show?.accommodation_hotel_name || "").trim();
+    items.push({
+      category: "accommodation",
+      label: hotelName ? `Hotel · ${hotelName}` : "Hotel / Unterkunft",
+      amount: hotelCost,
+    });
+  }
+
+  const printCost = toNumber(show?.promo_print_cost);
+  if (printCost !== 0) {
+    items.push({
+      category: "promo",
+      label: "Druckkosten",
+      amount: printCost,
+    });
+  }
+
+  const shippingCost = toNumber(show?.promo_shipping_cost);
+  if (shippingCost !== 0) {
+    items.push({
+      category: "shipping",
+      label: "Versand / Porto",
+      amount: shippingCost,
+    });
+  }
+
+  return items;
+}
+
+function getRevenueDetail(
+  show: ShowContext | undefined,
+  showRevenue: { label: string; amount: number; detail?: string; automatic?: boolean }
+) {
+  const model = String(show?.fee_model || "").toLowerCase();
+  const artistShare = toNumber(show?.fee_artist_share);
+
+  // Nur echte Zusatzinformation anzeigen.
+  // Bei einer normalen Festgage wäre "Gage" / "Festgage" nur eine Dopplung.
+  if (
+    (model.includes("share") ||
+      model.includes("prozent") ||
+      model.includes("percentage") ||
+      model.includes("beteilig")) &&
+    artistShare > 0
+  ) {
+    return `${artistShare} % Künstleranteil`;
+  }
+
+  return "—";
+}
+
+function automaticCostCategoryLabel(category?: string) {
+  if (category === "travel") return "Reisekosten";
+  if (category === "accommodation") return "Übernachtung";
+  if (category === "promo") return "Promo / Druck";
+  if (category === "shipping") return "Versand / Porto";
+  return "Direkte Kosten";
+}
+
 function getInitialManualCostItems(
   items: MoneyItem[],
-  automaticTravelItems: MoneyItem[]
+  automaticShowCostItems: MoneyItem[]
 ) {
   const normalizedItems = items.map((item) => ({
     ...item,
     category: item.category || inferLegacyCostCategory(item.label),
   }));
 
-  if (!automaticTravelItems.length) return normalizedItems;
+  if (!automaticShowCostItems.length) return normalizedItems;
 
-  const unusedAutomatic = automaticTravelItems.map((item) => ({
+  const unusedAutomatic = automaticShowCostItems.map((item) => ({
     ...item,
     used: false,
   }));
 
   return normalizedItems.filter((item) => {
-    if ((item.category || inferLegacyCostCategory(item.label)) !== "travel") {
-      return true;
-    }
-
+    const itemCategory =
+      item.category || inferLegacyCostCategory(item.label);
     const itemAmount = toNumber(item.amount);
     const itemLabel = normalizeCostLabel(item.label);
 
     const matchIndex = unusedAutomatic.findIndex((automatic) => {
       if (automatic.used) return false;
+      if ((automatic.category || "other") !== itemCategory) return false;
 
       const sameAmount =
         Math.abs(toNumber(automatic.amount) - itemAmount) < 0.01;
-
       if (!sameAmount) return false;
 
       const automaticLabel = normalizeCostLabel(automatic.label);
 
-      const directionMatches =
-        (itemLabel.includes("hinfahrt") &&
-          automaticLabel.includes("hinfahrt")) ||
-        (itemLabel.includes("rückfahrt") &&
-          automaticLabel.includes("rückfahrt")) ||
-        (itemLabel.includes("rueckfahrt") &&
-          automaticLabel.includes("rückfahrt"));
+      if (itemCategory === "travel") {
+        const directionMatches =
+          (itemLabel.includes("hinfahrt") &&
+            automaticLabel.includes("hinfahrt")) ||
+          ((itemLabel.includes("rückfahrt") ||
+            itemLabel.includes("rueckfahrt")) &&
+            automaticLabel.includes("rückfahrt"));
 
-      return directionMatches || itemLabel === automaticLabel;
+        return directionMatches || itemLabel === automaticLabel;
+      }
+
+      if (itemCategory === "accommodation") {
+        return (
+          itemLabel === automaticLabel ||
+          /(hotel|übernacht|uebernacht|unterkunft)/.test(itemLabel)
+        );
+      }
+
+      if (itemCategory === "promo") {
+        return (
+          itemLabel === automaticLabel ||
+          /(druck|plakat|poster|flyer|promo)/.test(itemLabel)
+        );
+      }
+
+      if (itemCategory === "shipping") {
+        return (
+          itemLabel === automaticLabel ||
+          /(porto|versand|post)/.test(itemLabel)
+        );
+      }
+
+      return itemLabel === automaticLabel;
     });
 
     if (matchIndex === -1) return true;
@@ -679,6 +850,10 @@ function inferLegacyCostCategory(label: string) {
 
   if (/(essen|verpflegung|catering|meal|restaurant)/.test(value)) {
     return "catering";
+  }
+
+  if (/(druck|plakat|poster|flyer|promo)/.test(value)) {
+    return "promo";
   }
 
   if (/(porto|versand|post)/.test(value)) {

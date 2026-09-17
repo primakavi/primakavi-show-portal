@@ -8,15 +8,14 @@ export default async function NewAcquisitionPage({
   searchParams: Promise<{
     venue?: string;
     organizer?: string;
+    round?: string;
   }>;
 }) {
   const params = await searchParams;
 
-  const initialVenueId =
-    params.venue || "";
-
-  const initialOrganizerId =
-    params.organizer || "";
+  const initialVenueId = params.venue || "";
+  const initialOrganizerId = params.organizer || "";
+  const initialRoundId = params.round || "";
 
   // ============================================================
   // LOCATIONS
@@ -47,8 +46,7 @@ export default async function NewAcquisitionPage({
       <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
         <div className="mx-auto max-w-4xl">
           <div className="rounded-[1.7rem] bg-white p-8 font-bold text-red-600 shadow-xl ring-1 ring-black/5">
-            Fehler beim Laden der Locations:{" "}
-            {venuesError.message}
+            Fehler beim Laden der Locations: {venuesError.message}
           </div>
         </div>
       </main>
@@ -90,8 +88,44 @@ export default async function NewAcquisitionPage({
       <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
         <div className="mx-auto max-w-4xl">
           <div className="rounded-[1.7rem] bg-white p-8 font-bold text-red-600 shadow-xl ring-1 ring-black/5">
-            Fehler beim Laden der Veranstalter:{" "}
-            {organizersError.message}
+            Fehler beim Laden der Veranstalter: {organizersError.message}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ============================================================
+  // AKTIVE AKQUISE-RUNDEN
+  // Mailing gehört hier NICHT rein:
+  // Ein einzelner Akquise-Vorgang wird nur einer echten
+  // Akquise-Runde zugeordnet.
+  // ============================================================
+
+  const {
+  data: rounds,
+  error: roundsError,
+} = await supabaseAdmin
+  .from("acquisition_rounds")
+    .select(`
+      id,
+      name,
+      type,
+      active
+    `)
+    .eq("active", true)
+    .eq("type", "acquisition")
+    .is("archived_at", null)
+    .order("created_at", {
+      ascending: false,
+    });
+
+  if (roundsError) {
+    return (
+      <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
+        <div className="mx-auto max-w-4xl">
+          <div className="rounded-[1.7rem] bg-white p-8 font-bold text-red-600 shadow-xl ring-1 ring-black/5">
+            Fehler beim Laden der Akquise-Runden: {roundsError.message}
           </div>
         </div>
       </main>
@@ -117,23 +151,29 @@ export default async function NewAcquisitionPage({
         formData.get("organizer_id") || ""
       ).trim() || null;
 
-    const program = String(
-      formData.get("program") || ""
-    ).trim();
+    const roundId =
+      String(
+        formData.get("round_id") || ""
+      ).trim() || null;
 
-    const status = String(
-      formData.get("status") || ""
-    ).trim();
+    const program =
+      String(
+        formData.get("program") || ""
+      ).trim() || null;
 
-    const priority = String(
-      formData.get("priority") || ""
-    ).trim();
+    const status =
+      String(
+        formData.get("status") || ""
+      ).trim() || "Neu";
+
+    const priority =
+      String(
+        formData.get("priority") || ""
+      ).trim() || "Normal";
 
     const nextFollowUpAt =
       String(
-        formData.get(
-          "next_follow_up_at"
-        ) || ""
+        formData.get("next_follow_up_at") || ""
       ).trim() || null;
 
     const nextStep =
@@ -146,7 +186,10 @@ export default async function NewAcquisitionPage({
         formData.get("notes") || ""
       ).trim() || null;
 
-    // Genau EIN Ziel
+    // ==========================================================
+    // VALIDIERUNG
+    // ==========================================================
+
     if (!venueId && !organizerId) {
       throw new Error(
         "Bitte eine Location oder einen Veranstalter auswählen."
@@ -159,6 +202,45 @@ export default async function NewAcquisitionPage({
       );
     }
 
+    if (!roundId) {
+      throw new Error(
+        "Bitte eine Akquise-Runde auswählen."
+      );
+    }
+
+    // Sicherstellen, dass wirklich eine aktive Akquise-Runde
+    // verwendet wird und keine Mailing-Runde.
+
+    const {
+      data: selectedRound,
+      error: roundError,
+    } = await supabaseAdmin
+      .from("acquisition_rounds")
+      .select(`
+        id,
+        type,
+        active,
+        archived_at
+      `)
+      .eq("id", roundId)
+      .single();
+
+    if (
+      roundError ||
+      !selectedRound ||
+      selectedRound.type !== "acquisition" ||
+      !selectedRound.active ||
+      selectedRound.archived_at
+    ) {
+      throw new Error(
+        "Die ausgewählte Akquise-Runde ist nicht mehr aktiv."
+      );
+    }
+
+    // ==========================================================
+    // INSERT
+    // ==========================================================
+
     const {
       data: newAcquisition,
       error: insertError,
@@ -168,14 +250,11 @@ export default async function NewAcquisitionPage({
         venue_id: venueId,
         organizer_id: organizerId,
 
-        program:
-          program || null,
+        round_id: roundId,
 
-        status:
-          status || "Neu",
-
-        priority:
-          priority || "Normal",
+        program,
+        status,
+        priority,
 
         next_follow_up_at:
           nextFollowUpAt,
@@ -208,18 +287,31 @@ export default async function NewAcquisitionPage({
     );
   }
 
+  // ============================================================
+  // RENDER
+  // ============================================================
+
   return (
     <NewAcquisitionClient
       venues={venues || []}
       organizers={organizers || []}
-      createAcquisition={
-        createAcquisition
-      }
-      initialVenueId={
-        initialVenueId
-      }
+      rounds={(rounds || []).map(
+        (round) => ({
+          id: round.id,
+          name: round.name,
+          type: round.type as
+            | "acquisition"
+            | "mailing",
+          active: round.active,
+        })
+      )}
+      initialVenueId={initialVenueId}
       initialOrganizerId={
         initialOrganizerId
+      }
+      initialRoundId={initialRoundId}
+      createAcquisition={
+        createAcquisition
       }
     />
   );
