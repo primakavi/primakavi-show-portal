@@ -47,9 +47,8 @@ export async function POST(request: NextRequest) {
 
     // ============================================================
     // BODY LESEN
-    //
-    // KlickTipp kann Form Data oder JSON senden.
-    // Wir unterstützen beides.
+    // KlickTipp sendet aktuell JSON.
+    // Form Data unterstützen wir vorsichtshalber ebenfalls.
     // ============================================================
 
     const contentType =
@@ -68,12 +67,12 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      "KlickTipp Webhook empfangen:",
+      "KlickTipp OPENED Webhook empfangen:",
       body
     );
 
     // ============================================================
-    // DATEN AUSLESEN
+    // KONTAKTDATEN AUSLESEN
     // ============================================================
 
     const email = normalizeEmail(
@@ -82,14 +81,6 @@ export async function POST(request: NextRequest) {
         body["E-Mail"] ||
         body["email_address"]
     );
-
-    const clickedUrl = String(
-      body.clicked_url ||
-        body.url ||
-        body.link ||
-        body["Link"] ||
-        ""
-    ).trim();
 
     const klicktippContactId = String(
       body.id ||
@@ -102,11 +93,17 @@ export async function POST(request: NextRequest) {
 
     // ============================================================
     // VALIDIERUNG
+    //
+    // Dieser Webhook wird in KlickTipp ausschließlich durch
+    // "Veranstalter Newsletter September 2026 geöffnet" ausgelöst.
+    //
+    // Deshalb gilt:
+    // Webhook empfangen = Newsletter geöffnet.
     // ============================================================
 
     if (!email) {
       console.warn(
-        "KlickTipp Webhook ohne E-Mail:",
+        "KlickTipp OPENED Webhook ohne E-Mail:",
         body
       );
 
@@ -120,10 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // EMPFÄNGER SUCHEN
-    //
-    // Eine E-Mail-Adresse kann in mehreren Mailing-Runden
-    // vorkommen. Deshalb suchen wir zunächst alle Treffer.
+    // PASSENDEN MAILING-EMPFÄNGER SUCHEN
     // ============================================================
 
     const {
@@ -150,7 +144,7 @@ export async function POST(request: NextRequest) {
 
     if (recipientsError) {
       console.error(
-        "Fehler beim Suchen des Empfängers:",
+        "Fehler beim Suchen des Mailing-Empfängers:",
         recipientsError
       );
 
@@ -163,17 +157,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ============================================================
-    // KEIN PASSENDER EMPFÄNGER
-    // ============================================================
-
     if (!recipients?.length) {
       console.warn(
         `Kein Mailing-Empfänger für ${email} gefunden.`
       );
 
-      // Bewusst HTTP 200:
-      // KlickTipp soll den Webhook nicht ständig erneut versuchen.
+      // 200 zurückgeben, damit KlickTipp den Webhook
+      // nicht wegen eines unbekannten Empfängers erneut versucht.
       return NextResponse.json({
         ok: true,
         matched: false,
@@ -183,9 +173,8 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // PASSENDE MAILING-RUNDE BESTIMMEN
     //
-    // Bevorzugt:
-    // 1. aktive Akquise-/Mailing-Runde
-    // 2. zuletzt versendeter/geplanter Datensatz
+    // 1. aktive Runde bevorzugen
+    // 2. danach zuletzt versendet/geplant
     // ============================================================
 
     const sortedRecipients = [...recipients].sort(
@@ -220,21 +209,7 @@ export async function POST(request: NextRequest) {
     const recipient = sortedRecipients[0];
 
     // ============================================================
-    // KLICK SPEICHERN
-    //
-    // WICHTIG:
-    // Dieser Endpoint wird aktuell ausschließlich von der
-    // KlickTipp-Kampagne
-    //
-    // "CRM | Veranstalter Newsletter Klicks"
-    //
-    // ausgelöst.
-    //
-    // Deren Startbedingung lautet:
-    // Newsletter → geklickt
-    //
-    // Deshalb bedeutet jeder Aufruf dieses Webhooks:
-    // Der Empfänger hat den Newsletter geklickt.
+    // ÖFFNUNG SPEICHERN
     // ============================================================
 
     const now = new Date().toISOString();
@@ -243,44 +218,10 @@ export async function POST(request: NextRequest) {
       updated_at: now,
     };
 
-    // ------------------------------------------------------------
-    // ÖFFNUNG
-    //
-    // Ein Klick impliziert eine vorherige Öffnung.
-    // Falls noch kein opened_at vorhanden ist, setzen wir ihn
-    // ebenfalls auf den Zeitpunkt des ersten bekannten Klicks.
-    // ------------------------------------------------------------
-
+    // Wir behalten bewusst den Zeitpunkt der ERSTEN Öffnung.
     if (!recipient.opened_at) {
       updateData.opened_at = now;
     }
-
-    // ------------------------------------------------------------
-    // KLICK
-    //
-    // Nur den ersten Klick-Zeitpunkt speichern.
-    // Weitere Webhook-Aufrufe überschreiben ihn nicht.
-    // ------------------------------------------------------------
-
-    if (!recipient.clicked_at) {
-      updateData.clicked_at = now;
-    }
-
-    // ------------------------------------------------------------
-    // GEKLICKTE URL
-    //
-    // Nur speichern, wenn KlickTipp tatsächlich eine URL
-    // mitsendet.
-    // ------------------------------------------------------------
-
-    if (clickedUrl) {
-      updateData.last_clicked_url =
-        clickedUrl;
-    }
-
-    // ------------------------------------------------------------
-    // KLICKTIPP KONTAKT-ID
-    // ------------------------------------------------------------
 
     if (klicktippContactId) {
       updateData.klicktipp_contact_id =
@@ -288,7 +229,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // UPDATE IN SUPABASE
+    // UPDATE
     // ============================================================
 
     const { error: updateError } =
@@ -299,7 +240,7 @@ export async function POST(request: NextRequest) {
 
     if (updateError) {
       console.error(
-        "Fehler beim Speichern des Newsletter-Klicks:",
+        "Fehler beim Speichern der Newsletter-Öffnung:",
         updateError
       );
 
@@ -317,19 +258,21 @@ export async function POST(request: NextRequest) {
     // ============================================================
 
     console.log(
-      `Newsletter-Klick gespeichert: ${email}`,
+      `Newsletter geöffnet gespeichert: ${email}`,
       recipient.id
     );
 
     return NextResponse.json({
       ok: true,
       matched: true,
-      event: "clicked",
+      event: "opened",
       recipient_id: recipient.id,
+      first_open:
+        !recipient.opened_at,
     });
   } catch (error) {
     console.error(
-      "KlickTipp Webhook Fehler:",
+      "KlickTipp OPENED Webhook Fehler:",
       error
     );
 
