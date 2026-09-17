@@ -278,9 +278,16 @@ export default async function AcquisitionPage({
         email,
         sent_at,
         scheduled_at,
+        opened_at,
+        clicked_at,
+        unsubscribed_at,
+        bounced_at,
+        last_clicked_url,
+        klicktipp_contact_id,
         reaction,
         notes,
         show_id,
+        acquisition_id,
         created_at,
         updated_at
       `)
@@ -293,6 +300,24 @@ export default async function AcquisitionPage({
       </div>
     );
   }
+
+
+  const { data: newsletterSuppressions, error: newsletterSuppressionsError } =
+    await supabaseAdmin
+      .from("newsletter_suppressions")
+      .select("email, reason, unsubscribed_at");
+
+  if (newsletterSuppressionsError) {
+    return (
+      <div className="rounded-[2rem] bg-white p-8 font-bold text-red-600 shadow-xl">
+        Fehler beim Laden der Newsletter-Sperrliste: {newsletterSuppressionsError.message}
+      </div>
+    );
+  }
+
+  const suppressedEmails = (newsletterSuppressions || []).map((item) =>
+    String(item.email || "").trim().toLowerCase()
+  );
 
   const { data: mailingVenues, error: mailingVenuesError } =
     await supabaseAdmin
@@ -387,6 +412,17 @@ export default async function AcquisitionPage({
       throw new Error("Diese Mailing-Runde ist nicht aktiv.");
     }
 
+    const { count: alreadySentCount, error: sentCheckError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .select("id", { count: "exact", head: true })
+      .eq("round_id", roundId)
+      .not("sent_at", "is", null);
+
+    if (sentCheckError) throw new Error(sentCheckError.message);
+    if ((alreadySentCount || 0) > 0) {
+      throw new Error("Dieses Mailing wurde bereits versendet. Die Empfängerliste ist eingefroren.");
+    }
+
     let venueId: string | null = null;
     let organizerId: string | null = null;
     let email: string | null = null;
@@ -431,6 +467,20 @@ export default async function AcquisitionPage({
       email = primaryContact?.email || organizer.email || null;
     }
 
+    if (email) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data: suppression, error: suppressionError } = await supabaseAdmin
+        .from("newsletter_suppressions")
+        .select("email")
+        .eq("email", normalizedEmail)
+        .maybeSingle();
+
+      if (suppressionError) throw new Error(suppressionError.message);
+      if (suppression) {
+        throw new Error("Diese E-Mail-Adresse hat sich vom Newsletter abgemeldet und ist gesperrt.");
+      }
+    }
+
     const duplicateQuery = supabaseAdmin
       .from("mailing_recipients")
       .select("id")
@@ -471,6 +521,17 @@ export default async function AcquisitionPage({
 
     if (!roundId || !rawTargets) {
       throw new Error("Bitte mindestens einen Empfänger auswählen.");
+    }
+
+    const { count: alreadySentCount, error: sentCheckError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .select("id", { count: "exact", head: true })
+      .eq("round_id", roundId)
+      .not("sent_at", "is", null);
+
+    if (sentCheckError) throw new Error(sentCheckError.message);
+    if ((alreadySentCount || 0) > 0) {
+      throw new Error("Dieses Mailing wurde bereits versendet. Die Empfängerliste ist eingefroren.");
     }
 
     const { data: round, error: roundError } = await supabaseAdmin
@@ -591,14 +652,28 @@ export default async function AcquisitionPage({
         })),
     ];
 
-    if (!rows.length) {
+    const { data: suppressions, error: suppressionsError } = await supabaseAdmin
+      .from("newsletter_suppressions")
+      .select("email");
+
+    if (suppressionsError) throw new Error(suppressionsError.message);
+
+    const blocked = new Set(
+      (suppressions || []).map((item) => String(item.email || "").trim().toLowerCase())
+    );
+
+    const allowedRows = rows.filter(
+      (row) => !row.email || !blocked.has(String(row.email).trim().toLowerCase())
+    );
+
+    if (!allowedRows.length) {
       revalidatePath("/admin/acquisition");
       return;
     }
 
     const { error: insertError } = await supabaseAdmin
       .from("mailing_recipients")
-      .insert(rows);
+      .insert(allowedRows);
 
     if (insertError) throw new Error(insertError.message);
 
@@ -652,14 +727,21 @@ export default async function AcquisitionPage({
     "use server";
 
     const roundId = String(formData.get("round_id") || "").trim();
+    const sentAtRaw = String(formData.get("sent_at") || "").trim();
     if (!roundId) return;
 
+    const parsed = sentAtRaw ? new Date(sentAtRaw) : new Date();
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error("Der Versandzeitpunkt ist ungültig.");
+    }
+
+    const sentAt = parsed.toISOString();
     const now = new Date().toISOString();
 
     const { error } = await supabaseAdmin
       .from("mailing_recipients")
       .update({
-        sent_at: now,
+        sent_at: sentAt,
         scheduled_at: null,
         updated_at: now,
       })
@@ -700,6 +782,167 @@ export default async function AcquisitionPage({
     if (error) throw new Error(error.message);
 
     revalidatePath("/admin/acquisition");
+  }
+
+  async function updateMailingTracking(formData: FormData) {
+    "use server";
+
+    const id = String(formData.get("id") || "").trim();
+    const field = String(formData.get("field") || "").trim();
+    const active = String(formData.get("active") || "") === "true";
+
+    const allowedFields = [
+      "opened_at",
+      "clicked_at",
+      "unsubscribed_at",
+      "bounced_at",
+    ];
+
+    if (!id || !allowedFields.includes(field)) {
+      throw new Error("Ungültiger Tracking-Status.");
+    }
+
+    const { data: recipient, error: loadError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .select("id, email, opened_at")
+      .eq("id", id)
+      .single();
+
+    if (loadError || !recipient) {
+      throw new Error(loadError?.message || "Mailing-Empfänger nicht gefunden.");
+    }
+
+    const now = new Date().toISOString();
+    const updateData: Record<string, string | null> = {
+      [field]: active ? now : null,
+      updated_at: now,
+    };
+
+    // Ein Klick setzt fachlich auch "geöffnet".
+    if (field === "clicked_at" && active && !recipient.opened_at) {
+      updateData.opened_at = now;
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .update(updateData)
+      .eq("id", id);
+
+    if (updateError) throw new Error(updateError.message);
+
+    // Abmeldung dauerhaft und E-Mail-bezogen speichern.
+    if (field === "unsubscribed_at" && recipient.email) {
+      const email = recipient.email.trim().toLowerCase();
+
+      if (active) {
+        const { error: suppressionError } = await supabaseAdmin
+          .from("newsletter_suppressions")
+          .upsert(
+            {
+              email,
+              reason: "unsubscribed",
+              unsubscribed_at: now,
+              updated_at: now,
+            },
+            { onConflict: "email" }
+          );
+
+        if (suppressionError) throw new Error(suppressionError.message);
+      } else {
+        const { error: suppressionError } = await supabaseAdmin
+          .from("newsletter_suppressions")
+          .delete()
+          .eq("email", email)
+          .eq("reason", "unsubscribed");
+
+        if (suppressionError) throw new Error(suppressionError.message);
+      }
+    }
+
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function createAcquisitionFromMailing(formData: FormData) {
+    "use server";
+
+    const recipientId = String(formData.get("recipient_id") || "").trim();
+    if (!recipientId) return;
+
+    const { data: recipient, error: recipientError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .select(`
+        id,
+        round_id,
+        venue_id,
+        organizer_id,
+        email,
+        sent_at,
+        reaction,
+        notes,
+        acquisition_id
+      `)
+      .eq("id", recipientId)
+      .single();
+
+    if (recipientError || !recipient) {
+      throw new Error(recipientError?.message || "Mailing-Empfänger nicht gefunden.");
+    }
+
+    // Idempotent: ein Mailing-Empfänger darf nur einmal umgewandelt werden.
+    if (recipient.acquisition_id) {
+      revalidatePath("/admin/acquisition");
+      return;
+    }
+
+    const { data: round } = await supabaseAdmin
+      .from("acquisition_rounds")
+      .select("name")
+      .eq("id", recipient.round_id)
+      .maybeSingle();
+
+    const now = new Date().toISOString();
+    const reaction = String(recipient.reaction || "").trim();
+    const sourceName = round?.name || "Newsletter";
+    const response = reaction || "Antwort auf Newsletter";
+
+    const { data: acquisitionItem, error: acquisitionError } = await supabaseAdmin
+      .from("acquisition")
+      .insert({
+        venue_id: recipient.venue_id,
+        organizer_id: recipient.organizer_id,
+        round_id: recipient.round_id,
+        status: reaction === "Absage" ? "Abgesagt" : "Antwort erhalten",
+        priority: "normal",
+        last_contact_at: recipient.sent_at || now,
+        contact_channel: "E-Mail / Newsletter",
+        contact_note: `Quelle: ${sourceName}`,
+        response,
+        notes: recipient.notes || null,
+        action_type: "mailing_response",
+        context: `Aus Mailing „${sourceName}“ übernommen`,
+        converted_to_show: false,
+        updated_at: now,
+      })
+      .select("id")
+      .single();
+
+    if (acquisitionError || !acquisitionItem) {
+      throw new Error(acquisitionError?.message || "Akquise-Vorgang konnte nicht angelegt werden.");
+    }
+
+    const { error: linkError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .update({
+        acquisition_id: acquisitionItem.id,
+        updated_at: now,
+      })
+      .eq("id", recipient.id)
+      .is("acquisition_id", null);
+
+    if (linkError) throw new Error(linkError.message);
+
+    revalidatePath("/admin/acquisition");
+    revalidatePath("/admin");
   }
 
   async function addNoteToWholeMailing(formData: FormData) {
@@ -751,6 +994,20 @@ export default async function AcquisitionPage({
 
     const id = String(formData.get("id") || "").trim();
     if (!id) return;
+
+    const { data: recipient, error: loadError } = await supabaseAdmin
+      .from("mailing_recipients")
+      .select("id, sent_at")
+      .eq("id", id)
+      .single();
+
+    if (loadError || !recipient) {
+      throw new Error(loadError?.message || "Empfänger nicht gefunden.");
+    }
+
+    if (recipient.sent_at) {
+      throw new Error("Versendete Mailing-Empfänger können nicht mehr entfernt werden.");
+    }
 
     const { error } = await supabaseAdmin
       .from("mailing_recipients")
@@ -1262,6 +1519,9 @@ export default async function AcquisitionPage({
   addMailingRecipient={addMailingRecipient}
   addMailingRecipientsBulk={addMailingRecipientsBulk}
   updateMailingRecipient={updateMailingRecipient}
+  updateMailingTracking={updateMailingTracking}
+  createAcquisitionFromMailing={createAcquisitionFromMailing}
+  suppressedEmails={suppressedEmails}
   markMailingSent={markMailingSent}
   markWholeMailingSent={markWholeMailingSent}
   scheduleWholeMailing={scheduleWholeMailing}

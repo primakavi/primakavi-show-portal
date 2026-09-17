@@ -103,6 +103,31 @@ type AcquisitionRound = {
   created_at: string | null;
 };
 
+type MailingHistoryItem = {
+  id: string;
+  round_id: string | null;
+  venue_id: string | null;
+  email: string | null;
+  sent_at: string | null;
+  scheduled_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  unsubscribed_at: string | null;
+  bounced_at: string | null;
+  last_clicked_url: string | null;
+  reaction: string | null;
+  notes: string | null;
+  acquisition_id: string | null;
+  created_at: string | null;
+  round_name: string;
+};
+
+type NewsletterSuppression = {
+  email: string;
+  reason: string | null;
+  unsubscribed_at: string | null;
+};
+
 type ActionResult = {
   success: boolean;
   message: string;
@@ -148,6 +173,8 @@ export default function LocationClient({
   acquisition = [],
   acquisitionActivities = [],
   acquisitionRounds = [],
+  mailingHistory = [],
+  newsletterSuppressions = [],
   addActivity,
   createAcquisition,
   createAcquisitionRound,
@@ -163,6 +190,8 @@ export default function LocationClient({
   acquisition?: AcquisitionRecord[];
   acquisitionActivities?: AcquisitionActivity[];
   acquisitionRounds?: AcquisitionRound[];
+  mailingHistory?: MailingHistoryItem[];
+  newsletterSuppressions?: NewsletterSuppression[];
   addActivity?: (formData: FormData) => Promise<ActionResult>;
   createAcquisition?: (formData: FormData) => Promise<ActionResult>;
   createAcquisitionRound?: (formData: FormData) => Promise<ActionResult>;
@@ -237,6 +266,25 @@ export default function LocationClient({
     shows,
     acquisition
   );
+
+  const suppressedEmailMap = new Map(
+    newsletterSuppressions.map((item) => [
+      String(item.email || "").trim().toLowerCase(),
+      item,
+    ])
+  );
+
+  const suppressedLocationEmails = [
+    venue.contact_email,
+    venue.contact_email_2,
+    venue.booking_email,
+  ]
+    .map((email) => String(email || "").trim())
+    .filter(Boolean)
+    .filter((email, index, all) =>
+      all.findIndex((candidate) => candidate.toLowerCase() === email.toLowerCase()) === index
+    )
+    .filter((email) => suppressedEmailMap.has(email.toLowerCase()));
 
   const activeAcquisition = acquisition.find((item) => {
     if (item.archived_at) return false;
@@ -528,6 +576,24 @@ export default function LocationClient({
       className="md:col-span-6"
     />
 
+    {venue.booking_email &&
+      suppressedEmailMap.has(String(venue.booking_email).trim().toLowerCase()) && (() => {
+        const suppression = suppressedEmailMap.get(
+          String(venue.booking_email).trim().toLowerCase()
+        );
+
+        return (
+          <div className="md:col-span-6 -mt-2 flex items-center gap-2 px-1 text-xs font-bold text-red-600">
+            <span>🚫 Newsletter abgemeldet</span>
+            {suppression?.unsubscribed_at && (
+              <span className="font-semibold text-zinc-400">
+                · {formatDateTime(suppression.unsubscribed_at)}
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
     <Field
       label="Kapazität"
       name="capacity"
@@ -557,6 +623,7 @@ export default function LocationClient({
       defaultValue={venue.season_notes}
       className="md:col-span-6"
     />
+
 
     <Textarea
       label="Publikum / Zielgruppe"
@@ -599,9 +666,9 @@ export default function LocationClient({
           {!isNew && (
             <div id="location-acquisition" className="scroll-mt-5">
             <Card
-              title="Akquise"
+              title="Kontakt & Akquise"
               icon="🎯"
-              description="Aktueller Stand und bisherige Akquise-Vorgänge dieser Location."
+              description="Mailings, Kontakte und Akquise-Vorgänge dieser Location."
               action={
                 activeAcquisition ? (
                   <button
@@ -639,10 +706,10 @@ export default function LocationClient({
                 )
               }
             >
-              {acquisition.length === 0 && !showNewAcquisitionForm ? (
+              {acquisition.length === 0 && mailingHistory.length === 0 && !showNewAcquisitionForm ? (
                 <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center">
                   <p className="text-sm font-black text-zinc-700">
-                    Noch keine Akquise für diese Location.
+                    Noch keine Kontakte oder Akquise für diese Location.
                   </p>
                   <p className="mt-1 text-sm font-semibold text-zinc-400">
                     Starte den ersten Vorgang über „+ Neue Akquise“.
@@ -1075,7 +1142,58 @@ export default function LocationClient({
                       </div>
                     )}
 
-                  {activeAcquisition && (
+                  {mailingHistory.length > 0 && (
+                     <div>
+                       <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
+                         Mailings
+                       </p>
+                       <div className="space-y-2">
+                         {mailingHistory.map((mailing) => (
+                           <section
+                             key={mailing.id}
+                             className={`rounded-2xl border bg-white px-5 py-4 ${mailing.unsubscribed_at ? "border-red-200" : "border-black/10"}`}
+                           >
+                             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                               <div className="min-w-0">
+                                 <div className="flex flex-wrap items-center gap-2">
+                                   <span className="font-black text-zinc-950">📨 {mailing.round_name || "Newsletter"}</span>
+                                   {mailing.sent_at && <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-black text-zinc-600">versendet</span>}
+                                   {mailing.opened_at && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">👁 geöffnet</span>}
+                                   {mailing.clicked_at && <span className="rounded-full bg-lime-100 px-2.5 py-1 text-xs font-black text-lime-800">🔗 geklickt</span>}
+                                   {mailing.bounced_at && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">⚠️ Bounce</span>}
+                                   {mailing.unsubscribed_at && <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-black text-red-700">🚫 abgemeldet</span>}
+                                   {mailing.acquisition_id && <span className="rounded-full bg-lime-100 px-2.5 py-1 text-xs font-black text-lime-800">🎯 als Akquise weitergeführt</span>}
+                                 </div>
+                                 <p className="mt-2 text-xs font-semibold text-zinc-400">
+                                   {mailing.sent_at
+                                     ? `Versand ${formatDateTime(mailing.sent_at)}`
+                                     : mailing.scheduled_at
+                                       ? `Geplant ${formatDateTime(mailing.scheduled_at)}`
+                                       : mailing.created_at
+                                         ? `Hinzugefügt ${formatDateTime(mailing.created_at)}`
+                                         : "Datum offen"}
+                                   {mailing.email ? ` · ${mailing.email}` : ""}
+                                 </p>
+                                 {(mailing.reaction || mailing.notes) && (
+                                   <div className="mt-3 space-y-1">
+                                     {mailing.reaction && <p className="text-sm font-black text-zinc-700">Reaktion: {mailing.reaction}</p>}
+                                     {mailing.notes && <p className="whitespace-pre-line text-sm font-semibold leading-6 text-zinc-600">{mailing.notes}</p>}
+                                   </div>
+                                 )}
+                               </div>
+                               {mailing.acquisition_id && (
+                                 <Link href={`/admin/acquisition/${mailing.acquisition_id}`} className="shrink-0 text-sm font-black text-zinc-500 transition hover:text-zinc-950">
+                                   Akquise öffnen →
+                                 </Link>
+                               )}
+                             </div>
+                           </section>
+                         ))}
+                       </div>
+                     </div>
+                   )}
+
+                   {activeAcquisition && (
                     <div>
                       <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
                         Aktuell
@@ -1920,6 +2038,20 @@ function todayDate() {
     now.getTime() - now.getTimezoneOffset() * 60_000
   );
   return local.toISOString().slice(0, 10);
+}
+
+function formatDateTime(date: string | null) {
+  if (!date) return "—";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return date;
+
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
 }
 
 function formatAcquisitionDate(date: string | null) {

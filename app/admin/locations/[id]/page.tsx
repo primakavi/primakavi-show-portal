@@ -141,6 +141,68 @@ export default async function LocationPage({
   }
 
   // ------------------------------------------------------------
+  // NEWSLETTER / MAILING-HISTORIE DIESER LOCATION
+  // ------------------------------------------------------------
+
+  const { data: mailingRecipientsRaw, error: mailingRecipientsError } =
+    await supabaseAdmin
+      .from("mailing_recipients")
+      .select(`
+        id, round_id, venue_id, email, sent_at, scheduled_at,
+        opened_at, clicked_at, unsubscribed_at, bounced_at,
+        last_clicked_url, reaction, notes, acquisition_id, created_at
+      `)
+      .eq("venue_id", id)
+      .order("sent_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
+
+  if (mailingRecipientsError) {
+    console.error("Mailing-Historie konnte nicht geladen werden:", mailingRecipientsError);
+  }
+
+  const mailingRoundIds = Array.from(
+    new Set((mailingRecipientsRaw || []).map((item) => item.round_id).filter(Boolean))
+  ) as string[];
+
+  const { data: mailingRounds, error: mailingRoundsError } =
+    mailingRoundIds.length > 0
+      ? await supabaseAdmin.from("acquisition_rounds").select("id, name").in("id", mailingRoundIds)
+      : { data: [], error: null };
+
+  if (mailingRoundsError) {
+    console.error("Mailing-Runden konnten nicht geladen werden:", mailingRoundsError);
+  }
+
+  const mailingRoundMap = new Map(
+    (mailingRounds || []).map((round) => [round.id, round.name])
+  );
+
+  const mailingHistory = (mailingRecipientsRaw || []).map((recipient) => ({
+    ...recipient,
+    round_name: (recipient.round_id && mailingRoundMap.get(recipient.round_id)) || "Newsletter",
+  }));
+
+  const locationEmails = Array.from(
+    new Set(
+      [venue.contact_email, venue.contact_email_2, venue.booking_email]
+        .map((email) => String(email || "").trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+
+  const { data: newsletterSuppressions, error: newsletterSuppressionsError } =
+    locationEmails.length > 0
+      ? await supabaseAdmin
+          .from("newsletter_suppressions")
+          .select("email, reason, unsubscribed_at")
+          .in("email", locationEmails)
+      : { data: [], error: null };
+
+  if (newsletterSuppressionsError) {
+    console.error("Newsletter-Abmeldungen konnten nicht geladen werden:", newsletterSuppressionsError);
+  }
+
+  // ------------------------------------------------------------
   // NEUE AKQUISE-RUNDE ZUR AUSWAHL HINZUFÜGEN
   // ------------------------------------------------------------
 
@@ -790,6 +852,8 @@ export default async function LocationPage({
       acquisition={acquisition || []}
       acquisitionActivities={acquisitionActivities}
       acquisitionRounds={acquisitionRounds || []}
+      mailingHistory={mailingHistory}
+      newsletterSuppressions={newsletterSuppressions || []}
       addActivity={addActivity}
       createAcquisition={createAcquisition}
       createAcquisitionRound={createAcquisitionRound}

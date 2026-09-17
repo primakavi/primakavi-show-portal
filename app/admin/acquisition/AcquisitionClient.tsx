@@ -121,9 +121,16 @@ type MailingRecipient = {
   email: string | null;
   sent_at: string | null;
   scheduled_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  unsubscribed_at: string | null;
+  bounced_at: string | null;
+  last_clicked_url: string | null;
+  klicktipp_contact_id: string | null;
   reaction: string | null;
   notes: string | null;
   show_id: string | null;
+  acquisition_id: string | null;
   created_at: string | null;
   updated_at: string | null;
   venue: MailingVenue | null;
@@ -179,6 +186,9 @@ export default function AcquisitionClient({
   addMailingRecipient,
   addMailingRecipientsBulk,
   updateMailingRecipient,
+  updateMailingTracking,
+  createAcquisitionFromMailing,
+  suppressedEmails,
   markMailingSent,
   markWholeMailingSent,
   scheduleWholeMailing,
@@ -200,6 +210,9 @@ export default function AcquisitionClient({
   addMailingRecipient: (formData: FormData) => Promise<void>;
   addMailingRecipientsBulk: (formData: FormData) => Promise<void>;
   updateMailingRecipient: (formData: FormData) => Promise<void>;
+  updateMailingTracking: (formData: FormData) => Promise<void>;
+  createAcquisitionFromMailing: (formData: FormData) => Promise<void>;
+  suppressedEmails: string[];
   markMailingSent: (formData: FormData) => Promise<void>;
   markWholeMailingSent: (formData: FormData) => Promise<void>;
   scheduleWholeMailing: (formData: FormData) => Promise<void>;
@@ -911,6 +924,9 @@ export default function AcquisitionClient({
           addMailingRecipient={addMailingRecipient}
           addMailingRecipientsBulk={addMailingRecipientsBulk}
           updateMailingRecipient={updateMailingRecipient}
+          updateMailingTracking={updateMailingTracking}
+          createAcquisitionFromMailing={createAcquisitionFromMailing}
+          suppressedEmails={suppressedEmails}
           markMailingSent={markMailingSent}
           markWholeMailingSent={markWholeMailingSent}
           scheduleWholeMailing={scheduleWholeMailing}
@@ -1707,6 +1723,9 @@ function MailingPanel({
   organizers,
   addMailingRecipientsBulk,
   updateMailingRecipient,
+  updateMailingTracking,
+  createAcquisitionFromMailing,
+  suppressedEmails,
   markMailingSent,
   markWholeMailingSent,
   scheduleWholeMailing,
@@ -1720,6 +1739,9 @@ function MailingPanel({
   addMailingRecipient: (formData: FormData) => Promise<void>;
   addMailingRecipientsBulk: (formData: FormData) => Promise<void>;
   updateMailingRecipient: (formData: FormData) => Promise<void>;
+  updateMailingTracking: (formData: FormData) => Promise<void>;
+  createAcquisitionFromMailing: (formData: FormData) => Promise<void>;
+  suppressedEmails: string[];
   markMailingSent: (formData: FormData) => Promise<void>;
   markWholeMailingSent: (formData: FormData) => Promise<void>;
   scheduleWholeMailing: (formData: FormData) => Promise<void>;
@@ -1740,15 +1762,55 @@ function MailingPanel({
   const [showSchedule, setShowSchedule] = useState(false);
   const [showBulkNote, setShowBulkNote] = useState(false);
   const [scheduleValue, setScheduleValue] = useState("");
+  const [sentValue, setSentValue] = useState("");
+  const [editingSentAt, setEditingSentAt] = useState(false);
+  const [recipientSort, setRecipientSort] = useState<
+    "name" | "opened" | "clicked" | "unsubscribed" | "bounced"
+  >("name");
 
   const sentCount = recipients.filter((item) => item.sent_at).length;
-  const reactionCount = recipients.filter((item) => item.reaction?.trim()).length;
-  const showCount = recipients.filter((item) => item.show_id).length;
+  const openedCount = recipients.filter((item) => item.opened_at).length;
+  const clickedCount = recipients.filter((item) => item.clicked_at).length;
+  const unsubscribedCount = recipients.filter((item) => item.unsubscribed_at).length;
+  const bouncedCount = recipients.filter((item) => item.bounced_at).length;
+  const mailingSentAt =
+    recipients.find((item) => item.sent_at)?.sent_at || null;
+  const isSent = Boolean(mailingSentAt);
+  const suppressedEmailSet = useMemo(
+    () => new Set(suppressedEmails.map((email) => email.trim().toLowerCase())),
+    [suppressedEmails]
+  );
   const plannedRecipients = recipients.filter(
     (item) => item.scheduled_at && !item.sent_at
   );
   const plannedCount = plannedRecipients.length;
   const plannedAt = plannedRecipients[0]?.scheduled_at || null;
+
+  const sortedRecipients = useMemo(() => {
+    const getName = (recipient: MailingRecipient) =>
+      (recipient.venue?.name || recipient.organizer?.name || recipient.email || "")
+        .toLocaleLowerCase("de");
+
+    return [...recipients].sort((a, b) => {
+      if (recipientSort === "name") {
+        return getName(a).localeCompare(getName(b), "de");
+      }
+
+      const fieldMap = {
+        opened: "opened_at",
+        clicked: "clicked_at",
+        unsubscribed: "unsubscribed_at",
+        bounced: "bounced_at",
+      } as const;
+
+      const field = fieldMap[recipientSort];
+      const aActive = Boolean(a[field]);
+      const bActive = Boolean(b[field]);
+
+      if (aActive !== bActive) return aActive ? -1 : 1;
+      return getName(a).localeCompare(getName(b), "de");
+    });
+  }, [recipients, recipientSort]);
 
   const existingKeys = useMemo(
     () =>
@@ -1774,6 +1836,10 @@ function MailingPanel({
       played_before: venue.played_before,
       relationship_status: venue.relationship_status,
       program_focus: venue.program_focus || [],
+      suppressed: Boolean(
+        (venue.booking_email || venue.contact_email) &&
+        suppressedEmailSet.has(String(venue.booking_email || venue.contact_email).trim().toLowerCase())
+      ),
     }));
 
     const organizerCandidates = organizers.map((organizer) => ({
@@ -1788,10 +1854,14 @@ function MailingPanel({
       played_before: null as boolean | null,
       relationship_status: null as string | null,
       program_focus: [] as string[],
+      suppressed: Boolean(
+        organizer.email &&
+        suppressedEmailSet.has(String(organizer.email).trim().toLowerCase())
+      ),
     }));
 
     return [...venueCandidates, ...organizerCandidates];
-  }, [venues, organizers]);
+  }, [venues, organizers, suppressedEmailSet]);
 
   const states = useMemo(
     () =>
@@ -1864,7 +1934,10 @@ function MailingPanel({
   ]);
 
   const selectableVisible = filteredCandidates.filter(
-    (candidate) => !existingKeys.has(candidate.key) && Boolean(candidate.email)
+    (candidate) =>
+      !existingKeys.has(candidate.key) &&
+      Boolean(candidate.email) &&
+      !candidate.suppressed
   );
 
   const allVisibleSelected =
@@ -2010,11 +2083,13 @@ function MailingPanel({
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <MailingStat value={recipients.length} label="Empfänger" icon="👥" />
         <MailingStat value={sentCount} label="Versendet" icon="📨" />
-        <MailingStat value={reactionCount} label="Reaktionen" icon="💬" />
-        <MailingStat value={showCount} label="Shows" icon="🎉" />
+        <MailingStat value={openedCount} label="Geöffnet" icon="👁️" />
+        <MailingStat value={clickedCount} label="Geklickt" icon="🔗" />
+        <MailingStat value={unsubscribedCount} label="Abgemeldet" icon="🚫" />
+        <MailingStat value={bouncedCount} label="Bounce" icon="⚠️" />
       </section>
 
       <section className="overflow-hidden rounded-[1.7rem] bg-white shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
@@ -2030,58 +2105,114 @@ function MailingPanel({
           </div>
 
           {round.active && (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={exportKlickTippCsv}
-                disabled={exportableRecipients.length === 0}
-                className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                ↓ CSV für KlickTipp · {exportableRecipients.length}
-              </button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!isSent ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={exportKlickTippCsv}
+                    disabled={exportableRecipients.length === 0}
+                    className="h-10 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    ↓ CSV · {exportableRecipients.length}
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSchedule((current) => !current);
-                  setShowBulkNote(false);
-                }}
-                disabled={recipients.length === 0}
-                className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:opacity-40"
-              >
-                📅 Versand planen
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSchedule((current) => !current);
+                      setShowBulkNote(false);
+                    }}
+                    disabled={recipients.length === 0}
+                    className="h-10 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:opacity-40"
+                  >
+                    📅 Versand planen
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowBulkNote((current) => !current);
-                  setShowSchedule(false);
-                }}
-                disabled={recipients.length === 0}
-                className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:opacity-40"
-              >
-                📝 Notiz für alle
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAdd((current) => !current)}
+                    className="h-10 rounded-full bg-zinc-950 px-5 text-xs font-black text-white transition hover:bg-zinc-800"
+                  >
+                    + Empfänger
+                  </button>
 
-              <form action={markWholeMailingSent}>
-                <input type="hidden" name="round_id" value={round.id} />
-                <button
-                  type="submit"
-                  disabled={recipients.length === 0}
-                  className="h-11 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:opacity-40"
-                >
-                  ✓ Jetzt als versendet markieren
-                </button>
-              </form>
-
-              <button
-                type="button"
-                onClick={() => setShowAdd((current) => !current)}
-                className="h-11 rounded-full bg-zinc-950 px-5 text-sm font-black text-white transition hover:bg-zinc-800"
-              >
-                + Empfänger
-              </button>
+                  <form action={markWholeMailingSent} className="flex items-center gap-2">
+                    <input type="hidden" name="round_id" value={round.id} />
+                    <input
+                      type="datetime-local"
+                      name="sent_at"
+                      value={sentValue}
+                      onChange={(event) => setSentValue(event.target.value)}
+                      disabled={recipients.length === 0}
+                      className="h-10 rounded-full bg-white px-3 text-xs font-bold text-zinc-600 ring-1 ring-black/10 outline-none disabled:opacity-40"
+                    />
+                    <button
+                      type="submit"
+                      disabled={recipients.length === 0 || !sentValue}
+                      className="h-10 rounded-full bg-lime-300 px-4 text-xs font-black text-zinc-950 disabled:opacity-40"
+                    >
+                      ✓ Als versendet speichern
+                    </button>
+                  </form>
+                </>
+              ) : !editingSentAt ? (
+                <>
+                  <div className="inline-flex h-10 items-center gap-2 rounded-full bg-lime-100 px-4 text-xs font-black text-zinc-700">
+                    📨 Versendet {formatMailingDateTime(mailingSentAt)}
+                    <button
+                      type="button"
+                      title="Versandzeitpunkt ändern"
+                      onClick={() => {
+                        const date = new Date(mailingSentAt!);
+                        const pad = (value: number) => String(value).padStart(2, "0");
+                        setSentValue(
+                          `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+                        );
+                        setEditingSentAt(true);
+                      }}
+                      className="ml-1 text-sm opacity-60 transition hover:opacity-100"
+                    >
+                      ✏️
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBulkNote((current) => !current);
+                      setShowSchedule(false);
+                    }}
+                    disabled={recipients.length === 0}
+                    className="h-10 rounded-full bg-white px-4 text-xs font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50 disabled:opacity-40"
+                  >
+                    📝 Notiz für alle
+                  </button>
+                </>
+              ) : (
+                <form action={markWholeMailingSent} className="flex items-center gap-2">
+                  <input type="hidden" name="round_id" value={round.id} />
+                  <input
+                    type="datetime-local"
+                    name="sent_at"
+                    value={sentValue}
+                    onChange={(event) => setSentValue(event.target.value)}
+                    className="h-10 rounded-full bg-white px-3 text-xs font-bold text-zinc-600 ring-1 ring-black/10 outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="h-10 rounded-full bg-zinc-950 px-4 text-xs font-black text-white"
+                  >
+                    Speichern
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingSentAt(false)}
+                    className="h-10 rounded-full bg-white px-3 text-xs font-black text-zinc-500 ring-1 ring-black/10"
+                  >
+                    Abbrechen
+                  </button>
+                </form>
+              )}
             </div>
           )}
         </div>
@@ -2095,7 +2226,7 @@ function MailingPanel({
           </div>
         )}
 
-        {showSchedule && round.active && (
+        {showSchedule && round.active && !isSent && (
           <div className="border-b border-black/5 bg-[#fbf7ef] p-5">
             <form action={scheduleWholeMailing} className="flex flex-col gap-3 sm:flex-row sm:items-end">
               <input type="hidden" name="round_id" value={round.id} />
@@ -2165,7 +2296,7 @@ function MailingPanel({
           </div>
         )}
 
-        {showAdd && round.active && (
+        {showAdd && round.active && !isSent && (
           <div className="border-b border-black/5 bg-[#fbf7ef] p-5">
             <div className="mb-4 flex flex-col gap-3 xl:flex-row">
               <div className="relative flex-1">
@@ -2301,7 +2432,8 @@ function MailingPanel({
               {filteredCandidates.map((candidate) => {
                 const alreadyAdded = existingKeys.has(candidate.key);
                 const noEmail = !candidate.email;
-                const disabled = alreadyAdded || noEmail;
+                const suppressed = candidate.suppressed;
+                const disabled = alreadyAdded || noEmail || suppressed;
                 const checked = selectedTargets.has(candidate.key);
 
                 return (
@@ -2334,6 +2466,11 @@ function MailingPanel({
                         {noEmail && (
                           <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">
                             keine E-Mail
+                          </span>
+                        )}
+                        {suppressed && (
+                          <span className="rounded-full bg-red-50 px-2 py-1 text-[10px] font-black text-red-700">
+                            🚫 Newsletter abgemeldet
                           </span>
                         )}
                       </div>
@@ -2385,61 +2522,74 @@ function MailingPanel({
         )}
 
         {recipients.length > 0 ? (
-          <div className="overflow-x-auto">
+          <div>
+            <div className="flex items-center justify-end border-b border-black/5 px-5 py-2.5">
+              <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-zinc-400">
+                Sortierung
+                <select
+                  value={recipientSort}
+                  onChange={(event) =>
+                    setRecipientSort(
+                      event.target.value as
+                        | "name"
+                        | "opened"
+                        | "clicked"
+                        | "unsubscribed"
+                        | "bounced"
+                    )
+                  }
+                  className="h-8 rounded-lg bg-[#fbf7ef] px-2 text-xs font-bold normal-case tracking-normal text-zinc-700 outline-none"
+                >
+                  <option value="name">Empfänger A–Z</option>
+                  <option value="opened">Geöffnet zuerst</option>
+                  <option value="clicked">Geklickt zuerst</option>
+                  <option value="unsubscribed">Abgemeldet zuerst</option>
+                  <option value="bounced">Bounce zuerst</option>
+                </select>
+              </label>
+            </div>
+            <div className="overflow-x-auto">
             <table className="min-w-full text-left">
-              <thead className="bg-[#fbf7ef] text-[10px] font-black uppercase tracking-[0.12em] text-zinc-400">
+              <thead className="border-b border-black/5 bg-white text-[12px] font-semibold text-zinc-500">
                 <tr>
-                  <th className="px-5 py-3">Empfänger</th>
-                  <th className="px-5 py-3">E-Mail</th>
-                  <th className="px-5 py-3">Versand</th>
-                  <th className="px-5 py-3">Reaktion / Notiz</th>
-                  <th className="px-5 py-3 text-right">Aktion</th>
+                  <th className="px-4 py-2.5">Empfänger</th>
+                  <th className="px-4 py-2.5">E-Mail</th>
+                  <th className="px-4 py-2.5">Aktivität</th>
+                  <th className="px-4 py-2.5">Reaktion / Notiz</th>
+                  <th className="w-[130px] px-4 py-2.5 text-right"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5">
-                {recipients.map((recipient) => {
+                {sortedRecipients.map((recipient) => {
                   const target = recipient.venue || recipient.organizer;
                   const city = target?.city || null;
 
                   return (
                     <tr key={recipient.id} className="align-top hover:bg-[#fffdf8]">
-                      <td className="px-5 py-4">
+                      <td className="px-4 py-2.5">
                         <p className="font-black">
                           {recipient.venue ? "🏛️ " : "🏢 "}
                           {target?.name || "Unbekannter Empfänger"}
                         </p>
                         {city && <p className="mt-1 text-xs text-zinc-400">{city}</p>}
                       </td>
-                      <td className="px-5 py-4 text-sm font-semibold text-zinc-600">
+                      <td className="px-4 py-2.5 text-xs font-semibold text-zinc-600">
                         {recipient.email || <span className="text-amber-600">Keine E-Mail</span>}
                       </td>
-                      <td className="px-5 py-4">
-                        {recipient.sent_at ? (
-                          <span className="inline-flex rounded-full bg-lime-100 px-3 py-1.5 text-xs font-black text-zinc-700">
-                            ✓ {formatMailingDateTime(recipient.sent_at)}
-                          </span>
-                        ) : recipient.scheduled_at ? (
-                          <span className="inline-flex rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800">
-                            📅 {formatMailingDateTime(recipient.scheduled_at)}
-                          </span>
-                        ) : round.active ? (
-                          <form action={markMailingSent}>
-                            <input type="hidden" name="id" value={recipient.id} />
-                            <button type="submit" className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-zinc-500 ring-1 ring-black/10">
-                              Versand eintragen
-                            </button>
-                          </form>
-                        ) : (
-                          <span className="text-xs text-zinc-400">nicht versendet</span>
-                        )}
+                      <td className="px-4 py-2.5">
+                        <div className="flex min-w-[112px] items-center gap-1">
+                          <ActivityEmoji recipient={recipient} field="opened_at" active={Boolean(recipient.opened_at)} emoji="👁️" label="Geöffnet" action={updateMailingTracking} />
+                          <ActivityEmoji recipient={recipient} field="clicked_at" active={Boolean(recipient.clicked_at)} emoji="🔗" label="Geklickt" action={updateMailingTracking} />
+                          <ActivityEmoji recipient={recipient} field="unsubscribed_at" active={Boolean(recipient.unsubscribed_at)} emoji="🚫" label="Abgemeldet" action={updateMailingTracking} />
+                          <ActivityEmoji recipient={recipient} field="bounced_at" active={Boolean(recipient.bounced_at)} emoji="⚠️" label="Bounce" action={updateMailingTracking} />
+                        </div>
                       </td>
-                      <td className="px-5 py-4">
-                        <form action={updateMailingRecipient} className="flex min-w-[330px] gap-2">
+                      <td className="px-4 py-2.5">
+                        <form action={updateMailingRecipient} className="flex min-w-[300px] gap-2">
                           <input type="hidden" name="id" value={recipient.id} />
                           <select
                             name="reaction"
                             defaultValue={recipient.reaction || ""}
-                            disabled={!round.active}
                             className="h-10 rounded-xl bg-[#fbf7ef] px-3 text-xs font-bold outline-none"
                           >
                             <option value="">Keine Reaktion</option>
@@ -2452,41 +2602,62 @@ function MailingPanel({
                           <input
                             name="notes"
                             defaultValue={recipient.notes || ""}
-                            disabled={!round.active}
                             placeholder="Notiz …"
                             className="h-10 min-w-0 flex-1 rounded-xl bg-[#fbf7ef] px-3 text-xs font-semibold outline-none"
                           />
-                          {round.active && (
-                            <button type="submit" className="h-10 rounded-full bg-zinc-950 px-4 text-xs font-black text-white">
-                              Speichern
-                            </button>
-                          )}
+                          <button
+                            type="submit"
+                            className="h-9 min-w-[96px] rounded-full bg-[#fbf7ef] px-3 text-[11px] font-black text-zinc-600 ring-1 ring-black/5 transition hover:bg-zinc-100 hover:text-zinc-950"
+                          >
+                            ✓ Speichern
+                          </button>
                         </form>
                       </td>
-                      <td className="px-5 py-4 text-right">
+                      <td className="px-4 py-2.5 text-right">
                         {recipient.show_id ? (
                           <Link
                             href={`/admin/shows/${recipient.show_id}`}
-                            className="inline-flex rounded-full bg-lime-100 px-3 py-1.5 text-xs font-black text-zinc-700"
+                            className="inline-flex rounded-full bg-lime-100 px-2.5 py-1.5 text-[11px] font-black text-zinc-700"
                           >
                             🎉 Show
                           </Link>
+                        ) : recipient.acquisition_id ? (
+                          <span
+                            title="Aus diesem Mailing-Empfänger wurde bereits ein Akquise-Vorgang angelegt."
+                            className="inline-flex rounded-full bg-lime-100 px-2.5 py-1.5 text-[11px] font-black text-zinc-700"
+                          >
+                            🎯 Akquise
+                          </span>
+                        ) : isSent ? (
+                          <form action={createAcquisitionFromMailing}>
+                            <input type="hidden" name="recipient_id" value={recipient.id} />
+                            <button
+                              type="submit"
+                              title="Als echten Akquise-Vorgang weiterführen"
+                              className="h-9 min-w-[96px] rounded-full bg-lime-100 px-3 text-[11px] font-black text-zinc-700 ring-1 ring-lime-200/70 transition hover:bg-lime-200 hover:text-zinc-950"
+                            >
+                              → Akquise
+                            </button>
+                          </form>
                         ) : round.active ? (
                           <form action={deleteMailingRecipient}>
                             <input type="hidden" name="id" value={recipient.id} />
-                            <button type="submit" className="rounded-full px-3 py-1.5 text-xs font-black text-zinc-400 transition hover:bg-red-50 hover:text-red-600">
-                              Entfernen
+                            <button
+                              type="submit"
+                              title="Empfänger entfernen"
+                              className="rounded-full px-2 py-1.5 text-xs font-black text-zinc-300 transition hover:bg-red-50 hover:text-red-600"
+                            >
+                              ×
                             </button>
                           </form>
-                        ) : (
-                          <span className="text-xs text-zinc-300">—</span>
-                        )}
+                        ) : null}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         ) : (
           <div className="px-6 py-12 text-center">
@@ -2499,6 +2670,29 @@ function MailingPanel({
         )}
       </section>
     </div>
+  );
+}
+
+
+function ActivityEmoji({
+  recipient, field, active, emoji, label, action,
+}: {
+  recipient: MailingRecipient;
+  field: "opened_at" | "clicked_at" | "unsubscribed_at" | "bounced_at";
+  active: boolean;
+  emoji: string;
+  label: string;
+  action: (formData: FormData) => Promise<void>;
+}) {
+  return (
+    <form action={action} className="leading-none">
+      <input type="hidden" name="id" value={recipient.id} />
+      <input type="hidden" name="field" value={field} />
+      <input type="hidden" name="active" value={active ? "false" : "true"} />
+      <button type="submit" title={`${label}${active ? " – klicken zum Entfernen" : " – klicken zum Setzen"}`} aria-label={`${label}${active ? " entfernen" : " setzen"}`} className={["inline-flex h-7 w-7 items-center justify-center rounded-md text-[15px] transition", active ? "opacity-100 hover:bg-black/5" : "opacity-[0.30] grayscale hover:bg-black/5 hover:opacity-55"].join(" ")}>
+        {emoji}
+      </button>
+    </form>
   );
 }
 
