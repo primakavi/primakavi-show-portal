@@ -85,12 +85,14 @@ export async function POST(request: NextRequest) {
         ""
     ).trim();
 
-    const klicktippContactId = String(
-      body.contact_id ||
-        body.subscriber_id ||
-        body.klicktipp_contact_id ||
-        ""
-    ).trim();
+const klicktippContactId = String(
+  body.id ||
+    body.external_user_id ||
+    body.contact_id ||
+    body.subscriber_id ||
+    body.klicktipp_contact_id ||
+    ""
+).trim();
 
     if (!email) {
       console.warn(
