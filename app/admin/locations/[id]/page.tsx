@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 import LocationClient from "./LocationClient";
@@ -8,10 +8,17 @@ export default async function LocationPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ imported?: string }>;
+  searchParams: Promise<{ imported?: string; returnTo?: string }>;
 }) {
   const { id } = await params;
-  const { imported } = await searchParams;
+  const { imported, returnTo } = await searchParams;
+
+  const safeReturnTo =
+    returnTo &&
+    returnTo.startsWith("/admin/locations") &&
+    !returnTo.startsWith("/admin/locations/")
+      ? returnTo
+      : "/admin/locations";
 
   // ------------------------------------------------------------
   // LOCATION
@@ -763,6 +770,100 @@ export default async function LocationPage({
   }
 
   // ------------------------------------------------------------
+  // LOCATION LÖSCHEN
+  // Nur möglich, wenn keine Shows, Akquise oder Mailings
+  // mit dieser Location verknüpft sind.
+  // ------------------------------------------------------------
+
+  async function deleteLocation() {
+    "use server";
+
+    const [
+      { count: showCount, error: showCountError },
+      { count: acquisitionCount, error: acquisitionCountError },
+      { count: mailingCount, error: mailingCountError },
+    ] = await Promise.all([
+      supabaseAdmin
+        .schema("booking")
+        .from("shows")
+        .select("id", { count: "exact", head: true })
+        .eq("venue_id", id),
+
+      supabaseAdmin
+        .from("acquisition")
+        .select("id", { count: "exact", head: true })
+        .eq("venue_id", id),
+
+      supabaseAdmin
+        .from("mailing_recipients")
+        .select("id", { count: "exact", head: true })
+        .eq("venue_id", id),
+    ]);
+
+    if (showCountError || acquisitionCountError || mailingCountError) {
+      return {
+        success: false,
+        message:
+          showCountError?.message ||
+          acquisitionCountError?.message ||
+          mailingCountError?.message ||
+          "Verknüpfungen der Location konnten nicht geprüft werden.",
+      };
+    }
+
+    const blockers: string[] = [];
+
+    if ((showCount || 0) > 0) {
+      blockers.push(
+        `${showCount} ${showCount === 1 ? "Show" : "Shows"}`
+      );
+    }
+
+    if ((acquisitionCount || 0) > 0) {
+      blockers.push(
+        `${acquisitionCount} ${
+          acquisitionCount === 1
+            ? "Akquise-Vorgang"
+            : "Akquise-Vorgänge"
+        }`
+      );
+    }
+
+    if ((mailingCount || 0) > 0) {
+      blockers.push(
+        `${mailingCount} ${
+          mailingCount === 1 ? "Mailing" : "Mailings"
+        }`
+      );
+    }
+
+    if (blockers.length > 0) {
+      return {
+        success: false,
+        message:
+          `Location kann nicht gelöscht werden. Verknüpft: ${blockers.join(
+            " · "
+          )}.`,
+      };
+    }
+
+    const { error: deleteError } = await supabaseAdmin
+      .from("venues")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      return {
+        success: false,
+        message: `Location konnte nicht gelöscht werden: ${deleteError.message}`,
+      };
+    }
+
+    revalidatePath("/admin/locations");
+    redirect("/admin/locations");
+  }
+
+  // ------------------------------------------------------------
   // LOCATION SPEICHERN
   // ------------------------------------------------------------
 
@@ -861,6 +962,8 @@ export default async function LocationPage({
       deleteAcquisition={deleteAcquisition}
       removeAcquisitionRound={removeAcquisitionRound}
       saveLocation={saveLocation}
+      deleteLocation={deleteLocation}
+      returnTo={safeReturnTo}
       importedFromDiscover={imported === "1"}
     />
   );

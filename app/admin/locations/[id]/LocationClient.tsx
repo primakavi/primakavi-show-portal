@@ -141,7 +141,8 @@ type SaveResult = {
 
 const RELATIONSHIP_OPTIONS = [
   "",
-  "⚪ Neu",
+  "⚪ Zu prüfen",
+  "🔵 Neu",
   "🟠 Kontakt",
   "🟢 Bestandskunde",
   "🔴 Nicht relevant",
@@ -182,6 +183,8 @@ export default function LocationClient({
   deleteAcquisition,
   removeAcquisitionRound,
   saveLocation,
+  deleteLocation,
+  returnTo = "/admin/locations",
   isNew = false,
   importedFromDiscover = false,
 }: {
@@ -199,6 +202,8 @@ export default function LocationClient({
   deleteAcquisition?: (formData: FormData) => Promise<ActionResult>;
   removeAcquisitionRound?: (formData: FormData) => Promise<ActionResult>;
   saveLocation: (formData: FormData) => Promise<SaveResult>;
+  deleteLocation?: () => Promise<SaveResult>;
+  returnTo?: string;
   isNew?: boolean;
   importedFromDiscover?: boolean;
 }) {
@@ -218,6 +223,9 @@ export default function LocationClient({
   const [showImportSuccess, setShowImportSuccess] = useState(
     importedFromDiscover
   );
+  const [isDeletingLocation, setIsDeletingLocation] = useState(false);
+  const [deleteLocationMessage, setDeleteLocationMessage] =
+    useState<string | null>(null);
 
   function startAcquisitionFromImport() {
     setShowNewAcquisitionForm(true);
@@ -306,7 +314,7 @@ export default function LocationClient({
         <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <Link
-              href="/admin/locations"
+              href={returnTo}
               className="text-sm font-bold text-zinc-400 transition hover:text-zinc-950"
             >
               ← Locations
@@ -1643,6 +1651,71 @@ export default function LocationClient({
 
             </div>
           </Card>
+
+          {/* LOCATION LÖSCHEN */}
+
+          {!isNew && deleteLocation && (
+            <section className="rounded-[1.7rem] border border-red-200 bg-red-50 p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-black text-red-800">
+                    Location löschen
+                  </p>
+                  <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-red-700/70">
+                    Nur für versehentlich oder doppelt angelegte Locations.
+                    Locations mit Shows, Akquise-Vorgängen oder Mailings werden
+                    nicht gelöscht.
+                  </p>
+
+                  {deleteLocationMessage && (
+                    <p className="mt-3 text-sm font-black text-red-800">
+                      ⚠️ {deleteLocationMessage}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isDeletingLocation}
+                  onClick={async () => {
+                    const confirmed = window.confirm(
+                      `Location „${venue.name}“ wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`
+                    );
+
+                    if (!confirmed) return;
+
+                    setDeleteLocationMessage(null);
+                    setIsDeletingLocation(true);
+
+                    try {
+                      const result = await deleteLocation();
+
+                      if (!result.success) {
+                        setDeleteLocationMessage(result.message);
+                      }
+                    } catch (error) {
+                      // Ein erfolgreicher redirect() der Server Action wird von
+                      // Next.js intern als Redirect behandelt. Nur echte Fehler
+                      // sollen hier als Meldung erscheinen.
+                      if (
+                        error instanceof Error &&
+                        !error.message.includes("NEXT_REDIRECT")
+                      ) {
+                        setDeleteLocationMessage(error.message);
+                      }
+                    } finally {
+                      setIsDeletingLocation(false);
+                    }
+                  }}
+                  className="shrink-0 rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-black text-red-700 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-50"
+                >
+                  {isDeletingLocation
+                    ? "Löscht …"
+                    : "🗑 Location löschen"}
+                </button>
+              </div>
+            </section>
+          )}
 
           {/* SAVE BAR */}
 

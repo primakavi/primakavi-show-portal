@@ -158,7 +158,7 @@ export default async function AcquisitionDetailPage({
       error: activityAcquisitionError,
     } = await supabaseAdmin
       .from("acquisition")
-      .select("archived_at")
+      .select("archived_at, venue_id")
       .eq("id", acquisitionId)
       .single();
 
@@ -256,11 +256,53 @@ export default async function AcquisitionDetailPage({
       throw new Error(updateError.message);
     }
 
+    // ----------------------------------------------------------
+    // LOCATION-STATUS AUTOMATISCH MITZIEHEN
+    // Nur ein echter Kontakt macht aus "Neu" → "Kontakt".
+    // Andere Beziehungsstatus bleiben unangetastet.
+    // ----------------------------------------------------------
+
+    const isRealContact = [
+      "Kontakt",
+      "Rückmeldung",
+      "Absage",
+      "Buchung",
+    ].includes(activityType);
+
+    if (
+      isRealContact &&
+      activityAcquisition.venue_id
+    ) {
+      const { error: venueStatusError } =
+        await supabaseAdmin
+          .from("venues")
+          .update({
+            relationship_status: "🟠 Kontakt",
+          })
+          .eq("id", activityAcquisition.venue_id)
+          .eq("relationship_status", "🔵 Neu");
+
+      if (venueStatusError) {
+        console.error(
+          "Location-Status konnte nicht automatisch aktualisiert werden:",
+          venueStatusError
+        );
+      }
+    }
+
     revalidatePath(
       `/admin/acquisition/${acquisitionId}`
     );
 
     revalidatePath("/admin/acquisition");
+
+    if (activityAcquisition.venue_id) {
+      revalidatePath(
+        `/admin/locations/${activityAcquisition.venue_id}`
+      );
+    }
+
+    revalidatePath("/admin/locations");
 
     redirect(
       `/admin/acquisition/${acquisitionId}?saved=activity`

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import {
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type Venue = {
   id: string;
@@ -72,28 +73,105 @@ export default function LocationsClient({
   venues: Venue[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [search, setSearch] =
-    useState("");
+    useState(() => searchParams.get("q") || "");
 
   const [
     relationshipFilter,
     setRelationshipFilter,
-  ] = useState("alle");
+  ] = useState(() => searchParams.get("relationship") || "alle");
 
   const [stateFilter, setStateFilter] =
-    useState("alle");
+    useState(() => searchParams.get("state") || "alle");
+
+  const [missingCoordinatesOnly, setMissingCoordinatesOnly] =
+    useState(() => searchParams.get("missingCoordinates") === "1");
+
+  const [isGeocoding, setIsGeocoding] =
+    useState(false);
+
+  const [geocodeMessage, setGeocodeMessage] =
+    useState<string | null>(null);
 
   const [page, setPage] =
-    useState(1);
+    useState(() => {
+      const value = Number(searchParams.get("page") || "1");
+      return Number.isFinite(value) && value > 0 ? value : 1;
+    });
 
   const [sortKey, setSortKey] =
-    useState<SortKey>("name");
+    useState<SortKey>(() => {
+      const value = searchParams.get("sort");
+      return ["name", "city", "contact", "relationship", "capacity"].includes(
+        value || ""
+      )
+        ? (value as SortKey)
+        : "name";
+    });
 
   const [
     sortDirection,
     setSortDirection,
-  ] = useState<SortDirection>("asc");
+  ] = useState<SortDirection>(() =>
+    searchParams.get("direction") === "desc" ? "desc" : "asc"
+  );
+
+  // Aktuelle Listenansicht in der URL halten.
+  // Dadurch bleiben Filter, Sortierung und Seite beim Zurückkehren erhalten.
+  useEffect(() => {
+    const params = new URLSearchParams();
+
+    if (search.trim()) params.set("q", search.trim());
+    if (relationshipFilter !== "alle") {
+      params.set("relationship", relationshipFilter);
+    }
+    if (stateFilter !== "alle") params.set("state", stateFilter);
+    if (missingCoordinatesOnly) params.set("missingCoordinates", "1");
+    if (page > 1) params.set("page", String(page));
+    if (sortKey !== "name") params.set("sort", sortKey);
+    if (sortDirection !== "asc") params.set("direction", sortDirection);
+
+    const query = params.toString();
+    router.replace(query ? `/admin/locations?${query}` : "/admin/locations", {
+      scroll: false,
+    });
+  }, [
+    search,
+    relationshipFilter,
+    stateFilter,
+    missingCoordinatesOnly,
+    page,
+    sortKey,
+    sortDirection,
+    router,
+  ]);
+
+  function currentLocationsUrl() {
+    const params = new URLSearchParams();
+
+    if (search.trim()) params.set("q", search.trim());
+    if (relationshipFilter !== "alle") {
+      params.set("relationship", relationshipFilter);
+    }
+    if (stateFilter !== "alle") params.set("state", stateFilter);
+    if (missingCoordinatesOnly) params.set("missingCoordinates", "1");
+    if (page > 1) params.set("page", String(page));
+    if (sortKey !== "name") params.set("sort", sortKey);
+    if (sortDirection !== "asc") params.set("direction", sortDirection);
+
+    const query = params.toString();
+    return query ? `/admin/locations?${query}` : "/admin/locations";
+  }
+
+  function openLocation(venueId: string) {
+    const returnTo = currentLocationsUrl();
+
+    router.push(
+      `/admin/locations/${venueId}?returnTo=${encodeURIComponent(returnTo)}`
+    );
+  }
 
   // ------------------------------------------------------------
   // FILTEROPTIONEN
@@ -161,6 +239,14 @@ export default function LocationsClient({
             return false;
           }
 
+          if (
+            missingCoordinatesOnly &&
+            venue.lat !== null &&
+            venue.lng !== null
+          ) {
+            return false;
+          }
+
           if (!needle) return true;
 
           const haystack = [
@@ -191,6 +277,7 @@ export default function LocationsClient({
       search,
       relationshipFilter,
       stateFilter,
+      missingCoordinatesOnly,
     ]);
 
   // ------------------------------------------------------------
@@ -380,6 +467,7 @@ export default function LocationsClient({
     setSearch("");
     setRelationshipFilter("alle");
     setStateFilter("alle");
+    setMissingCoordinatesOnly(false);
     setPage(1);
   }
 
@@ -422,6 +510,49 @@ export default function LocationsClient({
     setPage(1);
   }
 
+  function showAllLocations() {
+    resetFilters();
+  }
+
+  function showMissingCoordinates() {
+    setMissingCoordinatesOnly(true);
+    setPage(1);
+  }
+
+  async function geocodeMissingVenues() {
+    if (isGeocoding) return;
+
+    setIsGeocoding(true);
+    setGeocodeMessage(null);
+
+    try {
+      const response = await fetch("/api/geocode-venues", {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Geocoding fehlgeschlagen.");
+      }
+
+      setGeocodeMessage(
+        `${data.updated || 0} Koordinaten ergänzt` +
+          (data.failed ? ` · ${data.failed} nicht gefunden` : "")
+      );
+
+      router.refresh();
+    } catch (error) {
+      setGeocodeMessage(
+        error instanceof Error
+          ? error.message
+          : "Geocoding fehlgeschlagen."
+      );
+    } finally {
+      setIsGeocoding(false);
+    }
+  }
+
   function exportPdf() {
     window.print();
   }
@@ -457,6 +588,12 @@ export default function LocationsClient({
         );
       }
 
+      if (missingCoordinatesOnly) {
+        parts.push(
+          "Koordinaten: fehlen"
+        );
+      }
+
       return parts.length
         ? parts.join(" · ")
         : "Keine Filter gesetzt";
@@ -464,6 +601,7 @@ export default function LocationsClient({
       search,
       relationshipFilter,
       stateFilter,
+      missingCoordinatesOnly,
     ]);
 
   // ------------------------------------------------------------
@@ -498,7 +636,12 @@ export default function LocationsClient({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-
+<Link
+  href="/admin/locations/import"
+  className="inline-flex items-center justify-center rounded-full bg-white px-5 py-3 text-sm font-black text-zinc-600 shadow-sm ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:text-zinc-950"
+>
+  📥 Importieren
+</Link>
             <button
               type="button"
               onClick={exportPdf}
@@ -528,6 +671,7 @@ export default function LocationsClient({
             icon="🏛️"
             value={venues.length}
             label="Locations"
+            onClick={showAllLocations}
           />
 
           <StatCard
@@ -548,9 +692,40 @@ export default function LocationsClient({
               missingCoordinates
             }
             label="ohne Koordinaten"
+            onClick={showMissingCoordinates}
+            active={missingCoordinatesOnly}
           />
 
         </section>
+
+        {missingCoordinatesOnly && missingCoordinates > 0 && (
+          <section className="flex flex-col gap-3 rounded-[1.4rem] bg-white px-5 py-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-black text-zinc-950">
+                📍 Fehlende Koordinaten
+              </p>
+              <p className="mt-1 text-xs font-semibold text-zinc-400">
+                Pro Klick werden bis zu 10 Locations mit vollständiger Anschrift geprüft.
+              </p>
+              {geocodeMessage && (
+                <p className="mt-2 text-xs font-bold text-zinc-600">
+                  {geocodeMessage}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={geocodeMissingVenues}
+              disabled={isGeocoding}
+              className="inline-flex h-11 shrink-0 items-center justify-center rounded-full bg-zinc-950 px-5 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-50"
+            >
+              {isGeocoding
+                ? "Koordinaten werden ermittelt …"
+                : "📍 10 Koordinaten ermitteln"}
+            </button>
+          </section>
+        )}
 
         {/* FILTER */}
 
@@ -650,7 +825,8 @@ export default function LocationsClient({
             relationshipFilter !==
               "alle" ||
             stateFilter !==
-              "alle") && (
+              "alle" ||
+            missingCoordinatesOnly) && (
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/5 px-1 pt-3">
 
               <span className="text-xs font-black text-zinc-600">
@@ -784,9 +960,7 @@ export default function LocationsClient({
                       <tr
                         key={venue.id}
                         onClick={() =>
-                          router.push(
-                            `/admin/locations/${venue.id}`
-                          )
+                          openLocation(venue.id)
                         }
                         className="cursor-pointer border-b border-black/5 transition last:border-0 hover:bg-[#f8f3e9]"
                       >
@@ -1344,34 +1518,62 @@ function StatCard({
   icon,
   value,
   label,
+  onClick,
+  active = false,
 }: {
   icon: string;
   value: number;
   label: string;
+  onClick?: () => void;
+  active?: boolean;
 }) {
-  return (
-    <div className="rounded-[1.4rem] bg-white px-5 py-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
+  const className = [
+    "w-full rounded-[1.4rem] bg-white px-5 py-4 text-left shadow-lg shadow-black/[0.03] ring-1 transition",
+    active
+      ? "ring-zinc-950"
+      : "ring-black/5",
+    onClick
+      ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-xl"
+      : "",
+  ].join(" ");
 
-      <div className="flex items-center gap-4">
+  const content = (
+    <div className="flex items-center gap-4">
 
-        <div className="text-3xl">
-          {icon}
-        </div>
+      <div className="text-3xl">
+        {icon}
+      </div>
 
-        <div>
+      <div>
 
-          <p className="text-2xl font-black leading-none">
-            {value}
-          </p>
+        <p className="text-2xl font-black leading-none">
+          {value}
+        </p>
 
-          <p className="mt-1 text-xs font-semibold text-zinc-400">
-            {label}
-          </p>
-
-        </div>
+        <p className="mt-1 text-xs font-semibold text-zinc-400">
+          {label}
+        </p>
 
       </div>
 
+    </div>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={className}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className}>
+      {content}
     </div>
   );
 }
