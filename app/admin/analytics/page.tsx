@@ -10,6 +10,10 @@ type ShowRow = {
   venue: string | null;
   city: string | null;
   internal_status: string | null;
+  accommodation_hotel_name: string | null;
+  accommodation_actual_cost: number | string | null;
+  promo_print_cost: number | string | null;
+  promo_shipping_cost: number | string | null;
 };
 
 type EconomicsRow = {
@@ -69,7 +73,7 @@ export default async function AnalyticsPage({
     supabaseAdmin
       .schema("booking")
       .from("shows")
-      .select("id,show_date,program,venue,city,internal_status")
+      .select("id,show_date,program,venue,city,internal_status,accommodation_hotel_name,accommodation_actual_cost,promo_print_cost,promo_shipping_cost")
       .gte("show_date", start)
       .lte("show_date", end)
       .order("show_date", { ascending: true }),
@@ -106,6 +110,7 @@ export default async function AnalyticsPage({
   const editingFixedCost = params.edit ? fixedCosts.find((item) => item.id === params.edit) || null : null;
 
   const showIds = new Set(shows.map((show) => show.id));
+  const showsById = new Map(shows.map((show) => [show.id, show]));
   const economicsRowsByShow = new Map(
     economics
       .filter((row) => showIds.has(row.show_id) && hasEconomicData(row))
@@ -114,12 +119,18 @@ export default async function AnalyticsPage({
 
   const economicsByShow = new Map(
     Array.from(economicsRowsByShow.entries()).map(([showId, row]) => {
-      const automaticTravelItems = travelCostItems(travelLegsByShow.get(showId) || []);
-      const manualCostItems = manualEconomicCostItems(row.cost_items, automaticTravelItems);
+      const automaticShowCostItems = automaticCostItems(
+        showsById.get(showId),
+        travelLegsByShow.get(showId) || []
+      );
+      const manualCostItems = manualEconomicCostItems(
+        row.cost_items,
+        automaticShowCostItems
+      );
 
       return [
         showId,
-        economicsValues(row, automaticTravelItems, manualCostItems),
+        economicsValues(row, automaticShowCostItems, manualCostItems),
       ];
     })
   );
@@ -181,10 +192,13 @@ export default async function AnalyticsPage({
   const showDetails = shows.map((show) => {
     const econ = economicsByShow.get(show.id);
     const rawEconomics = economicsRowsByShow.get(show.id);
-    const automaticTravelItems = travelCostItems(travelLegsByShow.get(show.id) || []);
+    const automaticShowCostItems = automaticCostItems(
+      show,
+      travelLegsByShow.get(show.id) || []
+    );
     const manualCostItems = manualEconomicCostItems(
       rawEconomics?.cost_items,
-      automaticTravelItems
+      automaticShowCostItems
     );
 
     return {
@@ -194,7 +208,7 @@ export default async function AnalyticsPage({
       costs: econ?.costs || 0,
       contribution: (econ?.revenue || 0) - (econ?.costs || 0),
       revenueItems: economicItems(rawEconomics?.revenue_items),
-      costItems: [...automaticTravelItems, ...manualCostItems],
+      costItems: [...automaticShowCostItems, ...manualCostItems],
     };
   });
 
@@ -204,6 +218,7 @@ export default async function AnalyticsPage({
     musician: "Musiker / Begleitung",
     tech: "Technik",
     catering: "Verpflegung",
+    promo: "Promo / Druck",
     shipping: "Versand / Porto",
     other: "Sonstige direkte Kosten",
   };
@@ -233,6 +248,10 @@ export default async function AnalyticsPage({
 
     if (/(essen|verpflegung|catering|meal|restaurant)/.test(value)) {
       return "Verpflegung";
+    }
+
+    if (/(druck|plakat|poster|flyer|promo)/.test(value)) {
+      return "Promo / Druck";
     }
 
     if (/(porto|versand|post)/.test(value)) {
@@ -1697,15 +1716,55 @@ function travelCostItems(legs: TravelLegRow[]) {
     );
 }
 
+function automaticCostItems(
+  show: ShowRow | undefined,
+  legs: TravelLegRow[]
+) {
+  const items = [...travelCostItems(legs)];
+
+  const hotelCost = economicsNumber(show?.accommodation_actual_cost);
+  if (hotelCost !== 0) {
+    const hotelName = String(show?.accommodation_hotel_name || "").trim();
+    items.push({
+      category: "accommodation",
+      label: hotelName ? `Hotel · ${hotelName}` : "Hotel / Unterkunft",
+      amount: hotelCost,
+      source: "show_akte",
+    });
+  }
+
+  const printCost = economicsNumber(show?.promo_print_cost);
+  if (printCost !== 0) {
+    items.push({
+      category: "promo",
+      label: "Promo / Druck",
+      amount: printCost,
+      source: "show_akte",
+    });
+  }
+
+  const shippingCost = economicsNumber(show?.promo_shipping_cost);
+  if (shippingCost !== 0) {
+    items.push({
+      category: "shipping",
+      label: "Versand / Porto",
+      amount: shippingCost,
+      source: "show_akte",
+    });
+  }
+
+  return items;
+}
+
 function manualEconomicCostItems(
   value: unknown,
-  automaticTravelItems: { label: string; amount: number; category?: string }[]
+  automaticShowCostItems: { label: string; amount: number; category?: string }[]
 ) {
   const items = economicItems(value);
 
-  if (!automaticTravelItems.length) return items;
+  if (!automaticShowCostItems.length) return items;
 
-  const unusedAutomatic = automaticTravelItems.map((item) => ({
+  const unusedAutomatic = automaticShowCostItems.map((item) => ({
     ...item,
     used: false,
   }));
@@ -1713,31 +1772,53 @@ function manualEconomicCostItems(
   return items.filter((item) => {
     const category =
       item.category || inferLegacyVariableCostKey(item.label);
-
-    // Nur historische Reisekosten können Dubletten zu den
-    // Reisestrecken aus der Show-Akte sein.
-    if (category !== "travel") return true;
-
     const itemLabel = normalizeVariableCostLabel(item.label);
 
     const matchIndex = unusedAutomatic.findIndex((automatic) => {
       if (automatic.used) return false;
 
-      const sameAmount =
-        Math.abs(automatic.amount - item.amount) < 0.01;
+      const automaticCategory =
+        automatic.category || inferLegacyVariableCostKey(automatic.label);
 
-      if (!sameAmount) return false;
+      if (automaticCategory !== category) return false;
+      if (Math.abs(automatic.amount - item.amount) >= 0.01) return false;
 
       const automaticLabel = normalizeVariableCostLabel(automatic.label);
 
-      const sameDirection =
-        (itemLabel.includes("hinfahrt") &&
-          automaticLabel.includes("hinfahrt")) ||
-        ((itemLabel.includes("rückfahrt") ||
-          itemLabel.includes("rueckfahrt")) &&
-          automaticLabel.includes("rückfahrt"));
+      if (category === "travel") {
+        const sameDirection =
+          (itemLabel.includes("hinfahrt") &&
+            automaticLabel.includes("hinfahrt")) ||
+          ((itemLabel.includes("rückfahrt") ||
+            itemLabel.includes("rueckfahrt")) &&
+            (automaticLabel.includes("rückfahrt") ||
+              automaticLabel.includes("rueckfahrt")));
 
-      return sameDirection || itemLabel === automaticLabel;
+        return sameDirection || itemLabel === automaticLabel;
+      }
+
+      if (category === "accommodation") {
+        return (
+          itemLabel === automaticLabel ||
+          /(hotel|übernacht|uebernacht|unterkunft|pension)/.test(itemLabel)
+        );
+      }
+
+      if (category === "promo") {
+        return (
+          itemLabel === automaticLabel ||
+          /(druck|plakat|poster|flyer|promo)/.test(itemLabel)
+        );
+      }
+
+      if (category === "shipping") {
+        return (
+          itemLabel === automaticLabel ||
+          /(porto|versand|post)/.test(itemLabel)
+        );
+      }
+
+      return itemLabel === automaticLabel;
     });
 
     if (matchIndex === -1) return true;
@@ -1781,6 +1862,10 @@ function inferLegacyVariableCostKey(label: string) {
     return "catering";
   }
 
+  if (/(druck|plakat|poster|flyer|promo)/.test(value)) {
+    return "promo";
+  }
+
   if (/(porto|versand|post)/.test(value)) {
     return "shipping";
   }
@@ -1790,7 +1875,7 @@ function inferLegacyVariableCostKey(label: string) {
 
 function economicsValues(
   economics: EconomicsRow,
-  automaticTravelItems: { amount: number }[] = [],
+  automaticShowCostItems: { amount: number; category?: string }[] = [],
   manualCostItems?: { amount: number }[]
 ) {
   const revenueItems = Array.isArray(economics.revenue_items)
@@ -1808,8 +1893,15 @@ function economicsValues(
       ? revenueFromItems
       : economicsNumber(economics.revenue_total);
 
-  const automaticTravelCosts = sum(
-    automaticTravelItems.map((item) => item.amount)
+  const automaticShowCosts = sum(
+    automaticShowCostItems.map((item) => item.amount)
+  );
+
+  const hasAutomaticTravel = automaticShowCostItems.some(
+    (item) => item.category === "travel"
+  );
+  const hasAutomaticHotel = automaticShowCostItems.some(
+    (item) => item.category === "accommodation"
   );
 
   const cleanManualCostItems =
@@ -1821,27 +1913,28 @@ function economicsValues(
   );
 
   // Neue Logik:
-  // Reisekosten aus der Show-Akte + manuelle Zusatzkosten.
+  // Automatische Kosten aus der Show-Akte + manuelle Zusatzkosten.
   //
-  // Falls eine alte Show noch gar keine cost_items hat, bleiben die
-  // historischen Legacy-Felder zusätzlich als Fallback erhalten.
+  // Für alte Shows ohne cost_items bleiben die historischen Felder
+  // als Fallback erhalten. Hotel/Reise werden dabei nur ergänzt,
+  // wenn die Show-Akte dafür noch keinen automatischen Wert liefert.
   const hasManualItems = cleanManualCostItems.length > 0;
 
-  const legacyNonTravelCosts =
-    economicsNumber(economics.cost_hotel) +
+  const legacyNonAutomaticCosts =
+    (hasAutomaticHotel ? 0 : economicsNumber(economics.cost_hotel)) +
     economicsNumber(economics.cost_fee) +
     economicsNumber(economics.cost_misc);
 
   const legacyTravelFallback =
-    automaticTravelCosts === 0
-      ? economicsNumber(economics.cost_travel)
-      : 0;
+    hasAutomaticTravel
+      ? 0
+      : economicsNumber(economics.cost_travel);
 
   const costs = hasManualItems
-    ? automaticTravelCosts + manualCosts
-    : automaticTravelCosts +
+    ? automaticShowCosts + manualCosts
+    : automaticShowCosts +
       legacyTravelFallback +
-      legacyNonTravelCosts;
+      legacyNonAutomaticCosts;
 
   return { revenue, costs };
 }
