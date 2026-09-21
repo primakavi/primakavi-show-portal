@@ -2,10 +2,21 @@
 
 import { useMemo, useState } from "react";
 import { formatDate } from "@/app/lib/show-workflow";
+import BookingCalendar from "@/components/BookingCalendar";
 
 type FilterKey = "alle" | "kommend" | "vergangen" | "fertig";
 
-export default function MarkusClient({ shows }: { shows: any[] }) {
+export default function MarkusClient({
+  shows,
+  absences,
+  createAbsenceAction,
+  deleteAbsenceAction,
+}: {
+  shows: any[];
+  absences: any[];
+  createAbsenceAction: (formData: FormData) => void | Promise<void>;
+  deleteAbsenceAction: (formData: FormData) => void | Promise<void>;
+}) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("kommend");
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
@@ -55,7 +66,7 @@ const isCancelled = show.internal_status === "abgesagt";
   filter === "alle" ||
   (filter === "kommend" && isFuture && !isCancelled) ||
   (filter === "vergangen" && (isPast || isCancelled)) ||
-(filter === "fertig" && isCancelled)
+(filter === "fertig" && isDone)
       return matchesSearch && matchesFilter;
     });
   }, [shows, query, filter, today]);
@@ -123,11 +134,32 @@ const isCancelled = show.internal_status === "abgesagt";
 
             <div className="mt-7 flex flex-wrap gap-2">
               <HeroBadge>🎹 Piano-Fokus</HeroBadge>
-              <HeroBadge>Read only</HeroBadge>
               <HeroBadge>Kommende Shows</HeroBadge>
             </div>
           </div>
         </header>
+
+        <section className="rounded-[2rem] bg-white/90 p-5 shadow-sm ring-1 ring-black/5">
+          <div className="mb-4">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
+              Planung
+            </p>
+            <h2 className="mt-1 text-2xl font-black text-zinc-950">
+              🎹 Meine Shows & Abwesenheiten
+            </h2>
+            <p className="mt-1 text-sm font-semibold text-zinc-500">
+              Abwesenheiten kannst du hier selbst eintragen und wieder löschen.
+            </p>
+          </div>
+
+          <BookingCalendar
+            shows={shows}
+            absences={absences}
+            canEditMarkus
+            createAction={createAbsenceAction}
+            deleteAction={deleteAbsenceAction}
+          />
+        </section>
 
         <section className="rounded-[2rem] bg-white/90 p-5 shadow-sm ring-1 ring-black/5">
           <div className="flex flex-col gap-4">
@@ -165,7 +197,7 @@ const isCancelled = show.internal_status === "abgesagt";
   active={filter === "fertig"}
   onClick={() => setFilter("fertig")}
 >
-  ❌ Abgesagt
+  ✓ Fertig
 </FilterButton>
               </div>
 

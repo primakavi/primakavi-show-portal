@@ -2,6 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/app/lib/supabase/server";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
+import BookingCalendar from "@/components/BookingCalendar";
 
 export default async function AdminDashboardPage() {
   const supabase = await createClient();
@@ -23,12 +24,28 @@ export default async function AdminDashboardPage() {
   }
 
   const isAdmin = role === "admin";
+
+  const sonjaCalendarToken = process.env.SONJA_CALENDAR_TOKEN;
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000");
+
+  const sonjaCalendarUrl =
+    isAdmin && sonjaCalendarToken
+      ? `${appUrl.replace(/^https?:\/\//, "webcal://").replace(/\/$/, "")}/api/calendar/sonja/${sonjaCalendarToken}`
+      : undefined;
+
   const today = dateOnly(new Date());
 
   const [
     { data: showsRaw, error: showsError },
     { data: acquisitionRaw, error: acquisitionError },
     { data: venuesRaw, error: venuesError },
+    { data: absencesRaw, error: absencesError },
   ] = await Promise.all([
     supabaseAdmin
       .schema("booking")
@@ -42,7 +59,8 @@ export default async function AdminDashboardPage() {
         show_date,
         internal_status,
         billing_status,
-        follow_up_date
+        follow_up_date,
+        markus_included
       `)
       .order("show_date", { ascending: true, nullsFirst: false }),
 
@@ -69,15 +87,23 @@ export default async function AdminDashboardPage() {
         city
       `)
       .order("name", { ascending: true }),
+
+    supabaseAdmin
+      .schema("booking")
+      .from("artist_unavailability")
+      .select("id,person,start_date,end_date,reason,note")
+      .order("start_date", { ascending: true }),
   ]);
 
   if (showsError) throw new Error(showsError.message);
   if (acquisitionError) throw new Error(acquisitionError.message);
   if (venuesError) throw new Error(venuesError.message);
+  if (absencesError) throw new Error(absencesError.message);
 
   const shows = showsRaw || [];
   const acquisition = acquisitionRaw || [];
   const venues = venuesRaw || [];
+  const absences = absencesRaw || [];
 
   const venueMap = new Map(
     venues.map((venue: any) => [venue.id, venue])
@@ -245,84 +271,22 @@ export default async function AdminDashboardPage() {
           )}
         </DashboardCard>
 
-        {isAdmin ? (
-          <DashboardCard
-            title="Location-Zuordnung"
-            icon="🔗"
-            badge="🔒 Nur für Admins"
-          >
-            <p className="mb-4 text-sm font-semibold text-zinc-600">
-              {unlinkedShows.length === 0
-                ? `Alle ${shows.length} Shows sind mit einer Location verknüpft.`
-                : `${unlinkedShows.length} ${
-                    unlinkedShows.length === 1 ? "Show" : "Shows"
-                  } ohne Location-Verknüpfung`}
-            </p>
-
-            {unlinkedShows.length ? (
-              <div className="space-y-3">
-                {unlinkedShows.slice(0, 6).map((show: any) => (
-                  <form
-                    key={show.id}
-                    action={linkShowToVenueAction}
-                    className="grid gap-3 rounded-[1.3rem] bg-[#fbf7ef] p-4 ring-1 ring-black/5 lg:grid-cols-[1fr_1.25fr_auto] lg:items-center"
-                  >
-                    <input type="hidden" name="show_id" value={show.id} />
-
-                    <div>
-                      <p className="text-xs font-black text-zinc-400">
-                        {formatDate(show.show_date)}
-                      </p>
-                      <p className="mt-1 font-black text-zinc-950">
-                        {show.venue || "Location offen"}
-                      </p>
-                      {show.city && (
-                        <p className="mt-0.5 text-xs font-bold text-zinc-500">
-                          {show.city}
-                        </p>
-                      )}
-                    </div>
-
-                    <select
-                      name="venue_id"
-                      required
-                      defaultValue=""
-                      className="h-12 min-w-0 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-bold text-zinc-700 outline-none transition focus:border-lime-400 focus:ring-4 focus:ring-lime-100"
-                    >
-                      <option value="" disabled>
-                        Location auswählen …
-                      </option>
-
-                      {venues.map((venue: any) => (
-                        <option key={venue.id} value={venue.id}>
-                          {venue.name}
-                          {venue.city ? ` · ${venue.city}` : ""}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="submit"
-                      className="h-12 rounded-xl bg-zinc-950 px-5 text-sm font-black text-white transition hover:-translate-y-0.5"
-                    >
-                      Verknüpfen
-                    </button>
-                  </form>
-                ))}
-
-                <p className="pt-1 text-xs font-semibold leading-5 text-zinc-400">
-                  💡 Beim Verknüpfen wird nur die interne <code>venue_id</code> gesetzt.
-                  Sonjas eingetragene Showdaten bleiben unverändert.
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-2xl bg-emerald-50 px-5 py-4 text-sm font-black text-emerald-700">
-                ✓ Alles sauber verknüpft.
-              </div>
-            )}
-          </DashboardCard>
-        ) : null}
+        <DashboardCard
+          title="Kalender"
+          icon="📅"
+        >
+          <BookingCalendar
+            shows={shows}
+            absences={absences}
+            canEditSonja={isAdmin}
+            canEditMarkus={isAdmin}
+            createAction={isAdmin ? createAbsenceAction : undefined}
+            deleteAction={isAdmin ? deleteAbsenceAction : undefined}
+            sonjaCalendarUrl={sonjaCalendarUrl}
+          />
+        </DashboardCard>
       </section>
+
 
       <section className={`grid gap-6 ${isAdmin ? "xl:grid-cols-2" : ""}`}>
         <DashboardCard
@@ -411,8 +375,138 @@ export default async function AdminDashboardPage() {
           )}
         </DashboardCard>
       </section>
+
+      {isAdmin && unlinkedShows.length > 0 && (
+        <details className="mt-2 rounded-[1.3rem] bg-white px-5 py-4 shadow-sm ring-1 ring-black/5">
+          <summary className="cursor-pointer text-sm font-black text-zinc-700">
+            🔗 Datenpflege · {unlinkedShows.length} {unlinkedShows.length === 1 ? "Show" : "Shows"} ohne Location
+          </summary>
+          <div className="mt-4 space-y-3">
+            {unlinkedShows.slice(0, 6).map((show: any) => (
+              <form
+                key={show.id}
+                action={linkShowToVenueAction}
+                className="grid gap-3 rounded-xl bg-[#fbf7ef] p-3 md:grid-cols-[1fr_1.2fr_auto] md:items-center"
+              >
+                <input type="hidden" name="show_id" value={show.id} />
+                <div>
+                  <p className="text-xs font-black text-zinc-800">
+                    {formatDate(show.show_date)} · {show.venue || "Location offen"}
+                  </p>
+                  {show.city && <p className="text-[10px] font-bold text-zinc-400">{show.city}</p>}
+                </div>
+                <select
+                  name="venue_id"
+                  required
+                  defaultValue=""
+                  className="h-10 rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-700"
+                >
+                  <option value="" disabled>Location auswählen …</option>
+                  {venues.map((venue: any) => (
+                    <option key={venue.id} value={venue.id}>
+                      {venue.name}{venue.city ? ` · ${venue.city}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="h-10 rounded-xl bg-zinc-950 px-4 text-xs font-black text-white"
+                >
+                  Verknüpfen
+                </button>
+              </form>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
+}
+
+async function createAbsenceAction(formData: FormData) {
+  "use server";
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user?.id) throw new Error("Nicht angemeldet.");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profile?.role !== "admin") {
+    throw new Error("Keine Berechtigung.");
+  }
+
+  const person = String(formData.get("person") || "");
+  const startDate = String(formData.get("start_date") || "");
+  const endDate = String(formData.get("end_date") || "");
+  const reason = String(formData.get("reason") || "").trim() || null;
+  const note = String(formData.get("note") || "").trim() || null;
+
+  if (!["sonja", "markus"].includes(person)) {
+    throw new Error("Ungültige Person.");
+  }
+  if (!startDate || !endDate || endDate < startDate) {
+    throw new Error("Bitte einen gültigen Zeitraum wählen.");
+  }
+
+  const { error } = await supabaseAdmin
+    .schema("booking")
+    .from("artist_unavailability")
+    .insert({
+      person,
+      start_date: startDate,
+      end_date: endDate,
+      reason,
+      note,
+      created_by: user.id,
+    });
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/markus");
+}
+
+async function deleteAbsenceAction(formData: FormData) {
+  "use server";
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user?.id) throw new Error("Nicht angemeldet.");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profile?.role !== "admin") {
+    throw new Error("Keine Berechtigung.");
+  }
+
+  const absenceId = String(formData.get("absence_id") || "");
+  if (!absenceId) return;
+
+  const { error } = await supabaseAdmin
+    .schema("booking")
+    .from("artist_unavailability")
+    .delete()
+    .eq("id", absenceId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/markus");
 }
 
 async function linkShowToVenueAction(formData: FormData) {
