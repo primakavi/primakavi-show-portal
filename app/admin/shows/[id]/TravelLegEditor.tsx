@@ -39,7 +39,14 @@ export default function TravelLegEditor({
 }: {
   initialLegs: Leg[];
 }) {
-  const [legs, setLegs] = useState<Leg[]>(initialLegs);
+  const [legs, setLegs] = useState<Leg[]>(
+    () =>
+      initialLegs.map((leg) => ({
+        ...leg,
+        departure_at: toDateTimeLocalValue(leg.departure_at),
+        arrival_at: toDateTimeLocalValue(leg.arrival_at),
+      }))
+  );
 
   // Gespeicherte Etappen starten geschlossen.
   // Neue Etappen bekommen keinen id-Wert und starten offen.
@@ -866,6 +873,19 @@ function choiceLabel(
     default:
       return "";
   }
+}
+
+function toDateTimeLocalValue(value?: string | null) {
+  if (!value) return "";
+
+  // datetime-local accepts YYYY-MM-DDTHH:mm (optionally seconds),
+  // but not a timezone suffix such as Z or +00:00.
+  // Keep the stored wall-clock date/time; do not timezone-shift it.
+  const match = String(value).match(
+    /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/
+  );
+
+  return match ? `${match[1]}T${match[2]}` : "";
 }
 
 function formatDateTime(

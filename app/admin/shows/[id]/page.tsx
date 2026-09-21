@@ -20,6 +20,7 @@ import BackstageEditor from "./BackstageEditor";
 import AccommodationEditor from "./AccommodationEditor";
 import PaymentEditor from "./PaymentEditor";
 import TravelLegEditor from "./TravelLegEditor";
+import TravelPlanningEditor from "./TravelPlanningEditor";
 import Rating from "./Rating";
 import CheckTile from "./CheckTile";
 import FeeEditor from "./FeeEditor";
@@ -467,7 +468,9 @@ export default async function ShowAkteV2Page({
                     </span>
                   )}
 
-                  {!['gespielt', 'abgeschlossen', 'abgesagt'].includes(String(show.internal_status || '')) && effectiveShowFollowUpDate && (
+                  {!isPastShowDate(show.show_date) &&
+                    !['gespielt', 'abgeschlossen', 'abgesagt'].includes(String(show.internal_status || '')) &&
+                    effectiveShowFollowUpDate && (
                     <details className="group relative">
                       <summary
                         className={`list-none cursor-pointer rounded-full px-3 py-2 text-xs font-black ring-1 [&::-webkit-details-marker]:hidden ${productionPhase.className}`}
@@ -521,9 +524,10 @@ export default async function ShowAkteV2Page({
                     </details>
                   )}
 
-                  {["gespielt", "abgeschlossen"].includes(
-                    String(show.internal_status || "")
-                  ) && (
+                  {(isPastShowDate(show.show_date) ||
+                    ["gespielt", "abgeschlossen"].includes(
+                      String(show.internal_status || "")
+                    )) && (
                     <>
                       {showFullyComplete ? (
                         <span className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">
@@ -1126,12 +1130,15 @@ export default async function ShowAkteV2Page({
               title="Anreise & Unterkunft"
               state={sectionStates.travel}
               preview={[
-                travelPreview(travelLegs) || "Anreise noch offen",
+                travelPreview(travelLegs, show.travel_planning_status) || "Anreise noch offen",
                 accommodationPreview(show),
               ]}
             >
               <SmallHeading>Anreise</SmallHeading>
-              <TravelLegEditor initialLegs={travelLegs} />
+              <TravelPlanningEditor
+                initialStatus={show.travel_planning_status || "open"}
+                initialLegs={travelLegs}
+              />
 
               <SmallHeading>Unterkunft</SmallHeading>
               <AccommodationEditor show={show} />
@@ -1484,22 +1491,58 @@ export default async function ShowAkteV2Page({
             </div>
 
             <div className="mt-5">
-              <h3 className="text-sm font-black text-zinc-900">
-                Vor der Show
-              </h3>
+              {isPastShowDate(show.show_date) ||
+              ["gespielt", "abgeschlossen"].includes(
+                String(show.internal_status || "")
+              ) ? (
+                <details className="group rounded-xl bg-[#fbf7ef] ring-1 ring-black/5">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                    <div>
+                      <p className="text-sm font-black text-zinc-900">
+                        ✓ Vorbereitung abgeschlossen
+                      </p>
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-400">
+                        Frühere Arbeitsliste anzeigen
+                      </p>
+                    </div>
+                    <span className="text-sm font-black text-zinc-400 transition group-open:rotate-180">
+                      ⌄
+                    </span>
+                  </summary>
 
-              <div className="mt-3 grid gap-x-10 gap-y-2 md:grid-cols-2">
-                {CHECKLIST_BEFORE.map((label) => (
-                  <ChecklistRow
-                    key={label}
-                    label={label}
-                    checked={checklist.state[label] === true}
-                    manual={
-                      allowManualChecklist || MANUAL_CHECKLIST.has(label)
-                    }
-                  />
-                ))}
-              </div>
+                  <div className="border-t border-black/5 px-4 py-4">
+                    <div className="grid gap-x-10 gap-y-2 md:grid-cols-2">
+                      {CHECKLIST_BEFORE.map((label) => (
+                        <ChecklistRow
+                          key={label}
+                          label={label}
+                          checked={checklist.state[label] === true}
+                          manual={false}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              ) : (
+                <>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    Vor der Show
+                  </h3>
+
+                  <div className="mt-3 grid gap-x-10 gap-y-2 md:grid-cols-2">
+                    {CHECKLIST_BEFORE.map((label) => (
+                      <ChecklistRow
+                        key={label}
+                        label={label}
+                        checked={checklist.state[label] === true}
+                        manual={
+                          allowManualChecklist || MANUAL_CHECKLIST.has(label)
+                        }
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="mt-5 border-t border-black/5 pt-5">
@@ -1805,6 +1848,7 @@ async function saveShowV2Action(formData: FormData) {
       internal_status,
       follow_up_date,
       show_follow_up_date,
+      travel_planning_status,
       checklist
     `)
     .eq("id", id)
@@ -2075,6 +2119,11 @@ async function saveShowV2Action(formData: FormData) {
     backstage_notes: nullable(
       formData.get("backstage_notes")
     ),
+
+    travel_planning_status:
+      nullable(formData.get("travel_planning_status")) ||
+      current.travel_planning_status ||
+      "open",
 
     accommodation_status: nullable(
       formData.get("accommodation_status")
@@ -2492,9 +2541,11 @@ function getSectionStates({
   const state = (ready: boolean): AreaState =>
     ready ? "done" : "open";
 
-  const phaseOver = ["gespielt", "abgeschlossen", "abgesagt"].includes(
-    String(show.internal_status || "")
-  );
+  const phaseOver =
+    isPastShowDate(show.show_date) ||
+    ["gespielt", "abgeschlossen", "abgesagt"].includes(
+      String(show.internal_status || "")
+    );
 
   const promoMaterialsKnown =
     ["Ja", "Nein"].includes(String(show.flyers_needed || "")) &&
@@ -2526,8 +2577,12 @@ function getSectionStates({
       String(show.catering_structured_status || "")
     );
 
+  const travelPlanningReady =
+    String(show.travel_planning_status || "") === "not_required" ||
+    travelReady(travelLegs);
+
   const travelReadyState =
-    travelReady(travelLegs) &&
+    travelPlanningReady &&
     ["organizer", "buyout", "not_required"].includes(
       String(show.accommodation_status || "")
     );
@@ -2565,7 +2620,9 @@ function getSectionStates({
     travel: state(phaseOver || travelReadyState),
 
     schedule: state(
-      phaseOver || Boolean(
+      phaseOver ||
+      Boolean(show.checklist?.["Ablauf geklärt"]) ||
+      Boolean(
         show.arrival_time &&
           show.setup_time &&
           show.soundcheck_time &&
@@ -2674,7 +2731,9 @@ function getSmartTasks({
   files: any[]; travelLegs: any[]; economics: any; ticketsSoldEntered: boolean; showIsDeferred: boolean; finalCheck: any;
 }) {
   const tasks: { label: string; href: string; manual: boolean; followUpDate?: string | null }[] = [];
-  const played = ["gespielt", "abgeschlossen"].includes(String(show.internal_status || ""));
+  const played =
+    isPastShowDate(show.show_date) ||
+    ["gespielt", "abgeschlossen"].includes(String(show.internal_status || ""));
   const cancelled = String(show.internal_status || "") === "abgesagt";
   const promoNeeded = String(show.flyers_needed || "") === "Ja" || String(show.posters_needed || "") === "Ja";
   const hasContractFile = files.some((file: any) => /vertrag|contract/i.test(String(file.file_name || file.file_type || "")));
@@ -2690,7 +2749,6 @@ function getSmartTasks({
     else if (!show.homepage_ticket_linked) push("Ticketlink auf Homepage verlinkt", "#promo-ticketing");
     if (sectionStates.tech !== "done") push("Technik geklärt", "#technik");
     if (!checklistState["Ablauf geklärt"]) push("Ablauf geklärt", "#ablauf", true);
-    if (!checklistState["Zugang zur Spielstätte geklärt"]) push("Zugang zur Spielstätte geklärt", "#ablauf", true);
     if (sectionStates.travel !== "done") push("Anreise / Unterkunft geklärt", "#anreise");
     if (sectionStates.backstage !== "done") push("Backstage / Catering geklärt", "#backstage");
     if (!show.cast_confirmed) push("Besetzung vollständig", "#besetzung");
@@ -2756,19 +2814,41 @@ function getProductionPhase({
   effectiveShowFollowUpDate?: string | null;
   finalCheck: { visible: boolean; ready: boolean };
 }) {
-  const terminal = ["gespielt", "abgeschlossen", "abgesagt"].includes(
-    String(show.internal_status || "")
-  );
+  const status = String(show.internal_status || "");
 
-  if (terminal) {
+  if (status === "abgesagt") {
+    return {
+      key: "cancelled",
+      label: "❌ Abgesagt",
+      description: "Diese Show wurde abgesagt.",
+      className: "bg-zinc-100 text-zinc-600 ring-zinc-200",
+    };
+  }
+
+  if (status === "abgeschlossen") {
     return {
       key: "finished",
-      label:
-        String(show.internal_status || "") === "abgesagt"
-          ? "❌ Abgesagt"
-          : "✓ Show abgeschlossen",
-      description: "Die Produktionsphase dieser Show ist abgeschlossen.",
+      label: "✓ Abgeschlossen",
+      description: "Die Show und ihre Nachbereitung sind abgeschlossen.",
       className: "bg-zinc-100 text-zinc-600 ring-zinc-200",
+    };
+  }
+
+  if (isPastShowDate(show.show_date) || status === "gespielt") {
+    return {
+      key: "post-show",
+      label: "🧾 Nachbereitung",
+      description: "Die Show ist gespielt. Jetzt zählen Abrechnung, Kosten, Ticketzahlen und Learnings.",
+      className: "bg-violet-50 text-violet-700 ring-violet-100",
+    };
+  }
+
+  if (isShowToday(show.show_date)) {
+    return {
+      key: "showday",
+      label: "🎭 Showtag",
+      description: "Heute ist Showtag.",
+      className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
     };
   }
 
@@ -2822,7 +2902,9 @@ function getProductionPhase({
 }
 
 function buildFinalCheck({ show, sectionStates, checklistState }: { show: any; sectionStates: Record<string, AreaState>; checklistState: Record<string, boolean> }) {
-  const playedOrCancelled = ["gespielt", "abgeschlossen", "abgesagt"].includes(String(show.internal_status || ""));
+  const playedOrCancelled =
+    isPastShowDate(show.show_date) ||
+    ["gespielt", "abgeschlossen", "abgesagt"].includes(String(show.internal_status || ""));
   const visible = !playedOrCancelled && isShowWithinDays(show.show_date, 7);
   const promoNeeded = String(show.flyers_needed || "") === "Ja" || String(show.posters_needed || "") === "Ja";
   const hasMarkus = Boolean(show.markus_included);
@@ -2853,6 +2935,19 @@ function defaultShowFollowUpDate(showDate?: string | null) {
   const d = new Date(Date.UTC(year, month - 1, day));
   d.setUTCMonth(d.getUTCMonth() - 3);
   return d.toISOString().slice(0, 10);
+}
+
+function todayDateKey() {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+}
+
+function isPastShowDate(date?: string | null) {
+  return Boolean(date && String(date) < todayDateKey());
+}
+
+function isShowToday(date?: string | null) {
+  return Boolean(date && String(date) === todayDateKey());
 }
 
 function isFutureDate(date?: string | null) {
@@ -2903,11 +2998,13 @@ function postPreview({
   occupancy,
 }: any) {
   const payment =
-    invoiceAmount > 0 && paid >= invoiceAmount
-      ? "vollständig bezahlt"
-      : paid > 0
-        ? `${formatEuro(invoiceAmount - paid)} offen`
-        : "Zahlung offen";
+    show.invoice_sent && invoiceAmount > 0
+      ? paid >= invoiceAmount
+        ? "vollständig bezahlt"
+        : paid > 0
+          ? `${formatEuro(invoiceAmount - paid)} offen`
+          : "Zahlung offen"
+      : null;
 
   return [
     show.invoice_sent
@@ -2928,7 +3025,7 @@ function postPreview({
           show.play_again
         )}`
       : "Bewertung offen",
-  ];
+  ].filter(Boolean);
 }
 
 /* ============================================================
@@ -3555,7 +3652,11 @@ function accommodationPreview(show: any) {
   return "Unterkunft offen";
 }
 
-function travelPreview(legs: any[]) {
+function travelPreview(legs: any[], planningStatus?: string | null) {
+  if (String(planningStatus || "") === "not_required") {
+    return "Keine Anreise erforderlich";
+  }
+
   if (!legs.length) return "";
 
   const outbound = legs

@@ -149,7 +149,7 @@ export default async function AdminDashboardPage() {
 
   const upcomingShows = shows
     .filter((show: any) => show.show_date && show.show_date >= today)
-    .slice(0, 5);
+    .slice(0, 6);
 
   const attentionItems = buildAttentionItems(shows, activeAcquisition, today).slice(0, 5);
 
@@ -223,46 +223,57 @@ export default async function AdminDashboardPage() {
         >
           {upcomingShows.length ? (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[620px] text-left text-sm">
+              <table className="w-full text-left text-sm">
                 <thead className="border-b border-black/5 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
                   <tr>
                     <th className="pb-3 pr-4">Datum</th>
                     <th className="pb-3 pr-4">Location</th>
                     <th className="pb-3 pr-4">Programm</th>
-                    <th className="pb-3">Status</th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-zinc-100">
                   {upcomingShows.map((show: any) => (
-                    <tr key={show.id}>
-                      <td className="py-3 pr-4 font-bold text-zinc-700">
+                  <tr
+                    key={show.id}
+                    className="group transition hover:bg-[#fbf7ef]"
+                  >
+                    <td className="p-0 font-bold text-zinc-700">
+                      <Link
+                        href={`/admin/shows/${show.id}`}
+                        className="block h-full py-3 pr-4"
+                      >
                         {formatDate(show.show_date)}
-                      </td>
+                      </Link>
+                    </td>
 
-                      <td className="py-3 pr-4">
-                        <Link
-                          href={`/admin/shows/${show.id}`}
-                          className="font-black text-zinc-950 hover:underline"
-                        >
+                    <td className="p-0">
+                      <Link
+                        href={`/admin/shows/${show.id}`}
+                        className="block h-full py-3 pr-4"
+                      >
+                        <p className="font-black text-zinc-950">
                           {show.venue || "Location offen"}
-                        </Link>
+                        </p>
                         {show.city && (
                           <p className="mt-0.5 text-xs font-semibold text-zinc-400">
                             {show.city}
                           </p>
                         )}
-                      </td>
+                      </Link>
+                    </td>
 
-                      <td className="py-3 pr-4 font-semibold text-zinc-700">
+                    <td className="p-0 font-semibold text-zinc-700">
+                      <Link
+                        href={`/admin/shows/${show.id}`}
+                        className="block h-full py-3 pr-4"
+                      >
                         {show.program || "–"}
-                      </td>
+                      </Link>
+                    </td>
 
-                      <td className="py-3">
-                        <ShowStatusBadge status={show.internal_status} />
-                      </td>
-                    </tr>
-                  ))}
+                  </tr>
+                ))}
                 </tbody>
               </table>
             </div>
@@ -818,24 +829,6 @@ function buildAttentionItems(
   }[] = [];
 
   for (const show of shows) {
-    if (
-      show.follow_up_date &&
-      show.follow_up_date <= today &&
-      !["fertig", "abgeschlossen", "archiv", "archiviert", "abgesagt"].includes(
-        String(show.internal_status || "").toLowerCase()
-      )
-    ) {
-      items.push({
-        label: `Wiedervorlage: ${show.venue || "Show"}`,
-        meta:
-          show.follow_up_date < today
-            ? "überfällig"
-            : "heute",
-        href: `/admin/shows/${show.id}`,
-        critical: show.follow_up_date < today,
-      });
-    }
-
     if (
       show.show_date &&
       show.show_date < today &&

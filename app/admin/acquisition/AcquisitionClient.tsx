@@ -772,7 +772,6 @@ export default function AcquisitionClient({
                 }}
                 className="h-11 min-w-0 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-bold text-zinc-800 outline-none transition focus:border-zinc-400 sm:min-w-[310px]"
               >
-                <option value="all">Alle aktiven Runden</option>
                 {activeRounds.map((round) => (
                   <option key={round.id} value={round.id}>
                     {round.type === "mailing" ? "📨 " : "🎯 "}
@@ -808,7 +807,9 @@ export default function AcquisitionClient({
                   : `${roundScopedAcquisition.length} Vorgänge in „${selectedRoundData.name}“.`
                 : selectedRound === "legacy"
                 ? `${roundScopedAcquisition.length} ältere Vorgänge ohne Rundenzuordnung.`
-                : `${activeRounds.length} aktive Runden im Überblick.`}
+                : activeRounds.length
+                ? "Bitte Akquise-Runde auswählen."
+                : "Keine aktive Akquise-Runde vorhanden."}
             </p>
           </div>
 

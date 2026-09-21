@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 
 type CalendarShow = {
   id: string;
@@ -48,6 +48,21 @@ export default function BookingCalendar({
   );
   const [showForm, setShowForm] = useState(false);
   const [selectedAbsence, setSelectedAbsence] = useState<Absence | null>(null);
+
+  const [createResult, createFormAction] = useActionState(
+    async (_previousState: number, formData: FormData) => {
+      if (!createAction) return _previousState;
+      await createAction(formData);
+      return _previousState + 1;
+    },
+    0
+  );
+
+  useEffect(() => {
+    if (createResult > 0) {
+      setShowForm(false);
+    }
+  }, [createResult]);
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -168,7 +183,7 @@ export default function BookingCalendar({
               </div>
               <button type="button" onClick={() => setShowForm(false)} className="grid h-8 w-8 place-items-center rounded-full bg-zinc-100 text-sm font-black text-zinc-500" aria-label="Schließen">×</button>
             </div>
-            <form action={createAction} className="grid gap-3 sm:grid-cols-2">
+            <form action={createFormAction} className="grid gap-3 sm:grid-cols-2">
               <label className="text-[10px] font-black uppercase tracking-[0.1em] text-zinc-500">Person
                 <select name="person" required defaultValue={canEditSonja ? "sonja" : "markus"} className="mt-1 h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm font-bold text-zinc-900">
                   {canEditSonja && <option value="sonja">Sonja</option>}
