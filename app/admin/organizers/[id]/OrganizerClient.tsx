@@ -73,6 +73,7 @@ type OrganizerShow = {
 
 type AcquisitionRecord = {
   id: string;
+  round_id: string | null;
   program: string | null;
   status: string | null;
   priority: string | null;
@@ -96,6 +97,7 @@ type AcquisitionActivity = {
   channel: string | null;
   note: string | null;
   response: string | null;
+  subject: string | null;
   next_step: string | null;
   follow_up_at: string | null;
   status_after: string | null;
@@ -108,6 +110,8 @@ type AcquisitionRound = {
   id: string;
   name: string;
   active: boolean;
+  type?: string | null;
+  archived_at?: string | null;
   created_at: string | null;
 };
 
@@ -173,8 +177,8 @@ export default function OrganizerClient({
   unlinkVenue,
 
   createAcquisition,
-  createAcquisitionRound,
   addActivity,
+  updateActivity,
   deleteActivity,
   deleteAcquisition,
 
@@ -219,9 +223,9 @@ export default function OrganizerClient({
 
   createAcquisition: ServerAction;
 
-  createAcquisitionRound: ServerAction;
-
   addActivity: ServerAction;
+
+  updateActivity: ServerAction;
 
   deleteActivity: ServerAction;
 
@@ -296,12 +300,6 @@ export default function OrganizerClient({
     useState(false);
 
   const [
-    showNewRoundForm,
-    setShowNewRoundForm,
-  ] =
-    useState(false);
-
-  const [
     actionMessage,
     setActionMessage,
   ] =
@@ -320,10 +318,14 @@ export default function OrganizerClient({
     );
 
   const [
-    selectedRoundName,
-    setSelectedRoundName,
-  ] =
-    useState("");
+    selectedRoundId,
+    setSelectedRoundId,
+  ] = useState("");
+
+  const [
+    newRoundName,
+    setNewRoundName,
+  ] = useState("");
 
   const [
     showShowMenu,
@@ -1200,55 +1202,33 @@ export default function OrganizerClient({
             icon="🎯"
             description="Aktueller Stand und bisherige Akquise-Vorgänge dieses Veranstalters."
             action={
-              activeAcquisition ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {activeAcquisition && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowActivityForm(!showActivityForm);
+                      setShowNewAcquisitionForm(false);
+                      setActionMessage(null);
+                    }}
+                    className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2.5 text-sm font-black text-zinc-800 ring-1 ring-black/10 transition hover:-translate-y-0.5"
+                  >
+                    {showActivityForm ? "Schließen" : "+ Eintrag"}
+                  </button>
+                )}
 
                 <button
                   type="button"
                   onClick={() => {
-                    setShowActivityForm(
-                      !showActivityForm
-                    );
-
-                    setShowNewAcquisitionForm(
-                      false
-                    );
-
-                    setActionMessage(
-                      null
-                    );
+                    setShowNewAcquisitionForm(!showNewAcquisitionForm);
+                    setShowActivityForm(false);
+                    setActionMessage(null);
                   }}
                   className="inline-flex items-center justify-center rounded-full bg-lime-300 px-4 py-2.5 text-sm font-black text-zinc-950 transition hover:-translate-y-0.5"
                 >
-                  {showActivityForm
-                    ? "Schließen"
-                    : "+ Eintrag"}
+                  {showNewAcquisitionForm ? "Schließen" : "+ Neue Akquise"}
                 </button>
-
-              ) : (
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewAcquisitionForm(
-                      !showNewAcquisitionForm
-                    );
-
-                    setShowActivityForm(
-                      false
-                    );
-
-                    setActionMessage(
-                      null
-                    );
-                  }}
-                  className="inline-flex items-center justify-center rounded-full bg-lime-300 px-4 py-2.5 text-sm font-black text-zinc-950 transition hover:-translate-y-0.5"
-                >
-                  {showNewAcquisitionForm
-                    ? "Schließen"
-                    : "+ Neue Akquise"}
-                </button>
-
-              )
+              </div>
             }
           >
 
@@ -1258,234 +1238,209 @@ export default function OrganizerClient({
               </div>
             )}
 
-            {!activeAcquisition &&
-              showNewAcquisitionForm && (
+            {showNewAcquisitionForm && (
+              <div className="mb-6 overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-sm">
+                <div className="flex flex-col gap-2 border-b border-black/5 bg-[#fbf7ef] px-6 py-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
+                      Neue Akquise
+                    </p>
+                    <h3 className="mt-1 text-lg font-black text-zinc-950">
+                      Runde und ersten Kontakt zusammen erfassen
+                    </h3>
+                    <p className="mt-1 text-sm font-semibold text-zinc-500">
+                      Eine bestehende Runde wählen oder direkt hier eine neue anlegen.
+                    </p>
+                  </div>
+                  <div className="rounded-full bg-white px-3 py-2 text-xs font-bold text-zinc-500 ring-1 ring-black/5">
+                    1× speichern · alles erledigt
+                  </div>
+                </div>
 
-              <div className="mb-5 rounded-2xl bg-[#fbf7ef] p-5 ring-1 ring-black/5">
+                <div
+                  id="organizer-new-acquisition-form"
+                  className="grid gap-6 p-6"
+                >
+                  <section className="grid gap-4 rounded-2xl bg-[#fbf7ef] p-5 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
+                        1 · Akquise-Runde
+                      </p>
+                    </div>
 
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
-                  Neue Akquise
-                </p>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
-
-                  <select
-                    value={
-                      selectedRoundName
-                    }
-                    onChange={(
-                      event
-                    ) =>
-                      setSelectedRoundName(
-                        event.target.value
-                      )
-                    }
-                    className="h-12 rounded-xl bg-white px-4 text-sm font-bold ring-1 ring-black/5"
-                  >
-
-                    <option value="">
-                      Akquise-Runde auswählen
-                    </option>
-
-                    {rounds.map(
-                      (
-                        round
-                      ) => (
-                        <option
-                          key={
-                            round.id
+                    <label className="block min-w-0 md:col-span-2">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
+                        Akquise-Runde
+                      </span>
+                      <select
+                        name="round_id"
+                        value={selectedRoundId}
+                        onChange={(event) => {
+                          setSelectedRoundId(event.target.value);
+                          if (event.target.value !== "__new") {
+                            setNewRoundName("");
                           }
-                          value={
-                            round.name
-                          }
-                        >
-                          {round.name}
-                        </option>
-                      )
+                        }}
+                        className="h-12 w-full rounded-xl bg-white px-4 text-sm font-bold text-zinc-800 outline-none ring-1 ring-black/10 transition focus:ring-2 focus:ring-zinc-300"
+                      >
+                        <option value="">Bitte auswählen</option>
+                        {rounds.map((round) => (
+                          <option key={round.id} value={round.id}>
+                            {round.name}
+                          </option>
+                        ))}
+                        <option value="__new">＋ Neue Akquise-Runde anlegen</option>
+                      </select>
+                    </label>
+
+                    {selectedRoundId === "__new" && (
+                      <label className="block min-w-0 md:col-span-2">
+                        <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
+                          Name der neuen Runde
+                        </span>
+                        <input
+                          name="new_round_name"
+                          value={newRoundName}
+                          onChange={(event) => setNewRoundName(event.target.value)}
+                          placeholder="z. B. TV-Shows"
+                          className="h-12 w-full rounded-xl bg-white px-4 text-sm font-semibold text-zinc-800 outline-none ring-1 ring-black/10 transition focus:ring-2 focus:ring-zinc-300"
+                        />
+                        <span className="mt-2 block text-xs font-semibold leading-5 text-zinc-400">
+                          Gibt es eine archivierte Akquise-Runde mit genau diesem Namen,
+                          wird sie wieder aktiviert. Alte Vorgänge bleiben archiviert.
+                        </span>
+                      </label>
                     )}
+                  </section>
 
-                    <option value="__new">
-                      ＋ Neue Akquise-Runde hinzufügen
-                    </option>
+                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="md:col-span-2 xl:col-span-4">
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
+                        2 · Kontakt
+                      </p>
+                    </div>
 
-                  </select>
+                    <SelectField
+                      label="Typ"
+                      name="activity_type"
+                      defaultValue="Kontakt"
+                      options={["Kontakt", "Rückmeldung", "WVL", "Absage", "Buchung", "Notiz"]}
+                    />
+
+                    <Field
+                      label="Datum"
+                      name="activity_date"
+                      type="date"
+                      defaultValue={todayDate()}
+                    />
+
+                    <SelectField
+                      label="Kanal"
+                      name="channel"
+                      options={["", "E-Mail", "Telefon", "Instagram", "LinkedIn", "Persönlich"]}
+                    />
+
+                    <Field
+                      label="Wiedervorlage"
+                      name="follow_up_at"
+                      type="date"
+                    />
+
+                    <Field
+                      label="Betreff"
+                      name="subject"
+                      placeholder="z. B. Quatsch Comedy Club – Bewerbung Jan.–März 2027"
+                      className="md:col-span-2 xl:col-span-4"
+                    />
+
+                    <Textarea
+                      label="Notiz / Rückmeldung"
+                      name="note"
+                      className="md:col-span-2 xl:col-span-4"
+                    />
+                  </section>
+
+                  <section className="grid gap-4 rounded-2xl bg-[#fbf7ef] p-5 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
+                        3 · Wie geht es weiter?
+                      </p>
+                    </div>
+
+                    <Field
+                      label="Nächster Schritt"
+                      name="next_step"
+                    />
+
+                    <SelectField
+                      label="Status danach"
+                      name="status_after"
+                      options={["", "Neu", "Vorqualifiziert", "Insta", "Kontaktiert", "Follow-up 1", "Follow-up 2", "Interesse", "Verhandlung", "Gebucht 🎉", "Abgesagt"]}
+                    />
+                  </section>
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 border-t border-black/5 bg-[#fbf7ef] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewAcquisitionForm(false);
+                      setSelectedRoundId("");
+                      setNewRoundName("");
+                      setActionMessage(null);
+                    }}
+                    className="rounded-full bg-white px-5 py-2.5 text-sm font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50"
+                  >
+                    Abbrechen
+                  </button>
 
                   <button
                     type="button"
                     disabled={
-                      !selectedRoundName ||
-                      selectedRoundName ===
-                        "__new"
+                      isPending ||
+                      !selectedRoundId ||
+                      (selectedRoundId === "__new" && !newRoundName.trim())
                     }
                     onClick={() => {
-                      const formData =
-                        new FormData();
-
-                      formData.set(
-                        "round_name",
-                        selectedRoundName
+                      const container = document.getElementById(
+                        "organizer-new-acquisition-form"
                       );
+                      if (!container) return;
 
-                      startTransition(
-                        async () => {
-                          const result =
-                            await createAcquisition(
-                              formData
-                            );
+                      const formData = new FormData();
+                      container
+                        .querySelectorAll<
+                          HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+                        >("input[name], select[name], textarea[name]")
+                        .forEach((field) =>
+                          formData.set(field.name, field.value)
+                        );
 
-                          setActionMessage(
-                            result.message
-                          );
+                      if (selectedRoundId === "__new") {
+                        formData.delete("round_id");
+                        formData.set("new_round_name", newRoundName.trim());
+                      } else {
+                        formData.set("round_id", selectedRoundId);
+                        formData.delete("new_round_name");
+                      }
 
-                          if (
-                            result.success
-                          ) {
-                            setShowNewAcquisitionForm(
-                              false
-                            );
-                          }
+                      startTransition(async () => {
+                        const result = await createAcquisition(formData);
+                        setActionMessage(result.message);
+
+                        if (result.success) {
+                          setShowNewAcquisitionForm(false);
+                          setSelectedRoundId("");
+                          setNewRoundName("");
                         }
-                      );
+                      });
                     }}
-                    className="h-12 rounded-full bg-zinc-950 px-5 text-sm font-black text-white disabled:opacity-30"
+                    className="rounded-full bg-lime-300 px-6 py-3 text-sm font-black text-zinc-950 transition hover:-translate-y-0.5 hover:bg-lime-200 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500 disabled:opacity-100"
                   >
-                    Akquise starten
+                    {isPending ? "Speichert …" : "Akquise speichern →"}
                   </button>
-
                 </div>
-
-                {selectedRoundName ===
-                  "__new" && (
-
-                  <div className="mt-4">
-
-                    {!showNewRoundForm ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowNewRoundForm(
-                            true
-                          )
-                        }
-                        className="text-sm font-black text-zinc-600"
-                      >
-                        + Neue Runde anlegen
-                      </button>
-                    ) : (
-
-                      <div className="flex gap-2">
-
-                        <input
-                          id="new-round-name"
-                          placeholder="Name der Akquise-Runde"
-                          className="h-12 flex-1 rounded-xl bg-white px-4 text-sm font-semibold ring-1 ring-black/5"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const input =
-                              document.getElementById(
-                                "new-round-name"
-                              ) as HTMLInputElement | null;
-
-                            if (
-                              !input
-                            ) {
-                              return;
-                            }
-
-                            const formData =
-                              new FormData();
-
-                            formData.set(
-                              "name",
-                              input.value
-                            );
-
-                            startTransition(
-                              async () => {
-                                const result =
-                                  await createAcquisitionRound(
-                                    formData
-                                  );
-
-                                setActionMessage(
-                                  result.message
-                                );
-
-                                if (
-                                  result.success &&
-                                  result.roundName
-                                ) {
-                                  const name =
-                                    result.roundName;
-
-                                  setRounds(
-                                    (
-                                      current
-                                    ) => {
-                                      if (
-                                        current.some(
-                                          (
-                                            item
-                                          ) =>
-                                            item.name ===
-                                            name
-                                        )
-                                      ) {
-                                        return current;
-                                      }
-
-                                      return [
-                                        ...current,
-                                        {
-                                          id:
-                                            name,
-                                          name,
-                                          active:
-                                            true,
-                                          created_at:
-                                            null,
-                                        },
-                                      ].sort(
-                                        (
-                                          a,
-                                          b
-                                        ) =>
-                                          a.name.localeCompare(
-                                            b.name,
-                                            "de"
-                                          )
-                                      );
-                                    }
-                                  );
-
-                                  setSelectedRoundName(
-                                    name
-                                  );
-
-                                  setShowNewRoundForm(
-                                    false
-                                  );
-                                }
-                              }
-                            );
-                          }}
-                          className="h-12 rounded-xl bg-lime-300 px-5 text-sm font-black text-zinc-950"
-                        >
-                          Hinzufügen
-                        </button>
-
-                      </div>
-
-                    )}
-
-                  </div>
-                )}
-
               </div>
-
             )}
 
             {activeAcquisition &&
@@ -1557,15 +1512,16 @@ export default function OrganizerClient({
                     type="date"
                   />
 
-                  <Textarea
-                    label="Was ist passiert?"
-                    name="note"
+                  <Field
+                    label="Betreff"
+                    name="subject"
+                    placeholder="Kurze Überschrift für den Verlauf"
                     className="md:col-span-2"
                   />
 
                   <Textarea
-                    label="Rückmeldung / Ergebnis"
-                    name="response"
+                    label="Notiz / Rückmeldung"
+                    name="note"
                     className="md:col-span-2"
                   />
 
@@ -1666,124 +1622,84 @@ export default function OrganizerClient({
 
             )}
 
-            {acquisition.length ===
-            0 ? (
-
+            {acquisition.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center">
-
                 <p className="text-sm font-black text-zinc-700">
                   Noch keine Akquise für diesen Veranstalter.
                 </p>
-
                 <p className="mt-1 text-sm font-semibold text-zinc-400">
                   Starte den ersten Vorgang über „+ Neue Akquise“.
                 </p>
-
               </div>
-
             ) : (
-
               <div className="space-y-5">
-
                 {activeAcquisition && (
-
                   <div>
-
                     <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
                       Aktuell
                     </p>
-
-                    <AcquisitionCard
-                      item={
-                        activeAcquisition
-                      }
-                      activities={
-                        acquisitionActivities.filter(
-                          (
-                            activity
-                          ) =>
-                            activity.acquisition_id ===
-                            activeAcquisition.id
-                        )
-                      }
-                      deleteActivity={
-                        deleteActivity
-                      }
-                      deleteAcquisition={
-                        deleteAcquisition
-                      }
-                      setActionMessage={
-                        setActionMessage
-                      }
-                    />
-
-                  </div>
-
-                )}
-
-                {acquisition.some(
-                  (item) =>
-                    item.id !==
-                    activeAcquisition?.id
-                ) && (
-
-                  <div>
-
-                    <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-                      Bisherige Vorgänge
-                    </p>
-
-                    <div className="space-y-3">
-
-                      {acquisition
-                        .filter(
-                          (
-                            item
-                          ) =>
-                            item.id !==
-                            activeAcquisition?.id
-                        )
-                        .map(
-                          (
-                            item
-                          ) => (
-                            <AcquisitionCard
-                              key={
-                                item.id
-                              }
-                              item={
-                                item
-                              }
-                              activities={
-                                acquisitionActivities.filter(
-                                  (
-                                    activity
-                                  ) =>
-                                    activity.acquisition_id ===
-                                    item.id
-                                )
-                              }
-                              deleteActivity={
-                                deleteActivity
-                              }
-                              deleteAcquisition={
-                                deleteAcquisition
-                              }
-                              setActionMessage={
-                                setActionMessage
-                              }
-                            />
-                          )
-                        )}
-
+                    <div className="rounded-2xl bg-[#fbf7ef] p-5 ring-1 ring-black/5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-lg font-black text-zinc-950">
+                              {activeAcquisition.program || "Programm offen"}
+                            </span>
+                            <AcquisitionStatus status={activeAcquisition.status} />
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-zinc-600">
+                            <span>
+                              📅 WVL{" "}
+                              <strong className="font-black">
+                                {formatDate(activeAcquisition.next_follow_up_at)}
+                              </strong>
+                            </span>
+                            <span>
+                              Letzter Kontakt{" "}
+                              <strong className="font-black">
+                                {formatDate(activeAcquisition.last_contact_at)}
+                              </strong>
+                            </span>
+                          </div>
+                          {activeAcquisition.next_step && (
+                            <p className="mt-3 text-sm font-semibold text-zinc-700">
+                              → {activeAcquisition.next_step}
+                            </p>
+                          )}
+                        </div>
+                        <Link
+                          href={`/admin/acquisition/${activeAcquisition.id}`}
+                          className="shrink-0 text-sm font-black text-zinc-500 transition hover:text-zinc-950"
+                        >
+                          Vorgang öffnen →
+                        </Link>
+                      </div>
                     </div>
-
                   </div>
-
                 )}
 
+                <div>
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
+                    {activeAcquisition ? "Vorgänge" : "Bisherige Vorgänge"}
+                  </p>
+                  <div className="space-y-2">
+                    {acquisition.map((item) => (
+                      <AcquisitionCard
+                        key={item.id}
+                        item={item}
+                        activities={acquisitionActivities.filter(
+                          (activity) => activity.acquisition_id === item.id
+                        )}
+                        isCurrent={activeAcquisition?.id === item.id}
+                        updateActivity={updateActivity}
+                        deleteActivity={deleteActivity}
+                        deleteAcquisition={deleteAcquisition}
+                        setActionMessage={setActionMessage}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
-
             )}
 
           </Card>
@@ -2951,267 +2867,235 @@ function NewVenueForm({
 function AcquisitionCard({
   item,
   activities,
+  isCurrent = false,
+  updateActivity,
   deleteActivity,
   deleteAcquisition,
   setActionMessage,
 }: {
   item: AcquisitionRecord;
   activities: AcquisitionActivity[];
+  isCurrent?: boolean;
+  updateActivity: ServerAction;
   deleteActivity: ServerAction;
   deleteAcquisition: ServerAction;
-  setActionMessage:
-    (
-      value:
-        | string
-        | null
-    ) => void;
+  setActionMessage: (value: string | null) => void;
 }) {
-  const [
-    open,
-    setOpen,
-  ] =
-    useState(false);
+  const [open, setOpen] = useState(false);
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
+  const [viewingActivityId, setViewingActivityId] = useState<string | null>(null);
 
   return (
-    <div className="rounded-2xl bg-[#fbf7ef] p-5 ring-1 ring-black/5">
-
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-
-        <div>
-
+    <section className="overflow-hidden rounded-2xl border border-black/10 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-[#fbf7ef]"
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-
-            <span className="text-lg font-black">
-              {item.program ||
-                "Programm offen"}
+            <span className="font-black text-zinc-950">
+              {item.program || "Programm offen"}
             </span>
-
-            <AcquisitionStatus
-              status={
-                item.status
-              }
-            />
-
+            <AcquisitionStatus status={item.status} />
+            {isCurrent && (
+              <span className="rounded-full bg-lime-200 px-2.5 py-1 text-xs font-black text-lime-900">
+                Aktuell
+              </span>
+            )}
             {item.archived_at && (
-              <span className="rounded-full bg-zinc-200 px-2.5 py-1 text-[10px] font-black text-zinc-600">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-black text-zinc-500">
                 Archiv
               </span>
             )}
-
           </div>
-
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-zinc-600">
-
-            <span>
-              📅 WVL{" "}
-              <strong>
-                {formatDate(
-                  item.next_follow_up_at
-                )}
-              </strong>
-            </span>
-
-            <span>
-              Letzter Kontakt{" "}
-              <strong>
-                {formatDate(
-                  item.last_contact_at
-                )}
-              </strong>
-            </span>
-
-          </div>
-
-          {item.next_step && (
-            <p className="mt-3 text-sm font-semibold text-zinc-700">
-              → {item.next_step}
-            </p>
-          )}
-
-          {item.response && (
-            <p className="mt-2 text-sm font-semibold text-zinc-500">
-              {item.response}
-            </p>
-          )}
-
+          <p className="mt-1 text-xs font-semibold text-zinc-400">
+            {activities.length} {activities.length === 1 ? "Eintrag" : "Einträge"}
+            {item.created_at ? ` · gestartet ${formatDate(item.created_at.slice(0, 10))}` : ""}
+          </p>
         </div>
-
-        <button
-          type="button"
-          onClick={() =>
-            setOpen(
-              !open
-            )
-          }
-          className="rounded-full bg-white px-4 py-2 text-xs font-black text-zinc-600 ring-1 ring-black/5"
-        >
-          {open
-            ? "Schließen"
-            : `Verlauf (${activities.length})`}
-        </button>
-
-      </div>
+        <span className="shrink-0 text-xl font-black text-zinc-400">
+          {open ? "⌃" : "⌄"}
+        </span>
+      </button>
 
       {open && (
-
-        <div className="mt-4 border-t border-black/5 pt-4">
-
-          {activities.length ===
-          0 ? (
-
-            <p className="text-sm font-semibold text-zinc-400">
-              Noch keine Kontakteinträge.
-            </p>
-
-          ) : (
-
-            <div className="space-y-2">
-
-              {activities.map(
-                (
-                  activity
-                ) => (
-                  <div
-                    key={
-                      activity.id
-                    }
-                    className="rounded-xl bg-white p-4 ring-1 ring-black/5"
-                  >
-
-                    <div className="flex items-start justify-between gap-4">
-
-                      <div>
-
-                        <p className="text-sm font-black text-zinc-800">
-                          {activity.activity_type ||
-                            "Eintrag"}{" "}
-                          ·{" "}
-                          {formatDate(
-                            activity.activity_date
-                          )}
-                        </p>
-
-                        <p className="mt-1 text-xs font-semibold text-zinc-400">
-                          {activity.channel ||
-                            "kein Kanal"}
-                        </p>
-
-                        {activity.note && (
-                          <p className="mt-2 text-sm font-semibold text-zinc-600">
-                            {activity.note}
-                          </p>
-                        )}
-
-                        {activity.response && (
-                          <p className="mt-1 text-sm font-semibold text-zinc-500">
-                            Rückmeldung:{" "}
-                            {activity.response}
-                          </p>
-                        )}
-
-                        {activity.next_step && (
-                          <p className="mt-1 text-sm font-bold text-zinc-700">
-                            →{" "}
-                            {activity.next_step}
-                          </p>
-                        )}
-
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              "Diesen Kontakteintrag wirklich löschen?"
-                            )
-                          ) {
-                            return;
-                          }
-
-                          const formData =
-                            new FormData();
-
-                          formData.set(
-                            "activity_id",
-                            activity.id
-                          );
-
-                          formData.set(
-                            "acquisition_id",
-                            item.id
-                          );
-
-                          deleteActivity(
-                            formData
-                          ).then(
-                            (
-                              result
-                            ) =>
-                              setActionMessage(
-                                result.message
-                              )
-                          );
-                        }}
-                        className="text-xs font-black text-red-400 hover:text-red-600"
-                      >
-                        🗑️
-                      </button>
-
-                    </div>
-
-                  </div>
-                )
-              )}
-
+        <div className="border-t border-black/5">
+          {activities.length === 0 ? (
+            <div className="px-5 py-5 text-sm font-semibold text-zinc-400">
+              Für diesen Vorgang gibt es noch keine Verlaufseinträge.
             </div>
+          ) : (
+            <div className="divide-y divide-black/5">
+              {activities.map((activity) => (
+                <div key={activity.id}>
+                  <div className="grid gap-3 px-5 py-4 md:grid-cols-[110px_135px_minmax(0,1fr)_210px] md:items-start">
+                    <div className="text-sm font-black text-zinc-700">
+                      {formatDate(activity.activity_date)}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm font-black text-zinc-700">
+                      <span>{activityIcon(activity.activity_type, activity.channel)}</span>
+                      <span>{activity.activity_type || "Kontakt"}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-black leading-6 text-zinc-800">
+                        {activity.subject || activity.note?.split("\n")[0] || "Ohne Betreff"}
+                      </p>
+                      {activity.channel && (
+                        <p className="mt-1 text-xs font-bold text-zinc-400">
+                          via {activity.channel}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1 text-xs font-black">
+                        {activity.next_step && (
+                          <p className="text-zinc-600">→ {activity.next_step}</p>
+                        )}
+                        {activity.follow_up_at && (
+                          <p className="text-amber-700">
+                            📅 WVL {formatDate(activity.follow_up_at)}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {activity.note && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setViewingActivityId(
+                                viewingActivityId === activity.id ? null : activity.id
+                              )
+                            }
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm shadow-sm ring-1 ring-black/5 transition hover:bg-[#fbf7ef]"
+                            title={viewingActivityId === activity.id ? "Notiz schließen" : "Notiz ansehen"}
+                            aria-label={viewingActivityId === activity.id ? "Notiz schließen" : "Notiz ansehen"}
+                          >
+                            👁️
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditingActivityId(
+                              editingActivityId === activity.id ? null : activity.id
+                            )
+                          }
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm shadow-sm ring-1 ring-black/5 transition hover:bg-[#fbf7ef]"
+                          title="Kontakteintrag bearbeiten"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          title="Kontakteintrag löschen"
+                          onClick={() => {
+                            if (!window.confirm("Diesen Kontakteintrag wirklich löschen?")) return;
+                            const formData = new FormData();
+                            formData.set("activity_id", activity.id);
+                            formData.set("acquisition_id", item.id);
+                            deleteActivity(formData).then((result) =>
+                              setActionMessage(result.message)
+                            );
+                          }}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm shadow-sm ring-1 ring-black/5 transition hover:bg-red-50"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
+                  {editingActivityId !== activity.id &&
+                    viewingActivityId === activity.id &&
+                    activity.note && (
+                    <div className="border-t border-black/5 bg-white px-5 py-4">
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-zinc-400">
+                        Notiz
+                      </p>
+                      <p className="whitespace-pre-wrap text-sm font-semibold leading-6 text-zinc-600">
+                        {activity.note}
+                      </p>
+                    </div>
+                  )}
+
+                  {editingActivityId === activity.id && (
+                    <div className="border-t border-black/5 bg-white px-5 py-5">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <input type="hidden" name="activity_id" value={activity.id} />
+                        <input type="hidden" name="acquisition_id" value={item.id} />
+                        <SelectField label="Typ" name="activity_type" defaultValue={activity.activity_type || "Kontakt"} options={["Kontakt", "Rückmeldung", "WVL", "Absage", "Buchung", "Notiz"]} />
+                        <Field label="Datum" name="activity_date" type="date" defaultValue={activity.activity_date || ""} />
+                        <SelectField label="Kanal" name="channel" defaultValue={activity.channel || ""} options={["", "E-Mail", "Telefon", "Instagram", "LinkedIn", "Persönlich"]} />
+                        <Field label="Wiedervorlage" name="follow_up_at" type="date" defaultValue={activity.follow_up_at || ""} />
+                        <Field
+                          label="Betreff"
+                          name="subject"
+                          defaultValue={activity.subject || ""}
+                          className="md:col-span-2"
+                        />
+                        <Textarea
+                          label="Notiz / Rückmeldung"
+                          name="note"
+                          defaultValue={activity.note || activity.response || ""}
+                          className="md:col-span-2"
+                        />
+                        <Field label="Nächster Schritt" name="next_step" defaultValue={activity.next_step || ""} className="md:col-span-2" />
+                        <SelectField label="Status danach" name="status_after" defaultValue={activity.status_after || ""} options={["", "Neu", "Vorqualifiziert", "Insta", "Kontaktiert", "Follow-up 1", "Follow-up 2", "Interesse", "Verhandlung", "Gebucht 🎉", "Abgesagt"]} className="md:col-span-2" />
+                        <div className="flex justify-end gap-2 md:col-span-2">
+                          <button type="button" onClick={() => setEditingActivityId(null)} className="rounded-full bg-white px-4 py-2 text-xs font-black text-zinc-600 ring-1 ring-black/5">
+                            Abbrechen
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              const editor = event.currentTarget.closest(".grid");
+                              if (!editor) return;
+                              const formData = new FormData();
+                              editor
+                                .querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input[name], select[name], textarea[name]")
+                                .forEach((field) => formData.set(field.name, field.value));
+                              updateActivity(formData).then((result) => {
+                                setActionMessage(result.message);
+                                if (result.success) setEditingActivityId(null);
+                              });
+                            }}
+                            className="rounded-full bg-zinc-950 px-4 py-2 text-xs font-black text-white"
+                          >
+                            Änderungen speichern
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
 
-          <div className="mt-4 flex justify-end">
-
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/5 bg-[#fbf7ef] px-5 py-3">
+            <Link href={`/admin/acquisition/${item.id}`} className="text-sm font-black text-zinc-500 transition hover:text-zinc-950">
+              Vorgang öffnen →
+            </Link>
             <button
               type="button"
               onClick={() => {
-                if (
-                  !window.confirm(
-                    `Diese Akquise „${item.program || "ohne Bezeichnung"}“ inklusive aller Kontakteinträge wirklich löschen?`
-                  )
-                ) {
-                  return;
-                }
-
-                const formData =
-                  new FormData();
-
-                formData.set(
-                  "acquisition_id",
-                  item.id
-                );
-
-                deleteAcquisition(
-                  formData
-                ).then(
-                  (
-                    result
-                  ) =>
-                    setActionMessage(
-                      result.message
-                    )
+                if (!window.confirm(`Diese Akquise „${item.program || "ohne Bezeichnung"}“ inklusive aller Kontakteinträge wirklich löschen?`)) return;
+                const formData = new FormData();
+                formData.set("acquisition_id", item.id);
+                deleteAcquisition(formData).then((result) =>
+                  setActionMessage(result.message)
                 );
               }}
-              className="text-xs font-black text-red-400 transition hover:text-red-600"
+              className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-black text-red-700 transition hover:bg-red-100"
             >
-              Akquise löschen
+              🗑 Akquise löschen
             </button>
-
           </div>
-
         </div>
-
       )}
-
-    </div>
+    </section>
   );
 }
 
@@ -3289,6 +3173,7 @@ function Field({
   required = false,
   autoComplete,
   className = "",
+  placeholder,
 }: {
   label: string;
   name: string;
@@ -3300,6 +3185,7 @@ function Field({
   required?: boolean;
   autoComplete?: string;
   className?: string;
+  placeholder?: string;
 }) {
   return (
     <label
@@ -3326,6 +3212,7 @@ function Field({
           defaultValue ??
           ""
         }
+        placeholder={placeholder}
         className="h-12 w-full min-w-0 max-w-full truncate rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
       />
 
@@ -3688,6 +3575,22 @@ function todayDate() {
     .slice(0, 10);
 }
 
+
+function activityIcon(activityType?: string | null, channel?: string | null) {
+  const type = String(activityType || "").toLowerCase();
+  const ch = String(channel || "").toLowerCase();
+  if (type.includes("absage")) return "❌";
+  if (type.includes("buchung")) return "🎉";
+  if (type.includes("wvl")) return "📅";
+  if (type.includes("rückmeldung")) return "💬";
+  if (type.includes("notiz")) return "📝";
+  if (ch.includes("telefon")) return "📞";
+  if (ch.includes("instagram")) return "📱";
+  if (ch.includes("linkedin")) return "💼";
+  if (ch.includes("persönlich")) return "🤝";
+  if (ch.includes("mail")) return "✉️";
+  return "📌";
+}
 
 function formatDate(
   value:

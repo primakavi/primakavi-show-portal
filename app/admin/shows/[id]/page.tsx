@@ -26,6 +26,7 @@ import CheckTile from "./CheckTile";
 import FeeEditor from "./FeeEditor";
 import FeeExtrasEditor from "./FeeExtrasEditor";
 import ClickFeedbackButton from "./ClickFeedbackButton";
+import RescheduleAwareSubmitButton from "./RescheduleAwareSubmitButton";
 
 type AreaState = "open" | "done";
 
@@ -417,6 +418,7 @@ export default async function ShowAkteV2Page({
     <main className="pb-32 text-zinc-950">
       <form id="show-main-form" action={saveShowV2Action}>
         <input type="hidden" name="id" value={show.id} />
+        <input type="hidden" name="original_show_date" value={show.show_date || ""} />
 
         <div className="space-y-5 sm:space-y-6">
 
@@ -629,7 +631,7 @@ export default async function ShowAkteV2Page({
 
               <div className="border-t border-black/5 bg-[#fffdf8] p-5 lg:border-l lg:border-t-0">
                 <div className="grid h-full grid-cols-[105px_1fr] gap-5">
-                  <div className="flex min-h-[145px] flex-col items-center justify-center rounded-[1.4rem] bg-[#fde8e7] px-3 text-center">
+                  <div className="flex min-h-[145px] flex-col items-center justify-center rounded-[1.4rem] bg-[#fde8e7] px-3 py-4 text-center">
                     <p className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-500">
                       {show.weekday || "Datum"}
                     </p>
@@ -640,6 +642,17 @@ export default async function ShowAkteV2Page({
                       {dateParts(show.show_date).month}{" "}
                       {dateParts(show.show_date).year}
                     </p>
+
+                    {show.rescheduled_from && (
+                      <div className="mt-3 w-full border-t border-rose-200/70 pt-2">
+                        <p className="text-[9px] font-black uppercase tracking-[.1em] text-amber-700">
+                          🔄 Verschoben
+                        </p>
+                        <p className="mt-0.5 text-[10px] font-black text-zinc-600">
+                          vom {formatDate(show.rescheduled_from)}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col justify-center gap-3 text-sm font-bold text-zinc-700">
@@ -881,6 +894,11 @@ export default async function ShowAkteV2Page({
                   type="date"
                   defaultValue={show.show_date}
                 />
+                {show.rescheduled_from && (
+                  <div className="rounded-xl bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 ring-1 ring-amber-200">
+                    🔄 Ursprünglicher Termin: {formatDate(show.rescheduled_from)}
+                  </div>
+                )}
                 <Input
                   name="start_time"
                   label="Showbeginn"
@@ -1058,9 +1076,34 @@ export default async function ShowAkteV2Page({
               icon="👥"
               title="Besetzung"
               state={sectionStates.cast}
-              preview={[castPreview(castForEditor)]}
+              preview={[
+                castPreview(castForEditor),
+                show.markus_notes ? "Info für Markus ✓" : null,
+              ]}
             >
               <CastEditor initialCast={castForEditor} />
+
+              {(hasMarkus || show.markus_notes) && (
+                <div className="rounded-2xl bg-[#fbf7ef] p-4 ring-1 ring-black/5">
+                  <label
+                    htmlFor="markus_notes"
+                    className="mb-2 block text-xs font-black uppercase tracking-[.14em] text-zinc-500"
+                  >
+                    Info für Markus
+                  </label>
+                  <textarea
+                    id="markus_notes"
+                    name="markus_notes"
+                    defaultValue={show.markus_notes || ""}
+                    rows={3}
+                    placeholder="z. B. Sonja + Requisiten um 14:30 Uhr abholen"
+                    className="w-full resize-y rounded-xl bg-white px-4 py-3 text-sm font-semibold text-zinc-800 outline-none ring-1 ring-black/10 transition focus:ring-2 focus:ring-zinc-300"
+                  />
+                  <p className="mt-2 text-xs font-semibold text-zinc-500">
+                    Operative Hinweise, die Markus für diese Show wissen muss.
+                  </p>
+                </div>
+              )}
 
               <label className="flex min-h-11 items-center gap-3 rounded-xl bg-white px-4 text-sm font-black text-zinc-700 ring-1 ring-black/5">
                 <input
@@ -1673,9 +1716,11 @@ export default async function ShowAkteV2Page({
               </p>
             </div>
 
-            <ClickFeedbackButton
+            <RescheduleAwareSubmitButton
+              formId="show-main-form"
+              originalDate={show.show_date || ""}
               idleLabel="Speichern →"
-              clickLabel="Wird gespeichert …"
+              savingLabel="Wird gespeichert …"
               className="rounded-full bg-[#dff66d] px-6 py-3 text-sm font-black text-zinc-950 transition hover:scale-[1.01]"
             />
           </div>
@@ -1849,6 +1894,7 @@ async function saveShowV2Action(formData: FormData) {
       follow_up_date,
       show_follow_up_date,
       travel_planning_status,
+      rescheduled_from,
       checklist
     `)
     .eq("id", id)
@@ -1933,6 +1979,16 @@ async function saveShowV2Action(formData: FormData) {
 
   const venueAddress = venue ? buildAddress(venue) : null;
   const showDate = nullable(formData.get("show_date"));
+  const originalShowDate = nullable(formData.get("original_show_date"));
+  const dateChangeKind = nullable(formData.get("date_change_kind"));
+  const showDateChanged = Boolean(
+    showDate && originalShowDate && showDate !== originalShowDate
+  );
+
+  let rescheduledFrom = current.rescheduled_from || null;
+  if (showDateChanged && dateChangeKind === "reschedule" && !rescheduledFrom) {
+    rescheduledFrom = originalShowDate;
+  }
 
   const existingChecklist = {
     ...(current.checklist || {}),
@@ -1976,6 +2032,7 @@ async function saveShowV2Action(formData: FormData) {
     program: nullable(formData.get("program")),
     show_date: showDate,
     weekday: weekday(showDate),
+    rescheduled_from: rescheduledFrom,
     start_time: normalizeTimeForDb(
       nullable(formData.get("start_time"))
     ),
@@ -2057,6 +2114,7 @@ async function saveShowV2Action(formData: FormData) {
 
     cast_confirmed:
       formData.get("cast_confirmed") === "on",
+    markus_notes: nullable(formData.get("markus_notes")),
 
     ticket_link: nullable(formData.get("ticket_link")),
     homepage_ticket_linked:

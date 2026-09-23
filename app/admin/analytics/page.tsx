@@ -55,16 +55,17 @@ const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", 
 export default async function AnalyticsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; saved?: string; edit?: string; view?: string; showLimit?: string; locationLimit?: string; fixedCostLimit?: string }>;
+  searchParams: Promise<{ year?: string; saved?: string; edit?: string; view?: string; showLimit?: string; locationLimit?: string; revenueLimit?: string; fixedCostLimit?: string }>;
 }) {
   const params = await searchParams;
   const currentYear = new Date().getFullYear();
   const selectedYear = Number(params.year) || currentYear;
-  const currentView = ["overview", "shows", "programmes", "locations", "variable-costs", "fixed-costs", "break-even"].includes(params.view || "")
+  const currentView = ["overview", "shows", "programmes", "locations", "revenue", "variable-costs", "fixed-costs", "break-even"].includes(params.view || "")
     ? String(params.view)
     : "overview";
   const showLimit = Math.max(10, Number(params.showLimit) || 10);
   const locationLimit = Math.max(10, Number(params.locationLimit) || 10);
+  const revenueLimit = Math.max(10, Number(params.revenueLimit) || 10);
   const fixedCostLimit = Math.max(10, Number(params.fixedCostLimit) || 10);
   const start = `${selectedYear}-01-01`;
   const end = `${selectedYear}-12-31`;
@@ -211,6 +212,94 @@ export default async function AnalyticsPage({
       costItems: [...automaticShowCostItems, ...manualCostItems],
     };
   });
+
+  function revenueCategory(label: string, category?: string) {
+    const stored = String(category || "").toLowerCase().trim();
+    if (/(merch|merchandise)/.test(stored)) return "Merch";
+    if (/(ticket|ticketing|eintritt|verkauf)/.test(stored)) return "Ticketing / Verkauf";
+    if (/(buyout|reimbursement|erstattung)/.test(stored)) return "Buyout / Erstattung";
+    if (/(fee|guarantee|gage|artist|honorar)/.test(stored)) return "Gage / Künstleranteil";
+
+    const value = String(label || "").toLowerCase().trim();
+    if (/(merch|merchandise|buch|cd)/.test(value)) return "Merch";
+    if (/(ticket|eintritt|abendkasse|vorverkauf|vvk|verkauf)/.test(value)) return "Ticketing / Verkauf";
+    if (/(buyout|erstattung)/.test(value)) return "Buyout / Erstattung";
+    if (/(gage|künstleranteil|kuenstleranteil|honorar|garantie)/.test(value)) return "Gage / Künstleranteil";
+    return "Sonstige Einnahmen";
+  }
+
+  const revenueMap = new Map<string, {
+    category: string;
+    amount: number;
+    showIds: Set<string>;
+    items: { showId: string; date: string | null; venue: string | null; label: string; amount: number }[];
+  }>();
+
+  function addRevenueDetail(category: string, show: ShowRow, label: string, amount: number) {
+    if (Math.abs(amount) < 0.01) return;
+    const current = revenueMap.get(category) || {
+      category,
+      amount: 0,
+      showIds: new Set<string>(),
+      items: [],
+    };
+    current.amount += amount;
+    current.showIds.add(show.id);
+    current.items.push({ showId: show.id, date: show.show_date, venue: show.venue, label, amount });
+    revenueMap.set(category, current);
+  }
+
+  for (const show of showDetails) {
+    if (!show.hasEconomics || Math.abs(show.revenue) < 0.01) continue;
+
+    const rawEconomics = economicsRowsByShow.get(show.id);
+    const rawRevenueItems = Array.isArray(rawEconomics?.revenue_items)
+      ? (rawEconomics?.revenue_items as any[])
+      : [];
+
+    const itemValues = rawRevenueItems
+      .map((item: any) => ({
+        label: String(item?.label || "Zusätzliche Einnahme"),
+        category: item?.category ? String(item.category) : undefined,
+        amount: economicsNumber(item?.amount),
+      }))
+      .filter((item) => Math.abs(item.amount) >= 0.01);
+
+    const itemSum = sum(itemValues.map((item) => item.amount));
+    const storedBase = economicsNumber(rawEconomics?.revenue_total);
+    const itemsAreFullBreakdown =
+      itemValues.length > 0 &&
+      storedBase !== 0 &&
+      Math.abs(storedBase - itemSum) < 0.01;
+
+    if (!itemsAreFullBreakdown && Math.abs(storedBase) >= 0.01) {
+      addRevenueDetail("Gage / Künstleranteil", show, "Gage / Künstleranteil", storedBase);
+    }
+
+    for (const item of itemValues) {
+      addRevenueDetail(revenueCategory(item.label, item.category), show, item.label, item.amount);
+    }
+
+    if (itemValues.length === 0 && Math.abs(storedBase) < 0.01) {
+      addRevenueDetail("Sonstige Einnahmen", show, "Umsatz", show.revenue);
+    }
+  }
+
+  const revenueDetails = Array.from(revenueMap.values())
+    .map((item) => ({
+      ...item,
+      affectedShows: item.showIds.size,
+      share: totalRevenue > 0 ? item.amount / totalRevenue : 0,
+      avgPerAffectedShow: item.showIds.size ? item.amount / item.showIds.size : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const revenueCategoryMax = Math.max(1, ...revenueDetails.map((item) => item.amount));
+  const revenueShows = showDetails
+    .filter((show) => show.hasEconomics && Math.abs(show.revenue) >= 0.01)
+    .sort((a, b) => b.revenue - a.revenue);
+  const topRevenueShow = revenueShows[0] || null;
+  const avgRevenuePerShow = revenueShows.length ? totalRevenue / revenueShows.length : 0;
 
   const variableCostCategoryLabels: Record<string, string> = {
     travel: "Reisekosten",
@@ -592,6 +681,7 @@ export default async function AnalyticsPage({
           <ViewTab href={`/admin/analytics?year=${selectedYear}&view=shows`} active={currentView === "shows"}>Shows</ViewTab>
           <ViewTab href={`/admin/analytics?year=${selectedYear}&view=programmes`} active={currentView === "programmes"}>Programme</ViewTab>
           <ViewTab href={`/admin/analytics?year=${selectedYear}&view=locations`} active={currentView === "locations"}>Locations</ViewTab>
+          <ViewTab href={`/admin/analytics?year=${selectedYear}&view=revenue`} active={currentView === "revenue"}>Umsatz</ViewTab>
           <ViewTab href={`/admin/analytics?year=${selectedYear}&view=variable-costs`} active={currentView === "variable-costs"}>Variable Kosten</ViewTab>
           <ViewTab href={`/admin/analytics?year=${selectedYear}&view=fixed-costs`} active={currentView === "fixed-costs"}>Fixkosten</ViewTab>
           <ViewTab href={`/admin/analytics?year=${selectedYear}&view=break-even`} active={currentView === "break-even"}>Break-even</ViewTab>
@@ -1017,6 +1107,131 @@ export default async function AnalyticsPage({
         </section>
 
           </>
+        )}
+
+        {currentView === "revenue" && (
+          <Card>
+            <SectionHeader
+              eyebrow="Umsatz · IST"
+              title="Wo kommt der Umsatz her?"
+              note="Automatische Show-Einnahmen plus zusätzliche Einnahmen wie Merch. Nur gespeicherte Wirtschaftsdaten."
+            />
+
+            <div className="mt-6 grid gap-4 md:grid-cols-4">
+              <div className="rounded-2xl bg-[#faf8f2] p-5">
+                <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">Umsatz gesamt</div>
+                <div className="mt-2 text-2xl font-black">{euro(totalRevenue)}</div>
+                <div className="mt-2 text-xs text-[#88857d]">{revenueShows.length} Shows mit Umsatz</div>
+              </div>
+              <div className="rounded-2xl bg-[#faf8f2] p-5">
+                <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">Ø Umsatz / Show</div>
+                <div className="mt-2 text-2xl font-black">{revenueShows.length ? euro(avgRevenuePerShow) : "—"}</div>
+                <div className="mt-2 text-xs text-[#88857d]">Shows mit erfasstem Umsatz</div>
+              </div>
+              <div className="rounded-2xl bg-[#faf8f2] p-5">
+                <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">Umsatzstärkste Show</div>
+                <div className="mt-2 text-2xl font-black">{topRevenueShow ? euro(topRevenueShow.revenue) : "—"}</div>
+                <div className="mt-2 truncate text-xs text-[#88857d]">{topRevenueShow?.venue || "Noch keine Umsätze"}</div>
+              </div>
+              <div className="rounded-2xl bg-[#faf8f2] p-5">
+                <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">Wirtschaftsdaten</div>
+                <div className="mt-2 text-2xl font-black">{showsWithEconomics.length} / {shows.length}</div>
+                <div className="mt-2 text-xs text-[#88857d]">gespielte Shows erfasst</div>
+              </div>
+            </div>
+
+            {revenueDetails.length ? (
+              <>
+                <div className="mt-6 rounded-2xl border border-[#e4dfd4] bg-[#faf8f2] px-5 py-5">
+                  <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">Umsatz nach Art</div>
+                  <div className="mt-1 text-lg font-black">Womit wird Geld verdient?</div>
+                  <div className="mt-5 space-y-3">
+                    {revenueDetails.map((item) => (
+                      <div key={item.category} className="grid grid-cols-[170px_1fr_105px] items-center gap-4">
+                        <div className="truncate text-sm font-bold">{item.category}</div>
+                        <div className="h-3 overflow-hidden rounded-full bg-[#ebe7dc]">
+                          <div className="h-full rounded-full bg-[#cfdc6a]" style={{ width: `${Math.max(4, (item.amount / revenueCategoryMax) * 100)}%` }} />
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-black">{euro(item.amount)}</div>
+                          <div className="text-[10px] font-bold text-[#9a978f]">{(item.share * 100).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-6 overflow-x-auto">
+                  <div className="min-w-[860px]">
+                    <div className="grid grid-cols-[1.35fr_140px_140px_170px_42px] border-b border-[#e4dfd4] px-3 text-[11px] font-black uppercase tracking-wide text-[#88857d]">
+                      <div className="py-2.5">Einnahmeart</div>
+                      <div className="py-2.5 text-right">Gesamt</div>
+                      <div className="py-2.5 text-right">Anteil</div>
+                      <div className="py-2.5 text-right">Ø je Show</div>
+                      <div />
+                    </div>
+                    {revenueDetails.map((item) => (
+                      <details key={item.category} className="group border-b border-[#eee9df] last:border-0">
+                        <summary className="grid cursor-pointer list-none grid-cols-[1.35fr_140px_140px_170px_42px] items-center px-3 hover:bg-[#faf8f2] [&::-webkit-details-marker]:hidden">
+                          <div className="py-3.5">
+                            <div className="font-black">{item.category}</div>
+                            <div className="mt-1 text-xs text-[#88857d]">{item.affectedShows} {item.affectedShows === 1 ? "Show" : "Shows"}</div>
+                          </div>
+                          <div className="py-3.5 text-right font-black">{euro(item.amount)}</div>
+                          <div className="py-3.5 text-right font-semibold">{(item.share * 100).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %</div>
+                          <div className="py-3.5 text-right font-semibold">{euro(item.avgPerAffectedShow)}</div>
+                          <div className="flex justify-end py-3.5"><span className="transition group-open:rotate-180">⌄</span></div>
+                        </summary>
+                        <div className="border-t border-[#eee9df] bg-[#faf8f2] px-5 py-4">
+                          <div className="space-y-2">
+                            {item.items.slice(0, revenueLimit).map((revenue, index) => (
+                              <div key={`${revenue.showId}-${revenue.label}-${index}`} className="grid grid-cols-[110px_1fr_1fr_120px] gap-4 text-xs">
+                                <div className="font-semibold">{formatDate(revenue.date)}</div>
+                                <Link href={`/admin/shows/${revenue.showId}`} className="font-bold underline decoration-[#c9d65c] decoration-2 underline-offset-2">{revenue.venue || "Location offen"}</Link>
+                                <div className="text-[#77746c]">{revenue.label}</div>
+                                <div className="text-right font-black">{euro(revenue.amount)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-7 rounded-2xl border border-[#e4dfd4] bg-white p-5">
+                  <div className="text-[11px] font-black uppercase tracking-[.12em] text-[#9a978f]">Umsatz nach Show</div>
+                  <div className="mt-1 text-lg font-black">Welche Shows bringen den meisten Umsatz?</div>
+                  <div className="mt-4 space-y-2">
+                    {revenueShows.slice(0, revenueLimit).map((show, index) => (
+                      <div key={show.id} className="grid grid-cols-[34px_100px_1fr_150px] items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-[#faf8f2]">
+                        <div className="text-xs font-black text-[#9a978f]">{index + 1}.</div>
+                        <div className="text-xs font-semibold">{formatDate(show.show_date)}</div>
+                        <div className="min-w-0">
+                          <Link href={`/admin/shows/${show.id}`} className="font-bold underline decoration-[#c9d65c] decoration-2 underline-offset-2">{show.venue || "Location offen"}</Link>
+                          <div className="mt-0.5 text-xs text-[#88857d]">{show.program || "Programm offen"}</div>
+                        </div>
+                        <div className="text-right font-black">{euro(show.revenue)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {revenueShows.length > 10 && (
+                    <div className="mt-5">
+                      {revenueLimit < revenueShows.length ? (
+                        <Link href={`/admin/analytics?year=${selectedYear}&view=revenue&revenueLimit=${Math.min(revenueLimit + 10, revenueShows.length)}`} className="rounded-full border border-[#ddd7ca] bg-white px-5 py-2.5 text-sm font-black">Weitere Umsätze anzeigen ({revenueShows.length - revenueLimit})</Link>
+                      ) : (
+                        <Link href={`/admin/analytics?year=${selectedYear}&view=revenue`} className="rounded-full border border-[#ddd7ca] bg-white px-5 py-2.5 text-sm font-black">Weniger anzeigen</Link>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="mt-6 rounded-2xl border border-dashed border-[#ddd7ca] bg-[#faf8f2] p-8 text-center text-sm font-semibold text-[#88857d]">
+                Für {selectedYear} sind noch keine Umsätze erfasst.
+              </div>
+            )}
+          </Card>
         )}
 
         {currentView === "variable-costs" && (
@@ -1888,10 +2103,19 @@ function economicsValues(
 
   const revenueFromItems = sum(revenueItemValues);
 
+  const storedRevenueTotal = economicsNumber(economics.revenue_total);
+
+  // revenue_total = automatischer/Basis-Umsatz der Show.
+  // revenue_items = zusätzliche Einnahmen, z. B. Merch.
+  // Bei Legacy-Daten kann revenue_items bereits den kompletten Umsatz abbilden.
   const revenue =
-    revenueItemValues.length > 0
-      ? revenueFromItems
-      : economicsNumber(economics.revenue_total);
+    revenueItemValues.length === 0
+      ? storedRevenueTotal
+      : storedRevenueTotal === 0
+        ? revenueFromItems
+        : Math.abs(storedRevenueTotal - revenueFromItems) < 0.01
+          ? storedRevenueTotal
+          : storedRevenueTotal + revenueFromItems;
 
   const automaticShowCosts = sum(
     automaticShowCostItems.map((item) => item.amount)

@@ -6,6 +6,138 @@ import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 import OrganizerClient from "./OrganizerClient";
 
+// ============================================================
+// AKQUISE NEU BERECHNEN
+// ============================================================
+
+async function recomputeAcquisition(
+  acquisitionId: string
+) {
+  const {
+    data: activities,
+  } =
+    await supabaseAdmin
+      .from(
+        "acquisition_activities"
+      )
+      .select(`
+        activity_date,
+        activity_type,
+        channel,
+        note,
+        response,
+        next_step,
+        follow_up_at,
+        status_after,
+        created_at
+      `)
+      .eq(
+        "acquisition_id",
+        acquisitionId
+      )
+      .order(
+        "activity_date",
+        {
+          ascending: false,
+        }
+      )
+      .order(
+        "created_at",
+        {
+          ascending: false,
+        }
+      );
+
+  const list =
+    activities || [];
+
+  const latestContact =
+    list.find(
+      (activity) =>
+        [
+          "Kontakt",
+          "Rückmeldung",
+          "Absage",
+          "Buchung",
+        ].includes(
+          activity.activity_type ||
+            ""
+        )
+    );
+
+  const latestNote =
+    list.find(
+      (item) =>
+        item.note
+    );
+
+  const latestResponse =
+    list.find(
+      (item) =>
+        item.response
+    );
+
+  const latestNextStep =
+    list.find(
+      (item) =>
+        item.next_step
+    );
+
+  const latestFollowUp =
+    list.find(
+      (item) =>
+        item.follow_up_at
+    );
+
+  const latestStatus =
+    list.find(
+      (item) =>
+        item.status_after
+    );
+
+  await supabaseAdmin
+    .from("acquisition")
+    .update({
+      last_contact_at:
+        latestContact
+          ?.activity_date ||
+        null,
+
+      contact_channel:
+        latestContact
+          ?.channel ||
+        null,
+
+      contact_note:
+        latestNote?.note ||
+        null,
+
+      response:
+        latestResponse
+          ?.response ||
+        null,
+
+      next_step:
+        latestNextStep
+          ?.next_step ||
+        null,
+
+      next_follow_up_at:
+        latestFollowUp
+          ?.follow_up_at ||
+        null,
+
+      status:
+        latestStatus
+          ?.status_after ||
+        "Neu",
+    })
+    .eq(
+      "id",
+      acquisitionId
+    );
+}
+
 export default async function OrganizerDetailPage({
   params,
 }: {
@@ -195,9 +327,13 @@ export default async function OrganizerDetailPage({
       id,
       name,
       active,
+      type,
+      archived_at,
       created_at
     `)
     .eq("active", true)
+    .eq("type", "acquisition")
+    .is("archived_at", null)
     .order("name", {
       ascending: true,
     });
@@ -221,6 +357,7 @@ export default async function OrganizerDetailPage({
     .from("acquisition")
     .select(`
       id,
+      round_id,
       program,
       status,
       priority,
@@ -286,6 +423,7 @@ export default async function OrganizerDetailPage({
           channel,
           note,
           response,
+          subject,
           next_step,
           follow_up_at,
           status_after,
@@ -1347,98 +1485,7 @@ export default async function OrganizerDetailPage({
   }
 
   // ============================================================
-  // AKQUISE-RUNDE ANLEGEN
-  // ============================================================
-
-  async function createAcquisitionRound(
-    formData: FormData
-  ) {
-    "use server";
-
-    const name =
-      valueOrNull(
-        formData.get(
-          "name"
-        )
-      );
-
-    if (!name) {
-      return {
-        success: false,
-        message:
-          "Bitte einen Namen eingeben.",
-      };
-    }
-
-    const {
-      data: existing,
-    } =
-      await supabaseAdmin
-        .from(
-          "acquisition_rounds"
-        )
-        .select(
-          "id, name"
-        )
-        .ilike(
-          "name",
-          name
-        )
-        .maybeSingle();
-
-    if (existing) {
-      return {
-        success: true,
-        message:
-          "Diese Akquise-Runde gibt es bereits.",
-        roundName:
-          existing.name,
-      };
-    }
-
-    const {
-      data: created,
-      error,
-    } =
-      await supabaseAdmin
-        .from(
-          "acquisition_rounds"
-        )
-        .insert({
-          name,
-        })
-        .select(
-          "id, name"
-        )
-        .single();
-
-    if (
-      error ||
-      !created
-    ) {
-      return {
-        success: false,
-        message:
-          error?.message ||
-          "Akquise-Runde konnte nicht angelegt werden.",
-      };
-    }
-
-    revalidateOrganizer(
-      id
-    );
-
-    return {
-      success: true,
-      message:
-        "Akquise-Runde hinzugefügt.",
-      roundName:
-        created.name,
-    };
-  }
-
-  // ============================================================
-  // AKQUISE STARTEN
+  // AKQUISE ANLEGEN – RUNDE + ERSTER EINTRAG IN EINEM SCHRITT
   // ============================================================
 
   async function createAcquisition(
@@ -1446,99 +1493,218 @@ export default async function OrganizerDetailPage({
   ) {
     "use server";
 
-    const roundName =
-      valueOrNull(
-        formData.get(
-          "round_name"
-        )
-      );
+    let roundId = valueOrNull(formData.get("round_id"));
+    const newRoundName = valueOrNull(formData.get("new_round_name"));
 
-    if (!roundName) {
+    const activityType = valueOrNull(formData.get("activity_type")) || "Kontakt";
+    const activityDate =
+      valueOrNull(formData.get("activity_date")) ||
+      new Date().toISOString().slice(0, 10);
+    const channel = valueOrNull(formData.get("channel"));
+    const subject = valueOrNull(formData.get("subject"));
+    const note = valueOrNull(formData.get("note"));
+    const response = valueOrNull(formData.get("response"));
+    const nextStep = valueOrNull(formData.get("next_step"));
+    const followUpAt = valueOrNull(formData.get("follow_up_at"));
+    let statusAfter = valueOrNull(formData.get("status_after"));
+
+    if (!roundId && !newRoundName) {
       return {
         success: false,
-        message:
-          "Bitte eine Akquise-Runde auswählen.",
+        message: "Bitte eine Akquise-Runde auswählen oder eine neue Runde benennen.",
       };
     }
 
-    const {
-      data: activeExisting,
-    } =
+    let roundName: string | null = null;
+
+    if (newRoundName) {
+      const { data: existingRound } = await supabaseAdmin
+        .from("acquisition_rounds")
+        .select("id, name, active, type, archived_at")
+        .ilike("name", newRoundName)
+        .maybeSingle();
+
+      if (existingRound) {
+        if (existingRound.type !== "acquisition") {
+          return {
+            success: false,
+            message:
+              "Eine Runde mit diesem Namen existiert bereits, gehört aber nicht zur Akquise.",
+          };
+        }
+
+        if (!existingRound.active || existingRound.archived_at) {
+          const { data: reactivatedRound, error: reactivateError } =
+            await supabaseAdmin
+              .from("acquisition_rounds")
+              .update({
+                active: true,
+                archived_at: null,
+              })
+              .eq("id", existingRound.id)
+              .select("id, name")
+              .single();
+
+          if (reactivateError || !reactivatedRound) {
+            return {
+              success: false,
+              message:
+                reactivateError?.message ||
+                "Die bestehende Akquise-Runde konnte nicht wieder aktiviert werden.",
+            };
+          }
+
+          roundId = reactivatedRound.id;
+          roundName = reactivatedRound.name;
+        } else {
+          roundId = existingRound.id;
+          roundName = existingRound.name;
+        }
+      } else {
+        const { data: createdRound, error: roundError } = await supabaseAdmin
+          .from("acquisition_rounds")
+          .insert({
+            name: newRoundName,
+            active: true,
+            type: "acquisition",
+          })
+          .select("id, name")
+          .single();
+
+        if (roundError || !createdRound) {
+          return {
+            success: false,
+            message:
+              roundError?.message ||
+              "Akquise-Runde konnte nicht angelegt werden.",
+          };
+        }
+
+        roundId = createdRound.id;
+        roundName = createdRound.name;
+      }
+    }
+
+    if (roundId && !roundName) {
+      const { data: selectedRound, error: roundError } = await supabaseAdmin
+        .from("acquisition_rounds")
+        .select("id, name, active, type, archived_at")
+        .eq("id", roundId)
+        .single();
+
+      if (
+        roundError ||
+        !selectedRound ||
+        selectedRound.type !== "acquisition" ||
+        !selectedRound.active ||
+        selectedRound.archived_at
+      ) {
+        return {
+          success: false,
+          message: "Die ausgewählte Akquise-Runde ist nicht mehr aktiv.",
+        };
+      }
+
+      roundName = selectedRound.name;
+    }
+
+    const { data: sameRoundExisting, error: sameRoundExistingError } =
       await supabaseAdmin
         .from("acquisition")
         .select("id")
-        .eq(
-          "organizer_id",
-          id
-        )
-        .is(
-          "archived_at",
-          null
-        )
-        .not(
-          "status",
-          "ilike",
-          "%gebucht%"
-        )
-        .not(
-          "status",
-          "ilike",
-          "%abgesagt%"
-        )
+        .eq("organizer_id", id)
+        .eq("round_id", roundId)
+        .is("archived_at", null)
+        .not("status", "ilike", "%gebucht%")
+        .not("status", "ilike", "%abgesagt%")
         .limit(1);
 
-    if (
-      activeExisting &&
-      activeExisting.length >
-        0
-    ) {
+    if (sameRoundExistingError) {
       return {
         success: false,
-        message:
-          "Für diesen Veranstalter gibt es bereits eine offene Akquise.",
+        message: sameRoundExistingError.message,
       };
     }
 
-    const { error } =
+    if (sameRoundExisting && sameRoundExisting.length > 0) {
+      return {
+        success: false,
+        message:
+          "Für diesen Veranstalter gibt es in dieser Akquise-Runde bereits einen offenen Vorgang.",
+      };
+    }
+
+    if (activityType === "Absage") statusAfter = "Abgesagt";
+    if (activityType === "Buchung") statusAfter = "Gebucht 🎉";
+    if (!statusAfter && activityType === "Kontakt") statusAfter = "Kontaktiert";
+    if (!statusAfter) statusAfter = "Neu";
+
+    const isContact = ["Kontakt", "Rückmeldung", "Absage", "Buchung"].includes(
+      activityType
+    );
+
+    const { data: createdAcquisition, error: acquisitionError } =
       await supabaseAdmin
         .from("acquisition")
         .insert({
-          organizer_id:
-            id,
+          organizer_id: id,
+          venue_id: null,
+          round_id: roundId,
+          program: roundName,
+          status: statusAfter,
+          priority: "Normal",
+          last_contact_at: isContact ? activityDate : null,
+          next_follow_up_at: followUpAt,
+          contact_channel: isContact ? channel : null,
+          contact_note: note,
+          response,
+          next_step: nextStep,
+        })
+        .select("id")
+        .single();
 
-          venue_id:
-            null,
-
-          program:
-            roundName,
-
-          status:
-            "Neu",
-
-          priority:
-            "Normal",
-        });
-
-    if (error) {
+    if (acquisitionError || !createdAcquisition) {
       return {
         success: false,
         message:
-          error.message,
+          acquisitionError?.message || "Akquise konnte nicht angelegt werden.",
       };
     }
 
-    revalidateOrganizer(
-      id
-    );
+    const { error: activityError } = await supabaseAdmin
+      .from("acquisition_activities")
+      .insert({
+        acquisition_id: createdAcquisition.id,
+        activity_date: activityDate,
+        activity_type: activityType,
+        channel,
+        subject,
+        note,
+        response,
+        next_step: nextStep,
+        follow_up_at: followUpAt,
+        status_after: statusAfter,
+      });
 
-    revalidatePath(
-      "/admin/acquisition"
-    );
+    if (activityError) {
+      await supabaseAdmin
+        .from("acquisition")
+        .delete()
+        .eq("id", createdAcquisition.id);
+
+      return {
+        success: false,
+        message: activityError.message,
+      };
+    }
+
+    revalidateOrganizer(id);
+    revalidatePath("/admin/acquisition");
+    revalidatePath("/admin");
 
     return {
       success: true,
-      message:
-        "Neue Akquise gestartet.",
+      message: "Akquise inklusive erstem Eintrag angelegt.",
     };
   }
 
@@ -1619,6 +1785,13 @@ export default async function OrganizerDetailPage({
       valueOrNull(
         formData.get(
           "channel"
+        )
+      );
+
+    const subject =
+      valueOrNull(
+        formData.get(
+          "subject"
         )
       );
 
@@ -1707,6 +1880,8 @@ export default async function OrganizerDetailPage({
             activityType,
 
           channel,
+
+          subject,
 
           note,
 
@@ -1824,6 +1999,79 @@ export default async function OrganizerDetailPage({
       message:
         "Akquise-Eintrag gespeichert.",
     };
+  }
+
+  // ============================================================
+  // AKQUISE-EINTRAG BEARBEITEN
+  // ============================================================
+
+  async function updateActivity(
+    formData: FormData
+  ) {
+    "use server";
+
+    const activityId = valueOrNull(formData.get("activity_id"));
+    const acquisitionId = valueOrNull(formData.get("acquisition_id"));
+
+    if (!activityId || !acquisitionId) {
+      return { success: false, message: "Eintrag fehlt." };
+    }
+
+    const { data: ownedAcquisition } = await supabaseAdmin
+      .from("acquisition")
+      .select("id")
+      .eq("id", acquisitionId)
+      .eq("organizer_id", id)
+      .single();
+
+    if (!ownedAcquisition) {
+      return {
+        success: false,
+        message: "Diese Akquise gehört nicht zu diesem Veranstalter.",
+      };
+    }
+
+    const activityType = valueOrNull(formData.get("activity_type")) || "Kontakt";
+    const activityDate =
+      valueOrNull(formData.get("activity_date")) ||
+      new Date().toISOString().slice(0, 10);
+    const channel = valueOrNull(formData.get("channel"));
+    const subject = valueOrNull(formData.get("subject"));
+    const note = valueOrNull(formData.get("note"));
+    const response = valueOrNull(formData.get("response"));
+    const nextStep = valueOrNull(formData.get("next_step"));
+    const followUpAt = valueOrNull(formData.get("follow_up_at"));
+    let statusAfter = valueOrNull(formData.get("status_after"));
+
+    if (activityType === "Absage") statusAfter = "Abgesagt";
+    if (activityType === "Buchung") statusAfter = "Gebucht 🎉";
+
+    const { error } = await supabaseAdmin
+      .from("acquisition_activities")
+      .update({
+        activity_date: activityDate,
+        activity_type: activityType,
+        channel,
+        subject,
+        note,
+        response,
+        next_step: nextStep,
+        follow_up_at: followUpAt,
+        status_after: statusAfter,
+      })
+      .eq("id", activityId)
+      .eq("acquisition_id", acquisitionId);
+
+    if (error) {
+      return { success: false, message: error.message };
+    }
+
+    await recomputeAcquisition(acquisitionId);
+    revalidateOrganizer(id);
+    revalidatePath("/admin/acquisition");
+    revalidatePath("/admin");
+
+    return { success: true, message: "Akquise-Eintrag gespeichert." };
   }
 
   // ============================================================
@@ -2072,138 +2320,6 @@ export default async function OrganizerDetailPage({
     );
   }
 
-  // ============================================================
-  // AKQUISE NEU BERECHNEN
-  // ============================================================
-
-  async function recomputeAcquisition(
-    acquisitionId: string
-  ) {
-    const {
-      data: activities,
-    } =
-      await supabaseAdmin
-        .from(
-          "acquisition_activities"
-        )
-        .select(`
-          activity_date,
-          activity_type,
-          channel,
-          note,
-          response,
-          next_step,
-          follow_up_at,
-          status_after,
-          created_at
-        `)
-        .eq(
-          "acquisition_id",
-          acquisitionId
-        )
-        .order(
-          "activity_date",
-          {
-            ascending: false,
-          }
-        )
-        .order(
-          "created_at",
-          {
-            ascending: false,
-          }
-        );
-
-    const list =
-      activities || [];
-
-    const latestContact =
-      list.find(
-        (activity) =>
-          [
-            "Kontakt",
-            "Rückmeldung",
-            "Absage",
-            "Buchung",
-          ].includes(
-            activity.activity_type ||
-              ""
-          )
-      );
-
-    const latestNote =
-      list.find(
-        (item) =>
-          item.note
-      );
-
-    const latestResponse =
-      list.find(
-        (item) =>
-          item.response
-      );
-
-    const latestNextStep =
-      list.find(
-        (item) =>
-          item.next_step
-      );
-
-    const latestFollowUp =
-      list.find(
-        (item) =>
-          item.follow_up_at
-      );
-
-    const latestStatus =
-      list.find(
-        (item) =>
-          item.status_after
-      );
-
-    await supabaseAdmin
-      .from("acquisition")
-      .update({
-        last_contact_at:
-          latestContact
-            ?.activity_date ||
-          null,
-
-        contact_channel:
-          latestContact
-            ?.channel ||
-          null,
-
-        contact_note:
-          latestNote?.note ||
-          null,
-
-        response:
-          latestResponse
-            ?.response ||
-          null,
-
-        next_step:
-          latestNextStep
-            ?.next_step ||
-          null,
-
-        next_follow_up_at:
-          latestFollowUp
-            ?.follow_up_at ||
-          null,
-
-        status:
-          latestStatus
-            ?.status_after ||
-          "Neu",
-      })
-      .eq(
-        "id",
-        acquisitionId
-      );
-  }
-
   return (
     <OrganizerClient
       organizer={
@@ -2280,12 +2396,12 @@ export default async function OrganizerDetailPage({
         createAcquisition
       }
 
-      createAcquisitionRound={
-        createAcquisitionRound
-      }
-
       addActivity={
         addActivity
+      }
+
+      updateActivity={
+        updateActivity
       }
 
       deleteActivity={
