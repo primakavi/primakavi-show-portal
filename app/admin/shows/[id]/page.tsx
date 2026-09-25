@@ -371,6 +371,16 @@ export default async function ShowAkteV2Page({
     invoiceAmount,
   });
 
+  const hasAdditionalCast = castForEditor.some(
+    (person: any) =>
+      String(person?.name || "").trim() &&
+      !/^sonja(?:\s+gründemann)?$/i.test(String(person?.name || "").trim())
+  );
+  const teamInfoRelevant = Boolean(show.markus_included) || hasAdditionalCast;
+  const applicableChecklistBefore = CHECKLIST_BEFORE.filter(
+    (label) => label !== "Markus / Team informiert" || teamInfoRelevant
+  );
+
   const automaticShowFollowUpDate = defaultShowFollowUpDate(show.show_date);
   const effectiveShowFollowUpDate =
     show.show_follow_up_date || automaticShowFollowUpDate;
@@ -413,9 +423,14 @@ export default async function ShowAkteV2Page({
   // Nach der Show: erst komplett abgeschlossen, wenn die Nachbereitung
   // (inkl. Rechnung verschickt, Zahlung vollständig und Show bewertet)
   // UND die Wirtschaftlichkeit bewusst abgeschlossen wurden.
+  const beforeShowChecklistComplete = applicableChecklistBefore.every(
+    (label) => checklist.state[label] === true
+  );
   const afterShowChecklistComplete = CHECKLIST_AFTER.every(
     (label) => checklist.state[label] === true
   );
+  const worklistComplete =
+    beforeShowChecklistComplete && afterShowChecklistComplete;
   const economicsComplete = Boolean(economics?.completed_at);
   const postRated = Boolean(
     show.review_audience &&
@@ -881,12 +896,12 @@ export default async function ShowAkteV2Page({
 
                 <span
                   className={`rounded-full px-3 py-1 text-[10px] font-black ring-1 ${
-                    afterShowChecklistComplete
+                    worklistComplete
                       ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
                       : "bg-amber-50 text-amber-700 ring-amber-100"
                   }`}
                 >
-                  {afterShowChecklistComplete ? "✓ Aktuell erledigt" : "Offene Punkte"}
+                  {worklistComplete ? "✓ Aktuell erledigt" : "Offene Punkte"}
                 </span>
 
                 <span className="justify-self-end text-lg font-black text-zinc-500 transition group-open:rotate-90">
@@ -918,7 +933,7 @@ export default async function ShowAkteV2Page({
                   </summary>
                   <div className="border-t border-black/5 px-4 py-4">
                     <div className="grid gap-x-10 gap-y-2 md:grid-cols-2">
-                      {CHECKLIST_BEFORE.map((label) => (
+                      {applicableChecklistBefore.map((label) => (
                         <ChecklistRow
                           key={label}
                           label={label}
@@ -933,7 +948,7 @@ export default async function ShowAkteV2Page({
                 <>
                   <h3 className="text-sm font-black text-zinc-900">Vor der Show</h3>
                   <div className="mt-3 grid gap-x-10 gap-y-2 md:grid-cols-2">
-                    {CHECKLIST_BEFORE.map((label) => (
+                    {applicableChecklistBefore.map((label) => (
                       <ChecklistRow
                         key={label}
                         label={label}
