@@ -26,6 +26,8 @@ export default async function EconomicsPage({
       fee_organizer_share,
       fee_tax_mode,
       fee_notes,
+      settlement_total_amount,
+      settlement_confirmed,
 
       accommodation_status,
       accommodation_hotel_name,
@@ -57,6 +59,19 @@ export default async function EconomicsPage({
     `)
     .eq("show_id", id)
     .order("direction")
+    .order("sort_order");
+
+  const { data: cast } = await supabaseAdmin
+    .schema("booking")
+    .from("show_cast")
+    .select(`
+      id,
+      name,
+      role,
+      actual_cost,
+      sort_order
+    `)
+    .eq("show_id", id)
     .order("sort_order");
 
   const { data: allEconomics } = await supabaseAdmin
@@ -133,6 +148,7 @@ export default async function EconomicsPage({
           show={show ?? undefined}
           initialData={economics ?? undefined}
           travelLegs={travelLegs ?? []}
+          cast={cast ?? []}
           benchmark={benchmark}
           completedAt={economics?.completed_at ?? null}
           completeAction={completeEconomicsAction}

@@ -417,23 +417,6 @@ export default async function ShowAkteV2Page({
     (label) => checklist.state[label] === true
   );
   const economicsComplete = Boolean(economics?.completed_at);
-  const postRated = Boolean(
-    show.review_audience &&
-      show.review_location &&
-      show.review_organization &&
-      show.review_effort &&
-      show.review_tech &&
-      show.play_again
-  );
-  const ticketKnowledgeStatus =
-    show.ticket_sales_knowledge_status ||
-    (ticketsSoldEntered ? "known" : "open");
-  const paymentComplete =
-    show.billing_status === "nicht_relevant" ||
-    (show.invoice_sent === true &&
-      invoiceAmount > 0 &&
-      paid >= invoiceAmount);
-
   const showFullyComplete =
     ["gespielt", "abgeschlossen"].includes(String(show.internal_status || "")) &&
     afterShowChecklistComplete &&
@@ -851,116 +834,6 @@ export default async function ShowAkteV2Page({
             </div>
           </section>
 
-          {/* ARBEITSLISTE · kompakt direkt unter dem Command Center */}
-          <details
-            id="arbeitsliste"
-            className="group scroll-mt-6 overflow-hidden rounded-[1.15rem] bg-white shadow-sm ring-1 ring-black/5"
-          >
-            <summary className="list-none cursor-pointer px-4 py-3 transition hover:bg-[#fbfaf7] [&::-webkit-details-marker]:hidden">
-              <div className="grid min-h-[46px] items-center gap-x-5 gap-y-1 md:grid-cols-[250px_minmax(0,1fr)_auto_26px]">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef4ff] text-[#2867d8]">
-                    ☑
-                  </span>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-400">
-                      Checkliste
-                    </p>
-                    <h3 className="text-sm font-black text-zinc-950">
-                      Sonjas Arbeitsliste
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="min-w-0 text-xs font-semibold text-zinc-500">
-                  {isPastShowDate(show.show_date) ||
-                  ["gespielt", "abgeschlossen"].includes(String(show.internal_status || ""))
-                    ? "Vorbereitung abgeschlossen · Nachbereitung im Blick"
-                    : "Vorbereitung und operative Punkte im Blick"}
-                </div>
-
-                <span
-                  className={`rounded-full px-3 py-1 text-[10px] font-black ring-1 ${
-                    afterShowChecklistComplete
-                      ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
-                      : "bg-amber-50 text-amber-700 ring-amber-100"
-                  }`}
-                >
-                  {afterShowChecklistComplete ? "✓ Aktuell erledigt" : "Offene Punkte"}
-                </span>
-
-                <span className="justify-self-end text-lg font-black text-zinc-500 transition group-open:rotate-90">
-                  ›
-                </span>
-              </div>
-            </summary>
-
-            <div className="border-t border-black/5 bg-[#fffdf9] p-5 sm:p-6">
-              <p className="mb-4 text-xs font-semibold text-zinc-400">
-                ⓘ Einige Punkte werden automatisch aus der Show-Akte abgehakt.
-              </p>
-
-              {isPastShowDate(show.show_date) ||
-              ["gespielt", "abgeschlossen"].includes(String(show.internal_status || "")) ? (
-                <details className="group/old rounded-xl bg-white ring-1 ring-black/5">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
-                    <div>
-                      <p className="text-sm font-black text-zinc-900">
-                        ✓ Vorbereitung abgeschlossen
-                      </p>
-                      <p className="mt-0.5 text-xs font-semibold text-zinc-400">
-                        Frühere Arbeitsliste anzeigen
-                      </p>
-                    </div>
-                    <span className="text-sm font-black text-zinc-400 transition group-open/old:rotate-180">
-                      ⌄
-                    </span>
-                  </summary>
-                  <div className="border-t border-black/5 px-4 py-4">
-                    <div className="grid gap-x-10 gap-y-2 md:grid-cols-2">
-                      {CHECKLIST_BEFORE.map((label) => (
-                        <ChecklistRow
-                          key={label}
-                          label={label}
-                          checked={checklist.state[label] === true}
-                          manual={true}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </details>
-              ) : (
-                <>
-                  <h3 className="text-sm font-black text-zinc-900">Vor der Show</h3>
-                  <div className="mt-3 grid gap-x-10 gap-y-2 md:grid-cols-2">
-                    {CHECKLIST_BEFORE.map((label) => (
-                      <ChecklistRow
-                        key={label}
-                        label={label}
-                        checked={checklist.state[label] === true}
-                        manual={true}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <div className="mt-5 border-t border-black/5 pt-5">
-                <h3 className="text-sm font-black text-zinc-900">Nach der Show</h3>
-                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  {CHECKLIST_AFTER.map((label) => (
-                    <ChecklistRow
-                      key={label}
-                      label={label}
-                      checked={checklist.state[label] === true}
-                      manual={true}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </details>
-
           {finalCheck.visible && (
             <section id="finalcheck" className={`rounded-[1.55rem] p-5 shadow-sm ring-1 sm:p-6 ${finalCheck.ready ? "bg-emerald-50 ring-emerald-200" : "bg-[#fffaf0] ring-amber-200"}`}>
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -989,7 +862,7 @@ export default async function ShowAkteV2Page({
             subtitle="Alles, was vorher geklärt sein muss."
           />
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             <FormSection
               id="showdaten"
               icon="🎭"
@@ -1125,41 +998,46 @@ export default async function ShowAkteV2Page({
                 ticketPricePreview(ticketCategories, show.ticket_prices),
               ]}
             >
-              <div className="grid gap-3 lg:grid-cols-[1.15fr_1.25fr_.8fr]">
-                <div className="rounded-xl bg-white p-3 ring-1 ring-black/5">
-                  <FieldLabel>Honorar & Konditionen</FieldLabel>
+              <SmallHeading>Konditionen</SmallHeading>
+
+              <div className="grid items-start gap-4 lg:grid-cols-[1.15fr_1.25fr_.75fr]">
+                <div className="self-start">
+                  <FieldLabel>Honorar</FieldLabel>
                   <FeeEditor show={show} />
-                  {show.copy_setup_pending && show.fee_model && (
-                    <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">
-                      Aus vorheriger Show übernommen – bitte Konditionen für den neuen Termin prüfen.
-                    </div>
-                  )}
+                  {show.copy_setup_pending && show.fee_model && <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">Aus vorheriger Show übernommen – bitte Konditionen für den neuen Termin prüfen.</div>}
                   <FeeExtrasEditor initialExtras={feeExtras} />
                 </div>
 
-                <div className="rounded-xl bg-white p-3 ring-1 ring-black/5">
+                <div className="self-start">
                   <FieldLabel>Eintrittspreise</FieldLabel>
-                  <PriceCategoryEditor initialCategories={ticketCategories} />
+                  <PriceCategoryEditor
+                    initialCategories={ticketCategories}
+                  />
                 </div>
 
-                <div className="space-y-3 rounded-xl bg-white p-3 ring-1 ring-black/5">
+                <div className="self-start space-y-3">
                   <Input
                     name="free_tickets"
                     label="Freikarten"
                     defaultValue={show.free_tickets}
                   />
+
                   <Select
                     name="contract_status"
                     label="Vertrag"
                     defaultValue={show.contract_status}
                     options={[
                       ["offen", "Vertrag offen"],
-                      ["wartet_auf_vertragspartner", "Wartet auf Vertragspartner"],
+                      [
+                        "wartet_auf_vertragspartner",
+                        "Wartet auf Vertragspartner",
+                      ],
                       ["wartet_auf_kuenstler", "Wartet auf Künstler:in"],
                       ["erledigt", "Vertrag erledigt"],
                       ["nicht_erforderlich", "Nicht erforderlich"],
                     ]}
                   />
+
                   <div className="pt-1 [&_a]:block [&_a]:max-w-full [&_a]:truncate">
                     <ContextFiles
                       title="Vertragsdateien"
@@ -1170,22 +1048,16 @@ export default async function ShowAkteV2Page({
                 </div>
               </div>
 
-              <details
-                open={show.invoice_recipient_source === "custom"}
-                className="rounded-xl bg-[#fbf7ef] ring-1 ring-black/5"
-              >
-                <summary className="list-none cursor-pointer px-4 py-3 text-xs font-black text-zinc-700 [&::-webkit-details-marker]:hidden">
-                  Rechnungsempfänger · {show.invoice_recipient_source === "custom" ? "abweichend" : "wie Vertragspartner"} →
-                </summary>
-                <div className="px-4 pb-4">
-                  <InvoiceRecipientEditor
-                    defaultSource={show.invoice_recipient_source || "contract_partner"}
-                    contractPartnerSummary={contractPartnerSummary}
-                    venueSummary={venueSummary}
-                    values={show}
-                  />
-                </div>
-              </details>
+              <SmallHeading>Rechnungsempfänger</SmallHeading>
+
+              <InvoiceRecipientEditor
+                defaultSource={
+                  show.invoice_recipient_source || "contract_partner"
+                }
+                contractPartnerSummary={contractPartnerSummary}
+                venueSummary={venueSummary}
+                values={show}
+              />
 
               <details
                 open={Boolean(show.contract_notes)}
@@ -1204,6 +1076,7 @@ export default async function ShowAkteV2Page({
                   />
                 </div>
               </details>
+
             </FormSection>
 
             <FormSection
@@ -1345,7 +1218,7 @@ export default async function ShowAkteV2Page({
                   : null,
               ]}
             >
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-2">
                 <Input
                   name="arrival_time"
                   label="Ankunft"
@@ -1372,39 +1245,17 @@ export default async function ShowAkteV2Page({
                 />
               </div>
 
-              <div className="border-t border-black/5 pt-3">
-                <div className="grid gap-2 md:grid-cols-2">
-                  <details className="group/access">
-                    <summary className="list-none cursor-pointer rounded-lg px-1 py-1.5 text-xs font-black text-zinc-600 transition hover:text-zinc-950 [&::-webkit-details-marker]:hidden">
-                      {show.venue_access_details
-                        ? `📍 ${show.venue_access_details} · bearbeiten`
-                        : "+ Zugang / Treffpunkt"}
-                    </summary>
-                    <div className="mt-2">
-                      <CompactTextarea
-                        name="venue_access_details"
-                        label="Zugang / Treffpunkt vor Ort"
-                        defaultValue={show.venue_access_details}
-                      />
-                    </div>
-                  </details>
+              <Input
+                name="venue_access_details"
+                label="Zugang / Treffpunkt vor Ort"
+                defaultValue={show.venue_access_details}
+              />
 
-                  <details className="group/notes">
-                    <summary className="list-none cursor-pointer rounded-lg px-1 py-1.5 text-xs font-black text-zinc-600 transition hover:text-zinc-950 [&::-webkit-details-marker]:hidden">
-                      {show.schedule_notes
-                        ? `⚡ ${show.schedule_notes} · bearbeiten`
-                        : "+ Besonderheiten zum Ablauf"}
-                    </summary>
-                    <div className="mt-2">
-                      <CompactTextarea
-                        name="schedule_notes"
-                        label="Besonderheiten zum Ablauf"
-                        defaultValue={show.schedule_notes}
-                      />
-                    </div>
-                  </details>
-                </div>
-              </div>
+              <CompactTextarea
+                name="schedule_notes"
+                label="Besonderheiten zum Ablauf"
+                defaultValue={show.schedule_notes}
+              />
             </FormSection>
           </div>
 
@@ -1442,29 +1293,9 @@ export default async function ShowAkteV2Page({
               </div>
             </div>
 
-            {(show.venue_access_details || show.schedule_notes) && (
-              <div className="mt-4 grid gap-2 md:grid-cols-2">
-                {show.venue_access_details && (
-                  <div className="rounded-xl bg-[#fbf7ef] px-4 py-3 ring-1 ring-black/5">
-                    <div className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-400">
-                      📍 Zugang & Treffpunkt
-                    </div>
-                    <div className="mt-1 whitespace-pre-line text-sm font-black text-zinc-800">
-                      {show.venue_access_details}
-                    </div>
-                  </div>
-                )}
-
-                {show.schedule_notes && (
-                  <div className="rounded-xl bg-[#fff8df] px-4 py-3 ring-1 ring-[#f0df9a]">
-                    <div className="text-[10px] font-black uppercase tracking-[.12em] text-[#9a7a16]">
-                      ⚡ Besonderheiten
-                    </div>
-                    <div className="mt-1 whitespace-pre-line text-sm font-black text-zinc-800">
-                      {show.schedule_notes}
-                    </div>
-                  </div>
-                )}
+            {show.venue_access_details && (
+              <div className="mt-4 rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-black text-zinc-800 ring-1 ring-black/5">
+                🚪 Zugang / Treffpunkt: {show.venue_access_details}
               </div>
             )}
 
@@ -1504,7 +1335,7 @@ export default async function ShowAkteV2Page({
               <ShowdayCard title="Anreise & Übernachtung">
                 <ShowdayLine
                   label="Route"
-                  value={travelPreview(travelLegs, show.travel_planning_status) || "noch offen"}
+                  value={travelPreview(travelLegs) || "noch offen"}
                 />
                 <ShowdayLine
                   label="Unterkunft"
@@ -1521,220 +1352,275 @@ export default async function ShowAkteV2Page({
             subtitle="Abrechnen, bewerten, abschließen."
           />
 
-          <div className="space-y-2">
-            <FormSection
-              id="ticketzahlen"
-              icon="🎟️"
-              title="Ticketzahlen"
-              state={ticketKnowledgeStatus !== "open" ? "done" : "open"}
-              doneLabel="✓ Erfasst"
-              preview={[
-                ticketKnowledgeStatus === "unknown"
-                  ? "Nicht weitergegeben"
-                  : ticketsSoldEntered
-                    ? `${ticketsSold} Tickets`
-                    : "Noch offen",
-                occupancy !== null ? `${occupancy} % Auslastung` : null,
-                sellableCapacity ? `Kapazität ${sellableCapacity}` : null,
-              ]}
-            >
-              <TicketSalesEditor
-                initialMode={show.ticket_sales_mode}
-                initialTotal={show.tickets_sold}
-                initialCapacity={show.sellable_capacity || show.capacity}
-                categories={ticketCategories}
-              />
+          <FormSection
+            id="nachbereitung"
+            icon="✅"
+            title="Nachbereitung"
+            state={postState(show, paid, invoiceAmount)}
+            doneLabel="✓ Abgeschlossen"
+            preview={postPreview({
+              show,
+              paid,
+              invoiceAmount,
+              ticketsSold,
+              sellableCapacity,
+              occupancy,
+            })}
+          >
+            <SmallHeading>Abrechnung</SmallHeading>
 
-              <div className="mt-3 max-w-sm">
-                <Select
-                  name="ticket_sales_knowledge_status"
-                  label="Ticketzahlen-Status"
-                  defaultValue={ticketKnowledgeStatus}
-                  options={[
-                    ["open", "Noch offen"],
-                    ["known", "Erfasst"],
-                    ["unknown", "Nicht bekannt / Veranstalter meldet nicht"],
-                  ]}
+            <SettlementEditor show={show} categories={ticketCategories} />
+
+            <SmallHeading>Rechnung & Zahlung</SmallHeading>
+
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <div className="self-end">
+                <CheckTile
+                  name="invoice_sent"
+                  label="Rechnung verschickt"
+                  defaultChecked={show.invoice_sent === true}
                 />
               </div>
-            </FormSection>
 
-            <FormSection
-              id="abrechnung"
-              icon="🧾"
-              title="Abrechnung"
-              state={
-                show.billing_status === "nicht_relevant" ||
-                Number(show.settlement_total_amount || 0) > 0
-                  ? "done"
-                  : "open"
+              <Input
+                name="invoice_date"
+                label="Rechnungsdatum"
+                type="date"
+                defaultValue={show.invoice_date}
+              />
+              <Input
+                name="invoice_number"
+                label="Rechnungsnummer"
+                defaultValue={show.invoice_number}
+              />
+              <Input
+                name="invoice_amount"
+                label="Rechnungsbetrag €"
+                type="number"
+                defaultValue={show.invoice_amount}
+              />
+              <Input
+                name="invoice_due_date"
+                label="Fällig am"
+                type="date"
+                defaultValue={show.invoice_due_date}
+              />
+            </div>
+
+            <ContextFiles
+              title="Rechnungsdateien"
+              files={files}
+              pattern={/rechnung|invoice/i}
+            />
+
+            <PaymentEditor
+              initialPayments={payments}
+              invoiceAmount={show.invoice_amount}
+              settlementAmount={show.settlement_total_amount}
+            />
+
+            <SmallHeading>Ticketzahlen</SmallHeading>
+
+            <TicketSalesEditor
+              initialMode={show.ticket_sales_mode}
+              initialTotal={show.tickets_sold}
+              initialCapacity={
+                show.sellable_capacity || show.capacity
               }
-              doneLabel="✓ Geklärt"
-              preview={[
-                show.billing_status === "nicht_relevant"
-                  ? "Nicht relevant"
-                  : show.settlement_total_amount
-                    ? `${formatEuro(Number(show.settlement_total_amount))} Künstlerumsatz`
-                    : "Abrechnung offen",
-                show.fee_model ? `Modell: ${String(show.fee_model)}` : null,
-              ]}
-            >
-              <SettlementEditor show={show} categories={ticketCategories} />
-            </FormSection>
+              categories={ticketCategories}
+            />
 
-            <FormSection
-              id="rechnung-zahlung"
-              icon="💳"
-              title="Rechnung & Zahlung"
-              state={paymentComplete ? "done" : "open"}
-              doneLabel="✓ Erledigt"
-              preview={[
-                show.invoice_sent ? "Rechnung verschickt" : "Rechnung offen",
-                invoiceAmount > 0 ? formatEuro(invoiceAmount) : null,
-                paymentComplete
-                  ? "Zahlung vollständig"
-                  : invoiceAmount > 0
-                    ? `${formatEuro(Math.max(invoiceAmount - paid, 0))} offen`
-                    : null,
-              ]}
-            >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <div className="self-end">
-                  <CheckTile
-                    name="invoice_sent"
-                    label="Rechnung verschickt"
-                    defaultChecked={show.invoice_sent === true}
-                  />
+            <div className="mt-3 max-w-sm">
+              <Select
+                name="ticket_sales_knowledge_status"
+                label="Ticketzahlen-Status"
+                defaultValue={show.ticket_sales_knowledge_status || (ticketsSoldEntered ? "known" : "open")}
+                options={[
+                  ["open", "Noch offen"],
+                  ["known", "Erfasst"],
+                  ["unknown", "Nicht bekannt / Veranstalter meldet nicht"],
+                ]}
+              />
+            </div>
+
+            <SmallHeading>Show-Bewertung</SmallHeading>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <Rating
+                name="review_audience"
+                label="Publikum"
+                value={show.review_audience}
+                options={[
+                  ["hard", "😕 Schwierig"],
+                  ["okay", "🙂 Okay"],
+                  ["great", "😍 Super"],
+                ]}
+              />
+
+              <Rating
+                name="review_location"
+                label="Location"
+                value={show.review_location}
+                options={[
+                  ["hard", "😕 Schwierig"],
+                  ["okay", "🙂 Okay"],
+                  ["great", "😍 Super"],
+                ]}
+              />
+
+              <Rating
+                name="review_organization"
+                label="Organisation"
+                value={show.review_organization}
+                options={[
+                  ["hard", "😕 Schwierig"],
+                  ["okay", "🙂 Okay"],
+                  ["great", "😍 Super"],
+                ]}
+              />
+
+              <Rating
+                name="review_effort"
+                label="Aufwand"
+                value={show.review_effort}
+                options={[
+                  ["low", "😌 Gering"],
+                  ["okay", "🙂 Okay"],
+                  ["high", "😵 Hoch"],
+                ]}
+              />
+
+              <Rating
+                name="review_tech"
+                label="Technik"
+                value={show.review_tech}
+                options={[
+                  ["hard", "😕 Schwierig"],
+                  ["okay", "🙂 Okay"],
+                  ["great", "😍 Super"],
+                ]}
+              />
+
+              <Rating
+                name="play_again"
+                label="Würdest du hier wieder spielen?"
+                value={show.play_again}
+                options={[
+                  ["yes", "😍 Ja"],
+                  ["maybe", "🤔 Vielleicht"],
+                  ["no", "👎 Nein"],
+                ]}
+              />
+            </div>
+
+            <CompactTextarea
+              name="show_learnings"
+              label="Was lernen wir aus dieser Show?"
+              defaultValue={show.show_learnings}
+            />
+          </FormSection>
+
+          {/* ARBEITSLISTE */}
+          <section
+            id="arbeitsliste"
+            className="rounded-[1.55rem] bg-white p-5 shadow-sm ring-1 ring-black/5 sm:p-6"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef4ff] text-[#2867d8]">
+                  ☑
+                </span>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[.14em] text-zinc-400">
+                    Checkliste
+                  </p>
+                  <h2 className="mt-0.5 text-xl font-black">
+                    Sonjas Arbeitsliste
+                  </h2>
                 </div>
-
-                <Input name="invoice_date" label="Rechnungsdatum" type="date" defaultValue={show.invoice_date} />
-                <Input name="invoice_number" label="Rechnungsnummer" defaultValue={show.invoice_number} />
-                <Input name="invoice_amount" label="Rechnungsbetrag €" type="number" defaultValue={show.invoice_amount} />
-                <Input name="invoice_due_date" label="Fällig am" type="date" defaultValue={show.invoice_due_date} />
               </div>
 
-              <ContextFiles
-                title="Rechnungsdateien"
-                files={files}
-                pattern={/rechnung|invoice/i}
-              />
-
-              <PaymentEditor
-                initialPayments={payments}
-                invoiceAmount={show.invoice_amount}
-                settlementAmount={show.settlement_total_amount}
-              />
-            </FormSection>
-
-            <FormSection
-              id="show-bewertung"
-              icon="⭐"
-              title="Show bewerten"
-              state={postRated ? "done" : "open"}
-              doneLabel="✓ Bewertet"
-              preview={[
-                show.play_again ? `Wieder spielen: ${playAgainLabel(show.play_again)}` : "Bewertung offen",
-                show.show_learnings ? "Learnings erfasst" : null,
-              ]}
-            >
-              <div className="grid gap-3 md:grid-cols-2">
-                <Rating name="review_audience" label="Publikum" value={show.review_audience} options={[["hard", "😕 Schwierig"], ["okay", "🙂 Okay"], ["great", "😍 Super"]]} />
-                <Rating name="review_location" label="Location" value={show.review_location} options={[["hard", "😕 Schwierig"], ["okay", "🙂 Okay"], ["great", "😍 Super"]]} />
-                <Rating name="review_organization" label="Organisation" value={show.review_organization} options={[["hard", "😕 Schwierig"], ["okay", "🙂 Okay"], ["great", "😍 Super"]]} />
-                <Rating name="review_effort" label="Aufwand" value={show.review_effort} options={[["low", "😌 Gering"], ["okay", "🙂 Okay"], ["high", "😵 Hoch"]]} />
-                <Rating name="review_tech" label="Technik" value={show.review_tech} options={[["hard", "😕 Schwierig"], ["okay", "🙂 Okay"], ["great", "😍 Super"]]} />
-                <Rating name="play_again" label="Würdest du hier wieder spielen?" value={show.play_again} options={[["yes", "😍 Ja"], ["maybe", "🤔 Vielleicht"], ["no", "👎 Nein"]]} />
-              </div>
-
-              <CompactTextarea
-                name="show_learnings"
-                label="Was lernen wir aus dieser Show?"
-                defaultValue={show.show_learnings}
-              />
-            </FormSection>
-
-            <FormSection
-              id="wirtschaftlichkeit"
-              icon="💸"
-              title="Wirtschaftlichkeit"
-              state={economicsComplete ? "done" : "open"}
-              doneLabel="✓ Abgeschlossen"
-              preview={
-                economics
-                  ? [
-                      `${formatEuro(economicsSummary.revenue)} Einnahmen`,
-                      `${formatEuro(economicsSummary.costs)} Kosten`,
-                      `${formatEuro(economicsSummary.profit)} Ergebnis`,
-                    ]
-                  : ["Noch keine Auswertung"]
-              }
-            >
-              {economics ? (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <MiniMetric label="Einnahmen" value={formatEuro(economicsSummary.revenue)} />
-                    <MiniMetric label="Kosten" value={formatEuro(economicsSummary.costs)} />
-                    <MiniMetric label="Ergebnis" value={formatEuro(economicsSummary.profit)} />
-                  </div>
-                  {occupancy !== null && (
-                    <p className="text-xs font-bold text-zinc-500">
-                      Auslastung {occupancy} %
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm font-bold text-zinc-400">
-                  Für diese Show liegt noch kein Wirtschaftlichkeitsdatensatz vor.
-                </p>
-              )}
-
-              <Link
-                href={`/admin/shows/${show.id}/economics`}
-                className="flex items-center justify-between rounded-xl bg-white px-4 py-3 text-xs font-black text-zinc-700 ring-1 ring-black/10"
-              >
-                <span>Auswertung öffnen</span>
-                <span>→</span>
-              </Link>
-            </FormSection>
-
-            <FormSection
-              id="show-abschluss"
-              icon="🏁"
-              title="Show abschließen"
-              state={showFullyComplete ? "done" : "open"}
-              doneLabel="✓ Show abgeschlossen"
-              preview={[
-                `${[
-                  ticketKnowledgeStatus !== "open",
-                  show.invoice_sent === true || show.billing_status === "nicht_relevant",
-                  paymentComplete,
-                  postRated,
-                  economicsComplete,
-                ].filter(Boolean).length}/5 Abschlusskriterien erfüllt`,
-              ]}
-            >
-              <div className="grid gap-2 md:grid-cols-2">
-                <CompletionLine label="Ticketzahlen erfasst / nicht weitergegeben" done={ticketKnowledgeStatus !== "open"} />
-                <CompletionLine label="Rechnung verschickt / nicht relevant" done={show.invoice_sent === true || show.billing_status === "nicht_relevant"} />
-                <CompletionLine label="Zahlung vollständig" done={paymentComplete} />
-                <CompletionLine label="Show bewertet" done={postRated} />
-                <CompletionLine label="Wirtschaftlichkeit abgeschlossen" done={economicsComplete} />
-              </div>
-
-              <p className={`rounded-xl px-4 py-3 text-sm font-black ${
-                showFullyComplete
-                  ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
-                  : "bg-amber-50 text-amber-800 ring-1 ring-amber-100"
-              }`}>
-                {showFullyComplete
-                  ? "✓ Diese Show ist vollständig abgeschlossen."
-                  : "Die Show ist abgeschlossen, sobald alle fünf Kriterien erfüllt sind."}
+              <p className="max-w-md text-xs font-semibold leading-5 text-zinc-400">
+                ⓘ Einige Punkte werden automatisch aus der Show-Akte
+                abgehakt.
               </p>
-            </FormSection>
-          </div>
+            </div>
+
+            <div className="mt-5">
+              {isPastShowDate(show.show_date) ||
+              ["gespielt", "abgeschlossen"].includes(
+                String(show.internal_status || "")
+              ) ? (
+                <details className="group rounded-xl bg-[#fbf7ef] ring-1 ring-black/5">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+                    <div>
+                      <p className="text-sm font-black text-zinc-900">
+                        ✓ Vorbereitung abgeschlossen
+                      </p>
+                      <p className="mt-0.5 text-xs font-semibold text-zinc-400">
+                        Frühere Arbeitsliste anzeigen
+                      </p>
+                    </div>
+                    <span className="text-sm font-black text-zinc-400 transition group-open:rotate-180">
+                      ⌄
+                    </span>
+                  </summary>
+
+                  <div className="border-t border-black/5 px-4 py-4">
+                    <div className="grid gap-x-10 gap-y-2 md:grid-cols-2">
+                      {CHECKLIST_BEFORE.map((label) => (
+                        <ChecklistRow
+                          key={label}
+                          label={label}
+                          checked={checklist.state[label] === true}
+                          manual={false}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              ) : (
+                <>
+                  <h3 className="text-sm font-black text-zinc-900">
+                    Vor der Show
+                  </h3>
+
+                  <div className="mt-3 grid gap-x-10 gap-y-2 md:grid-cols-2">
+                    {CHECKLIST_BEFORE.map((label) => (
+                      <ChecklistRow
+                        key={label}
+                        label={label}
+                        checked={checklist.state[label] === true}
+                        manual={
+                          allowManualChecklist || MANUAL_CHECKLIST.has(label)
+                        }
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="mt-5 border-t border-black/5 pt-5">
+              <h3 className="text-sm font-black text-zinc-900">
+                Nach der Show
+              </h3>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                {CHECKLIST_AFTER.map((label) => (
+                  <ChecklistRow
+                    key={label}
+                    label={label}
+                    checked={checklist.state[label] === true}
+                    manual={allowManualChecklist}
+                  />
+                ))}
+              </div>
+            </div>
+          </section>
 
           {/* WERKZEUGE */}
-          <section className="grid items-stretch gap-4 xl:grid-cols-2">
+          <section className="grid items-start gap-4 xl:grid-cols-3">
             <BottomCard title="📨 Veranstalter-Portal">
               <p className="text-sm font-bold text-zinc-500">
                 Formular vollständig · {portalProgress(show).done}/
@@ -1786,7 +1672,49 @@ export default async function ShowAkteV2Page({
               </div>
             </BottomCard>
 
+            <BottomCard title="💸 Wirtschaftlichkeit">
+              {economics ? (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <MiniMetric
+                      label="Einnahmen"
+                      value={formatEuro(economicsSummary.revenue)}
+                    />
+                    <MiniMetric
+                      label="Kosten"
+                      value={formatEuro(economicsSummary.costs)}
+                    />
+                  </div>
 
+                  <div className="mt-2 rounded-xl bg-[#fbf7ef] px-4 py-3 ring-1 ring-black/5">
+                    <p className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-400">
+                      Ergebnis
+                    </p>
+                    <p className="mt-1 text-xl font-black text-zinc-950">
+                      {formatEuro(economicsSummary.profit)}
+                    </p>
+
+                    {occupancy !== null && (
+                      <p className="mt-1 text-xs font-bold text-zinc-500">
+                        Auslastung {occupancy} %
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm font-bold text-zinc-400">
+                  Für diese Show liegt noch kein Wirtschaftlichkeitsdatensatz vor.
+                </p>
+              )}
+
+              <Link
+                href={`/admin/shows/${show.id}/economics`}
+                className="mt-3 flex items-center justify-between rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-black text-zinc-700 ring-1 ring-black/5"
+              >
+                <span>Auswertung öffnen</span>
+                <span>→</span>
+              </Link>
+            </BottomCard>
           </section>
         </div>
 
@@ -2954,15 +2882,15 @@ function getSmartTasks({
       show.billing_status !== "nicht_relevant" &&
       !checklistState["Rechnung verschickt"]
     ) {
-      tasks.push({ label: "Rechnung verschicken", href: "#rechnung-zahlung", manual: false });
+      tasks.push({ label: "Rechnung verschicken", href: "#nachbereitung", manual: false });
     } else if (show.billing_status !== "nicht_relevant" && Number(show.invoice_amount || 0) > 0 && !checklistState["Zahlung vollständig"]) {
       const due = show.invoice_due_date ? new Date(`${show.invoice_due_date}T23:59:59`) : null;
-      if (!due || due.getTime() <= Date.now()) tasks.push({ label: "Zahlung nachhalten", href: "#rechnung-zahlung", manual: false, followUpDate: show.invoice_due_date });
+      if (!due || due.getTime() <= Date.now()) tasks.push({ label: "Zahlung nachhalten", href: "#nachbereitung", manual: false, followUpDate: show.invoice_due_date });
     }
 
     const ticketStatus = show.ticket_sales_knowledge_status || (ticketsSoldEntered ? "known" : "open");
-    if (ticketStatus === "open") tasks.push({ label: "Ticketzahlen klären", href: "#ticketzahlen", manual: false });
-    if (!checklistState["Show bewertet"]) tasks.push({ label: "Show bewerten", href: "#show-bewertung", manual: false });
+    if (ticketStatus === "open") tasks.push({ label: "Ticketzahlen klären", href: "#nachbereitung", manual: false });
+    if (!checklistState["Show bewertet"]) tasks.push({ label: "Show bewerten", href: "#nachbereitung", manual: false });
 
     const economicsIncomplete =
       !economics ||
@@ -3244,27 +3172,6 @@ function PhaseHeader({
   );
 }
 
-function CompletionLine({
-  label,
-  done,
-}: {
-  label: string;
-  done: boolean;
-}) {
-  return (
-    <div
-      className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-bold ring-1 ${
-        done
-          ? "bg-emerald-50 text-emerald-800 ring-emerald-100"
-          : "bg-white text-zinc-600 ring-black/5"
-      }`}
-    >
-      <span className="text-base">{done ? "✓" : "○"}</span>
-      <span>{label}</span>
-    </div>
-  );
-}
-
 function FormSection({
   id,
   icon,
@@ -3285,12 +3192,12 @@ function FormSection({
   return (
     <details
       id={id}
-className="group scroll-mt-6 overflow-visible rounded-[1.15rem] bg-white shadow-sm ring-1 ring-black/5"
+className="group scroll-mt-6 overflow-visible rounded-[1.3rem] bg-white shadow-sm ring-1 ring-black/5"
     >
-      <summary className="list-none cursor-pointer px-4 py-3 transition hover:bg-[#fbfaf7] [&::-webkit-details-marker]:hidden">
-        <div className="grid min-h-[42px] items-center gap-x-4 gap-y-1 md:grid-cols-[235px_minmax(0,1fr)_auto_22px]">
+      <summary className="list-none cursor-pointer px-5 py-4 transition hover:bg-[#fbfaf7] [&::-webkit-details-marker]:hidden">
+        <div className="grid min-h-[52px] items-center gap-x-5 gap-y-1 md:grid-cols-[250px_minmax(0,1fr)_auto_26px]">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f7f8fa] text-base">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f7f8fa] text-lg">
               {icon}
             </span>
             <h3 className="text-sm font-black text-zinc-950">
@@ -3330,8 +3237,8 @@ className="group scroll-mt-6 overflow-visible rounded-[1.15rem] bg-white shadow-
         </div>
       </summary>
 
-      <div className="border-t border-black/5 bg-[#fffdf9] p-4 sm:p-5">
-        <div className="space-y-3">{children}</div>
+      <div className="border-t border-black/5 bg-[#fffdf9] p-5 sm:p-6">
+        <div className="space-y-4">{children}</div>
       </div>
     </details>
   );
@@ -3646,11 +3553,11 @@ function BottomCard({
   children: ReactNode;
 }) {
   return (
-    <section className="flex h-full flex-col rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-black/5">
+    <section className="rounded-[1.5rem] bg-white p-5 shadow-sm ring-1 ring-black/5">
       <h3 className="text-lg font-black tracking-tight">
         {title}
       </h3>
-      <div className="mt-4 flex-1">{children}</div>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -4054,27 +3961,16 @@ function getEconomicsSummary(economics: any) {
       ? Number(economics.revenue_total || 0)
       : revenueFromItems;
 
-  const storedProfit =
-    economics.profit !== null &&
-    economics.profit !== undefined
-      ? Number(economics.profit || 0)
-      : null;
-
-  // Die Economics-Seite speichert im Profit bereits ALLE direkten Show-Kosten
-  // (u. a. Reise, Hotel, Promo und Besetzung). Wenn cost_total nicht separat
-  // gespeichert ist, leiten wir die Kosten deshalb aus Umsatz - DB ab.
-  // So zeigt die Show-Akte exakt dasselbe Ergebnis wie die Wirtschaftlichkeit.
   const costs =
     economics.cost_total !== null &&
     economics.cost_total !== undefined
       ? Number(economics.cost_total || 0)
-      : storedProfit !== null
-        ? revenue - storedProfit
-        : costsFromItems;
+      : costsFromItems;
 
   const profit =
-    storedProfit !== null
-      ? storedProfit
+    economics.profit !== null &&
+    economics.profit !== undefined
+      ? Number(economics.profit || 0)
       : revenue - costs;
 
   return { revenue, costs, profit };

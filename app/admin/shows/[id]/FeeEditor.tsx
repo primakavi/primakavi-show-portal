@@ -22,6 +22,8 @@ export default function FeeEditor({ show }: { show: any }) {
   const [artistShare, setArtistShare] = useState(initial.artistShare);
   const [organizerShare, setOrganizerShare] = useState(initial.organizerShare);
   const [notes, setNotes] = useState(initial.notes);
+  const [combinationMode, setCombinationMode] = useState(show.fee_combination_mode || "minimum_or_share");
+  const [threshold, setThreshold] = useState(String(show.fee_share_threshold ?? ""));
 
   const showAmount = model === "fixed" || model === "minimum_plus_share";
   const showShares = model === "minimum_plus_share" || model === "share";
@@ -101,6 +103,28 @@ export default function FeeEditor({ show }: { show: any }) {
       )}
 
       {model === "" && <input type="hidden" name="fee_tax_mode" value="" />}
+
+      {model === "minimum_plus_share" && (
+        <div className="rounded-xl bg-[#fbf7ef] p-3 ring-1 ring-black/5">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-black text-zinc-500">Wie werden Fest-/Mindesthonorar und Beteiligung kombiniert?</span>
+            <select name="fee_combination_mode" value={combinationMode} onChange={(e) => setCombinationMode(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm font-bold">
+              <option value="minimum_or_share">Mindesthonorar oder Beteiligung – höherer Betrag zählt</option>
+              <option value="fixed_plus_share">Festhonorar + zusätzliche Beteiligung</option>
+              <option value="fixed_plus_threshold_share">Festhonorar + Beteiligung erst ab Umsatzschwelle</option>
+            </select>
+          </label>
+          {combinationMode === "fixed_plus_threshold_share" && (
+            <label className="mt-2 block">
+              <span className="mb-1.5 block text-xs font-black text-zinc-500">Umsatzschwelle €</span>
+              <input name="fee_share_threshold" type="number" min="0" step="0.01" value={threshold} onChange={(e) => setThreshold(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm font-bold" />
+              <span className="mt-1 block text-[11px] font-semibold text-zinc-400">Die Beteiligung wird nur auf den Umsatz oberhalb dieser Schwelle berechnet.</span>
+            </label>
+          )}
+          {combinationMode !== "fixed_plus_threshold_share" && <input type="hidden" name="fee_share_threshold" value="" />}
+        </div>
+      )}
+      {model !== "minimum_plus_share" && <><input type="hidden" name="fee_combination_mode" value="" /><input type="hidden" name="fee_share_threshold" value="" /></>}
 
       {showShares && (
         <div className="grid gap-2 sm:grid-cols-2">

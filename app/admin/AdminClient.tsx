@@ -36,24 +36,39 @@ type ShowRow = {
 };
 
 type FilterKey =
+  | "alle"
   | "kommend"
-  | "handlung"
-  | "portal"
-  | "abrechnung"
+  | "gespielt"
   | "option"
-  | "abgesagt"
-  | "archiv"
-  | "alle";
+  | "abgesagt";
+
+type PhaseKey =
+  | "alle"
+  | "zurueckgestellt"
+  | "vorbereitung"
+  | "produktionscheck"
+  | "finalcheck"
+  | "spielbereit"
+  | "nachbereitung"
+  | "abgeschlossen";
 
 const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "alle", label: "Alle" },
   { key: "kommend", label: "Kommend" },
-  { key: "handlung", label: "Handlung nötig" },
-  { key: "portal", label: "Neue Infos" },
-  { key: "abrechnung", label: "Abrechnung" },
+  { key: "gespielt", label: "Gespielt" },
   { key: "option", label: "Optionen" },
   { key: "abgesagt", label: "Abgesagt" },
-  { key: "archiv", label: "Archiv" },
-  { key: "alle", label: "Alle" },
+];
+
+const PHASES: { key: PhaseKey; label: string }[] = [
+  { key: "alle", label: "Alle Phasen" },
+  { key: "zurueckgestellt", label: "Noch nicht in Bearbeitung" },
+  { key: "vorbereitung", label: "Vorbereitung" },
+  { key: "produktionscheck", label: "Produktionscheck" },
+  { key: "finalcheck", label: "Finalcheck" },
+  { key: "spielbereit", label: "Spielbereit" },
+  { key: "nachbereitung", label: "Nachbereitung" },
+  { key: "abgeschlossen", label: "Abgeschlossen" },
 ];
 
 export default function AdminClient({
@@ -71,6 +86,7 @@ export default function AdminClient({
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("kommend");
+  const [phase, setPhase] = useState<PhaseKey>("alle");
   const [year, setYear] = useState("alle");
   const [showCreateConfirm, setShowCreateConfirm] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -143,13 +159,9 @@ const optionsCount = shows.filter((show) => {
       const date = parseDate(show.show_date);
       const isPast = date ? date < today : false;
       const isFuture = date ? date >= today : true;
-      const archived = isArchivedShow(show);
-      const actionNeeded = getActionItems(show).length > 0;
-      const newPortalInfo = hasNewPortalInfo(show);
-      const billingOpen =
-        isPast &&
-        show.billing_status !== "bezahlt" &&
-        show.billing_status !== "nicht_relevant";
+      const isOption = show.internal_status === "option";
+      const isCancelled = show.internal_status === "abgesagt";
+      const status = getStatus(show);
 
       const text = [
         show.artist,
@@ -165,22 +177,21 @@ const optionsCount = shows.filter((show) => {
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch = text.includes(query.toLowerCase());
+      const matchesSearch = text.includes(query.trim().toLowerCase());
       const matchesYear = year === "alle" || show.show_date?.startsWith(year);
 
       const matchesFilter =
         filter === "alle" ||
-        (filter === "kommend" && isFuture && !archived) ||
-        (filter === "handlung" && actionNeeded && !archived) ||
-        (filter === "portal" && newPortalInfo && !archived) ||
-        (filter === "abrechnung" && billingOpen && !archived) ||
-        (filter === "option" && show.internal_status === "option") ||
-        (filter === "abgesagt" && show.internal_status === "abgesagt") ||
-        (filter === "archiv" && archived);
+        (filter === "kommend" && isFuture && !isOption && !isCancelled) ||
+        (filter === "gespielt" && isPast && !isOption && !isCancelled) ||
+        (filter === "option" && isOption) ||
+        (filter === "abgesagt" && isCancelled);
 
-      return matchesSearch && matchesYear && matchesFilter;
+      const matchesPhase = phase === "alle" || status.key === phase;
+
+      return matchesSearch && matchesYear && matchesFilter && matchesPhase;
     });
-  }, [shows, query, filter, year, today]);
+  }, [shows, query, filter, phase, year, today]);
 
   const grouped = groupByMonth(rows);
 
@@ -237,21 +248,8 @@ const optionsCount = shows.filter((show) => {
 </section>
 
       <section className="rounded-[1.7rem] bg-white p-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-        <div className="flex flex-col gap-3 xl:grid xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)_auto] xl:items-center">
-          <div className="relative min-w-0">
-            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
-              🔎
-            </span>
-
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Location, Stadt, Programm, Kontakt …"
-              className="h-12 w-full rounded-xl bg-[#fbf7ef] pl-10 pr-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
-            />
-          </div>
-
-          <div className="flex min-w-0 items-center gap-2 overflow-x-auto px-0.5 pb-1 pr-4 xl:pb-0">
+        <div className="space-y-3">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1">
             {FILTERS.map((item) => {
               const isActive = filter === item.key;
 
@@ -267,26 +265,56 @@ const optionsCount = shows.filter((show) => {
                       : "bg-[#fbf7ef] text-zinc-600 ring-1 ring-black/[0.04] hover:bg-[#f5ead9] hover:text-zinc-950",
                   ].join(" ")}
                 >
-                  {isActive && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                  {isActive && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                  )}
                   <span>{item.label}</span>
                 </button>
               );
             })}
           </div>
 
-          <select
-            value={year}
-            onChange={(event) => setYear(event.target.value)}
-            aria-label="Jahr auswählen"
-            className="h-12 shrink-0 rounded-full bg-[#fbf7ef] px-4 text-xs font-black text-zinc-700 outline-none ring-1 ring-black/[0.05] transition hover:bg-[#f5ead9]"
-          >
-            <option value="alle">Alle Jahre</option>
-            {years.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+          <div className="grid gap-3 md:grid-cols-[minmax(260px,1fr)_220px_150px]">
+            <div className="relative min-w-0">
+              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
+                🔎
+              </span>
+
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Location, Stadt, Programm, Kontakt …"
+                className="h-12 w-full rounded-xl bg-[#fbf7ef] pl-10 pr-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+              />
+            </div>
+
+            <select
+              value={phase}
+              onChange={(event) => setPhase(event.target.value as PhaseKey)}
+              aria-label="Phase auswählen"
+              className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-xs font-black text-zinc-700 outline-none ring-1 ring-black/[0.05] transition hover:bg-[#f5ead9]"
+            >
+              {PHASES.map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={year}
+              onChange={(event) => setYear(event.target.value)}
+              aria-label="Jahr auswählen"
+              className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-xs font-black text-zinc-700 outline-none ring-1 ring-black/[0.05] transition hover:bg-[#f5ead9]"
+            >
+              <option value="alle">Alle Jahre</option>
+              {years.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </section>
 
@@ -451,7 +479,7 @@ function ShowCard({
           router.push(`/admin/shows/${show.id}`);
         }
       }}
-      className="grid cursor-pointer gap-3 border-t border-black/5 px-5 py-4 transition first:border-t-0 hover:bg-[#f7f3eb] focus:bg-[#f7f3eb] focus:outline-none md:grid-cols-[125px_minmax(220px,1.35fr)_minmax(210px,1fr)_145px_minmax(180px,1fr)_130px] md:items-center"
+      className="grid cursor-pointer gap-3 border-t border-black/5 px-5 py-4 transition first:border-t-0 hover:bg-[#f7f3eb] focus:bg-[#f7f3eb] focus:outline-none md:grid-cols-[125px_minmax(220px,1.35fr)_minmax(210px,1fr)_145px_minmax(180px,1fr)_130px] md:items-start"
     >
       <div>
         <p className="text-sm font-black text-zinc-950">
@@ -529,11 +557,13 @@ function ShowCard({
           <Badge tone="zinc">+{visibleActions.length - 2}</Badge>
         )}
 
-        {visibleActions.length === 0 && missing.length > 0 && (
-          <Badge tone="zinc">
-            {missing.length} Info{missing.length === 1 ? "" : "s"} fehlen
-          </Badge>
-        )}
+        {status.key !== "abgeschlossen" &&
+          visibleActions.length === 0 &&
+          missing.length > 0 && (
+            <Badge tone="zinc">
+              {missing.length} Info{missing.length === 1 ? "" : "s"} fehlen
+            </Badge>
+          )}
       </div>
 
       <div
@@ -696,6 +726,7 @@ function getActionItems(show: ShowRow) {
   const isPast = isPastDate(show.show_date);
   const finalcheckDue = isFinalcheckDue(show);
   const finalcheckComplete = isFinalcheckComplete(show);
+  const hasFutureFollowUp = hasFollowUpInFuture(show.follow_up_date);
 
   if (show.internal_status === "abgesagt") {
     items.push("Abgesagt");
@@ -722,6 +753,10 @@ function getActionItems(show: ShowRow) {
 
   // Eine manuelle Aufgaben-WVL darf die Show zurückstellen.
   // Der Finalcheck hat in den letzten 7 Tagen aber immer Vorrang.
+  if (hasFutureFollowUp && !finalcheckDue && !isPast) {
+    items.push(`WVL ${formatDate(show.follow_up_date)}`);
+    return items;
+  }
 
   if (hasNewPortalInfo(show)) {
     items.push("Neue Infos prüfen");
@@ -768,14 +803,6 @@ function getMissingFields(show: ShowRow) {
 }
 
 function getStatus(show: ShowRow) {
-  if (show.internal_status === "abgeschlossen") {
-    return {
-      key: "fertig",
-      label: "✅ Abgeschlossen",
-      className: "bg-emerald-100 text-emerald-700",
-    };
-  }
-
   if (show.internal_status === "abgesagt") {
     return {
       key: "abgesagt",
@@ -792,68 +819,62 @@ function getStatus(show: ShowRow) {
     };
   }
 
-  if (isArchivedShow(show)) {
+  if (isPastDate(show.show_date)) {
+    const billingDone =
+      show.billing_status === "bezahlt" ||
+      show.billing_status === "nicht_relevant";
+
+    if (show.internal_status === "abgeschlossen" || billingDone) {
+      return {
+        key: "abgeschlossen",
+        label: "✅ Abgeschlossen",
+        className: "bg-emerald-100 text-emerald-700",
+      };
+    }
+
     return {
-      key: "archiv",
-      label: "📦 Archiv",
-      className: "bg-zinc-200 text-zinc-700",
+      key: "nachbereitung",
+      label: "🟣 Nachbereitung",
+      className: "bg-purple-100 text-purple-700",
     };
   }
 
-  if (
-    isPastDate(show.show_date) &&
-    show.billing_status !== "bezahlt" &&
-    show.billing_status !== "nicht_relevant"
-  ) {
+  if (isFinalcheckDue(show)) {
+    if (isFinalcheckComplete(show)) {
+      return {
+        key: "spielbereit",
+        label: "🎭 Spielbereit",
+        className: "bg-emerald-100 text-emerald-700",
+      };
+    }
+
     return {
-      key: "abrechnung",
-      label: "💸 Abrechnung",
-      className: "bg-orange-100 text-orange-700",
+      key: "finalcheck",
+      label: "🧭 Finalcheck",
+      className: "bg-sky-100 text-sky-700",
     };
   }
 
-// 7 Tage vor der Show: Finalcheck
-if (isFinalcheckDue(show)) {
-  if (isFinalcheckComplete(show)) {
+  if (isProductionCheckDue(show)) {
     return {
-      key: "spielbereit",
-      label: "🎭 Spielbereit",
-      className: "bg-emerald-100 text-emerald-700",
+      key: "produktionscheck",
+      label: "🟠 Produktionscheck",
+      className: "bg-amber-100 text-amber-800",
     };
   }
 
-  return {
-    key: "finalcheck",
-    label: "🧭 Finalcheck",
-    className: "bg-sky-100 text-sky-700",
-  };
-}
-
-// 30 Tage vor der Show: Produktionscheck
-if (isProductionCheckDue(show)) {
-  return {
-    key: "produktionscheck",
-    label: "🟠 Produktionscheck",
-    className: "bg-amber-100 text-amber-800",
-  };
-}
-
-  // Vor dem Bearbeitungsstart: Show ist bewusst zurückgestellt.
   const processingStart = getProcessingStartDate(show);
-  if (
-    processingStart &&
-    processingStart > startOfToday() &&
-    !isPastDate(show.show_date)
-  ) {
+  if (processingStart && processingStart > startOfToday()) {
     return {
       key: "zurueckgestellt",
-      label: `📅 Ab ${formatShortDate(show.show_follow_up_date || formatISODate(processingStart))}`,
+      label: `📅 Ab ${formatShortDate(
+        show.show_follow_up_date || formatISODate(processingStart)
+      )}`,
       className: "bg-sky-50 text-sky-700",
     };
   }
 
-  // Sobald der Bearbeitungsstart erreicht ist, ist die Show in Vorbereitung.
-  if (show.show_date && !isPastDate(show.show_date)) {
+  if (show.show_date) {
     return {
       key: "vorbereitung",
       label: "🔧 In Vorbereitung",
@@ -861,17 +882,9 @@ if (isProductionCheckDue(show)) {
     };
   }
 
-  if (show.internal_status === "neu") {
-    return {
-      key: "neu",
-      label: "🔴 Neu",
-      className: "bg-red-100 text-red-700",
-    };
-  }
-
   return {
-    key: "offen",
-    label: "🔴 Offen",
+    key: "vorbereitung",
+    label: "🔴 Daten offen",
     className: "bg-red-100 text-red-700",
   };
 }
@@ -927,11 +940,14 @@ function isFinalcheckDue(show: ShowRow) {
 }
 
 function isProductionCheckDue(show: ShowRow) {
-  return (
-    isWithinNextDays(show.show_date, 30) &&
-    !isWithinNextDays(show.show_date, 7) &&
-    !isPastDate(show.show_date)
-  );
+  const date = parseDate(show.show_date);
+  if (!date || isPastDate(show.show_date)) return false;
+
+  const today = startOfToday();
+  const limit = new Date(today);
+  limit.setDate(limit.getDate() + 30);
+
+  return date >= today && date <= limit;
 }
 
 function getProcessingStartDate(show: ShowRow) {
@@ -965,9 +981,14 @@ function formatShortDate(date?: string | null) {
 }
 
 function isContractDone(value?: string | null) {
-  const text = String(value || "").toLowerCase();
+  const text = String(value || "")
+    .trim()
+    .toLocaleLowerCase("de-DE");
 
   return (
+    text === "erledigt" ||
+    text === "nicht_erforderlich" ||
+    text === "nicht erforderlich" ||
     text.includes("liegt vor") ||
     text.includes("unterschrieben") ||
     text.includes("erstellt")

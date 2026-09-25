@@ -58,13 +58,6 @@ type TravelLeg = {
   actual_cost?: string | number | null;
 };
 
-type CastMember = {
-  id?: string;
-  name?: string | null;
-  role?: string | null;
-  actual_cost?: string | number | null;
-};
-
 type Benchmark = {
   avgRevenue?: number;
   avgCosts?: number;
@@ -88,7 +81,6 @@ export default function EconomicsTab({
   initialData,
   show,
   travelLegs = [],
-  cast = [],
   benchmark,
   completedAt,
   completeAction,
@@ -98,7 +90,6 @@ export default function EconomicsTab({
   initialData?: EconomicsData;
   show?: ShowContext;
   travelLegs?: TravelLeg[];
-  cast?: CastMember[];
   benchmark?: Benchmark;
   completedAt?: string | null;
   completeAction: (formData: FormData) => void | Promise<void>;
@@ -116,8 +107,8 @@ export default function EconomicsTab({
   );
 
   const automaticShowCostItems = useMemo(
-    () => getAutomaticShowCostItems(show, travelLegs, cast),
-    [show, travelLegs, cast]
+    () => getAutomaticShowCostItems(show, travelLegs),
+    [show, travelLegs]
   );
 
   const [costItems, setCostItems] = useState<MoneyItem[]>(
@@ -690,8 +681,7 @@ function getAutomaticTravelItems(travelLegs: TravelLeg[]): MoneyItem[] {
 
 function getAutomaticShowCostItems(
   show: ShowContext | undefined,
-  travelLegs: TravelLeg[],
-  cast: CastMember[]
+  travelLegs: TravelLeg[]
 ): MoneyItem[] {
   const items: MoneyItem[] = [...getAutomaticTravelItems(travelLegs)];
 
@@ -723,32 +713,12 @@ function getAutomaticShowCostItems(
     });
   }
 
-  cast
-    .filter((member) => {
-      const name = String(member.name || "");
-      return (
-        !/sonja gründemann|sonja gruendemann/i.test(name) &&
-        toNumber(member.actual_cost) !== 0
-      );
-    })
-    .forEach((member) => {
-      const name = String(member.name || "").trim() || "Begleitung";
-      const role = String(member.role || "").trim();
-
-      items.push({
-        category: "musician",
-        label: role ? `${name} · ${role}` : name,
-        amount: toNumber(member.actual_cost),
-      });
-    });
-
   return items;
 }
 
 function automaticCostCategoryLabel(category?: string) {
   if (category === "travel") return "Reisekosten";
   if (category === "accommodation") return "Übernachtung";
-  if (category === "musician") return "Musiker / Begleitung";
   if (category === "promo") return "Promo / Druck";
   if (category === "shipping") return "Versand / Porto";
   return "Direkte Kosten";
@@ -815,13 +785,6 @@ function getInitialManualCostItems(
         return (
           itemLabel === automaticLabel ||
           /(porto|versand|post)/.test(itemLabel)
-        );
-      }
-
-      if (itemCategory === "musician") {
-        return (
-          itemLabel === automaticLabel ||
-          /(musiker|begleitung|piano|pianist|markus|gage)/.test(itemLabel)
         );
       }
 

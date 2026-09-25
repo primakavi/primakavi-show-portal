@@ -28,6 +28,13 @@ type EconomicsRow = {
   cost_items?: unknown;
 };
 
+type CastRow = {
+  show_id: string;
+  name: string | null;
+  role: string | null;
+  actual_cost: number | string | null;
+};
+
 type TravelLegRow = {
   show_id: string;
   direction: string | null;
@@ -70,7 +77,7 @@ export default async function AnalyticsPage({
   const start = `${selectedYear}-01-01`;
   const end = `${selectedYear}-12-31`;
 
-  const [showsResult, economicsResult, fixedCostsResult, travelResult] = await Promise.all([
+  const [showsResult, economicsResult, fixedCostsResult, travelResult, castResult] = await Promise.all([
     supabaseAdmin
       .schema("booking")
       .from("shows")
@@ -84,6 +91,10 @@ export default async function AnalyticsPage({
       .schema("booking")
       .from("show_travel_legs")
       .select("show_id,direction,transport_type,from_place,to_place,actual_cost"),
+    supabaseAdmin
+      .schema("booking")
+      .from("show_cast")
+      .select("show_id,name,role,actual_cost"),
   ]);
 
   const allShows = (showsResult.data || []) as ShowRow[];
@@ -92,6 +103,14 @@ export default async function AnalyticsPage({
   const shows = playedShows;
   const economics = (economicsResult.data || []) as EconomicsRow[];
   const travelLegs = (travelResult.data || []) as TravelLegRow[];
+  const castRows = (castResult.data || []) as CastRow[];
+
+  const castByShow = new Map<string, CastRow[]>();
+  for (const person of castRows) {
+    const current = castByShow.get(person.show_id) || [];
+    current.push(person);
+    castByShow.set(person.show_id, current);
+  }
 
   const travelLegsByShow = new Map<string, TravelLegRow[]>();
   for (const leg of travelLegs) {
@@ -122,7 +141,8 @@ export default async function AnalyticsPage({
     Array.from(economicsRowsByShow.entries()).map(([showId, row]) => {
       const automaticShowCostItems = automaticCostItems(
         showsById.get(showId),
-        travelLegsByShow.get(showId) || []
+        travelLegsByShow.get(showId) || [],
+        castByShow.get(showId) || []
       );
       const manualCostItems = manualEconomicCostItems(
         row.cost_items,
@@ -195,7 +215,8 @@ export default async function AnalyticsPage({
     const rawEconomics = economicsRowsByShow.get(show.id);
     const automaticShowCostItems = automaticCostItems(
       show,
-      travelLegsByShow.get(show.id) || []
+      travelLegsByShow.get(show.id) || [],
+      castByShow.get(show.id) || []
     );
     const manualCostItems = manualEconomicCostItems(
       rawEconomics?.cost_items,
@@ -221,7 +242,9 @@ export default async function AnalyticsPage({
 
     return {
       ...show,
-      hasEconomics: Boolean(econ),
+      hasEconomics:
+        Boolean(econ) ||
+        automaticShowCostItems.some((item) => Math.abs(item.amount) >= 0.01),
       revenue: totalRevenue,
       costs: econ?.costs || 0,
       contribution: totalRevenue - (econ?.costs || 0),
@@ -2040,9 +2063,25 @@ function travelCostItems(legs: TravelLegRow[]) {
 
 function automaticCostItems(
   show: ShowRow | undefined,
-  legs: TravelLegRow[]
+  legs: TravelLegRow[],
+  cast: CastRow[] = []
 ) {
   const items = [...travelCostItems(legs)];
+
+  for (const person of cast) {
+    const amount = economicsNumber(person.actual_cost);
+    if (amount === 0) continue;
+
+    const name = String(person.name || "").trim();
+    const role = String(person.role || "").trim();
+
+    items.push({
+      category: "musician",
+      label: name || role || "Besetzung",
+      amount,
+      source: "show_akte",
+    });
+  }
 
   const hotelCost = economicsNumber(show?.accommodation_actual_cost);
   if (hotelCost !== 0) {
