@@ -8,6 +8,7 @@ import LocationPicker from "./LocationPicker";
 const RELATIONSHIP_OPTIONS = [
   "",
   "⚪ Neu",
+  "🟡 Angeschrieben",
   "🟠 Kontakt",
   "🟢 Bestandskontakt",
   "🔴 Nicht relevant",

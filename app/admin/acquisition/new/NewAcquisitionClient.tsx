@@ -65,6 +65,7 @@ const PRIORITY_OPTIONS = [
 ];
 
 const PROGRAM_OPTIONS = [
+  "Mehrere Programme / allgemein",
   "Jetzt mal Tacheles",
   "Süßer die Glocken nie hingen",
   "TYPisch FRAU?!",
@@ -897,6 +898,78 @@ export default function NewAcquisitionClient({
             )}
           </section>
 
+          {/* ERSTE AKTIVITÄT */}
+
+          <section className="rounded-[1.7rem] bg-white p-6 shadow-xl shadow-black/[0.04] ring-1 ring-black/5">
+            <div className="mb-5">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
+                Aktivität
+              </p>
+              <h2 className="mt-1 text-xl font-black">
+                Was hast du gemacht?
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-zinc-400">
+                Der erste Kontakt wird direkt im Akquise-Verlauf gespeichert.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Datum">
+                <input
+                  type="date"
+                  name="activity_date"
+                  defaultValue={new Date().toISOString().slice(0, 10)}
+                  className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-bold outline-none"
+                />
+              </Field>
+
+              <Field label="Kontaktweg">
+                <select
+                  name="activity_channel"
+                  defaultValue="E-Mail"
+                  className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-bold outline-none"
+                >
+                  <option value="E-Mail">✉️ E-Mail gesendet</option>
+                  <option value="Telefon">☎️ Telefoniert</option>
+                  <option value="Kontaktformular">📝 Kontaktformular</option>
+                  <option value="Persönlich">🤝 Persönlich gesprochen</option>
+                  <option value="Instagram / Social Media">💬 Instagram / Social Media</option>
+                  <option value="Post / Päckchen">📦 Unterlagen / Päckchen verschickt</option>
+                  <option value="Sonstiges">Sonstiges</option>
+                </select>
+              </Field>
+
+              <div className="md:col-span-2">
+                <Field label="Betreff">
+                  <input
+                    type="text"
+                    name="activity_subject"
+                    placeholder="z. B. Gastspielanfrage Sonja Gründemann – Spielzeit 2027/28"
+                    className="h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+                  />
+                </Field>
+              </div>
+
+              <Field label="Was ist passiert?">
+                <textarea
+                  name="activity_note"
+                  rows={3}
+                  placeholder="z. B. Sonja und mehrere Programme vorgestellt …"
+                  className="w-full resize-y rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+                />
+              </Field>
+
+              <Field label="Rückmeldung">
+                <textarea
+                  name="activity_response"
+                  rows={3}
+                  placeholder="z. B. noch keine Rückmeldung / grundsätzliches Interesse …"
+                  className="w-full resize-y rounded-xl bg-[#fbf7ef] px-4 py-3 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
+                />
+              </Field>
+            </div>
+          </section>
+
           {/* VORGANG */}
 
           <section className="rounded-[1.7rem] bg-white p-6 shadow-xl shadow-black/[0.04] ring-1 ring-black/5">
@@ -989,7 +1062,7 @@ export default function NewAcquisitionClient({
                 </select>
               </Field>
 
-              <Field label="Nächstes Follow-up">
+              <Field label="Wiedervorlage">
                 <input
                   type="date"
                   name="next_follow_up_at"

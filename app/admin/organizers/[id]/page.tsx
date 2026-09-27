@@ -1496,7 +1496,7 @@ export default async function OrganizerDetailPage({
     let roundId = valueOrNull(formData.get("round_id"));
     const newRoundName = valueOrNull(formData.get("new_round_name"));
 
-    const activityType = valueOrNull(formData.get("activity_type")) || "Kontakt";
+    const activityType = valueOrNull(formData.get("activity_type")) || "Kontaktversuch";
     const activityDate =
       valueOrNull(formData.get("activity_date")) ||
       new Date().toISOString().slice(0, 10);
@@ -1636,12 +1636,20 @@ export default async function OrganizerDetailPage({
 
     if (activityType === "Absage") statusAfter = "Abgesagt";
     if (activityType === "Buchung") statusAfter = "Gebucht 🎉";
-    if (!statusAfter && activityType === "Kontakt") statusAfter = "Kontaktiert";
+    if (!statusAfter && activityType === "Kontaktversuch") statusAfter = "Kontaktiert";
+    if (!statusAfter && ["Rückmeldung", "Telefonat", "Persönlicher Kontakt"].includes(activityType)) {
+      statusAfter = "Kontaktiert";
+    }
     if (!statusAfter) statusAfter = "Neu";
 
-    const isContact = ["Kontakt", "Rückmeldung", "Absage", "Buchung"].includes(
-      activityType
-    );
+    const isContact = [
+      "Kontaktversuch",
+      "Rückmeldung",
+      "Telefonat",
+      "Persönlicher Kontakt",
+      "Absage",
+      "Buchung",
+    ].includes(activityType);
 
     const { data: createdAcquisition, error: acquisitionError } =
       await supabaseAdmin
@@ -1696,6 +1704,30 @@ export default async function OrganizerDetailPage({
         success: false,
         message: activityError.message,
       };
+    }
+
+    const organizerRelationship =
+      activityType === "Kontaktversuch"
+        ? "🟡 Angeschrieben"
+        : ["Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Absage", "Buchung"].includes(activityType)
+          ? "🟠 Kontakt"
+          : null;
+
+    if (organizerRelationship) {
+      const allowedCurrentStatuses =
+        organizerRelationship === "🟡 Angeschrieben"
+          ? ["⚪ Neu", "🔵 Neu", "🟡 Angeschrieben"]
+          : ["⚪ Neu", "🔵 Neu", "🟡 Angeschrieben", "🟠 Kontakt"];
+
+      const { error: organizerStatusError } = await supabaseAdmin
+        .from("organizers")
+        .update({ relationship_status: organizerRelationship })
+        .eq("id", id)
+        .in("relationship_status", allowedCurrentStatuses);
+
+      if (organizerStatusError) {
+        console.error("Veranstalter-Status konnte nicht aktualisiert werden:", organizerStatusError);
+      }
     }
 
     revalidateOrganizer(id);
@@ -1769,7 +1801,7 @@ export default async function OrganizerDetailPage({
           "activity_type"
         )
       ) ||
-      "Kontakt";
+      "Kontaktversuch";
 
     const activityDate =
       valueOrNull(
@@ -1849,7 +1881,7 @@ export default async function OrganizerDetailPage({
     if (
       !statusAfter &&
       activityType ===
-        "Kontakt" &&
+        "Kontaktversuch" &&
       [
         "Neu",
         "Vorqualifiziert",
@@ -1912,8 +1944,10 @@ export default async function OrganizerDetailPage({
 
     if (
       [
-        "Kontakt",
+        "Kontaktversuch",
         "Rückmeldung",
+        "Telefonat",
+        "Persönlicher Kontakt",
         "Absage",
         "Buchung",
       ].includes(
@@ -1979,6 +2013,30 @@ export default async function OrganizerDetailPage({
           message:
             updateError.message,
         };
+      }
+    }
+
+    const organizerRelationship =
+      activityType === "Kontaktversuch"
+        ? "🟡 Angeschrieben"
+        : ["Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Absage", "Buchung"].includes(activityType)
+          ? "🟠 Kontakt"
+          : null;
+
+    if (organizerRelationship) {
+      const allowedCurrentStatuses =
+        organizerRelationship === "🟡 Angeschrieben"
+          ? ["⚪ Neu", "🔵 Neu", "🟡 Angeschrieben"]
+          : ["⚪ Neu", "🔵 Neu", "🟡 Angeschrieben", "🟠 Kontakt"];
+
+      const { error: organizerStatusError } = await supabaseAdmin
+        .from("organizers")
+        .update({ relationship_status: organizerRelationship })
+        .eq("id", id)
+        .in("relationship_status", allowedCurrentStatuses);
+
+      if (organizerStatusError) {
+        console.error("Veranstalter-Status konnte nicht aktualisiert werden:", organizerStatusError);
       }
     }
 

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 import NewAcquisitionClient from "./NewAcquisitionClient";
 
@@ -186,6 +187,19 @@ export default async function NewAcquisitionPage({
         formData.get("notes") || ""
       ).trim() || null;
 
+    // Erste Aktivität: wird gemeinsam mit dem Vorgang angelegt.
+    const activityDate =
+      String(formData.get("activity_date") || "").trim() ||
+      new Date().toISOString().slice(0, 10);
+    const activityChannel =
+      String(formData.get("activity_channel") || "").trim() || null;
+    const activitySubject =
+      String(formData.get("activity_subject") || "").trim() || null;
+    const activityNote =
+      String(formData.get("activity_note") || "").trim() || null;
+    const activityResponse =
+      String(formData.get("activity_response") || "").trim() || null;
+
     // ==========================================================
     // VALIDIERUNG
     // ==========================================================
@@ -259,8 +273,13 @@ export default async function NewAcquisitionPage({
         next_follow_up_at:
           nextFollowUpAt,
 
-        next_step:
-          nextStep,
+        next_step: nextStep,
+
+        // Aktueller Stand wird direkt aus der ersten Aktivität gespiegelt.
+        last_contact_at: activityDate,
+        contact_channel: activityChannel,
+        contact_note: activityNote,
+        response: activityResponse,
 
         notes,
 
@@ -282,9 +301,40 @@ export default async function NewAcquisitionPage({
       );
     }
 
-    redirect(
-      `/admin/acquisition/${newAcquisition.id}`
-    );
+    const { error: activityInsertError } = await supabaseAdmin
+      .from("acquisition_activities")
+      .insert({
+        acquisition_id: newAcquisition.id,
+        activity_date: activityDate,
+        activity_type: "Kontakt",
+        channel: activityChannel,
+        subject: activitySubject,
+        note: activityNote,
+        response: activityResponse,
+        next_step: nextStep,
+        follow_up_at: nextFollowUpAt,
+        status_after: status,
+      });
+
+    if (activityInsertError) {
+      // Kein halbfertiger Vorgang: wenn der erste Verlaufseintrag scheitert,
+      // wird der eben angelegte Vorgang wieder entfernt.
+      await supabaseAdmin
+        .from("acquisition")
+        .delete()
+        .eq("id", newAcquisition.id);
+
+      throw new Error(
+        "Akquise konnte nicht vollständig angelegt werden: " +
+          activityInsertError.message
+      );
+    }
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/acquisition");
+    if (venueId) revalidatePath(`/admin/locations/${venueId}`);
+
+    redirect(`/admin/acquisition/${newAcquisition.id}`);
   }
 
   // ============================================================

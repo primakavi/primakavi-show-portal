@@ -475,6 +475,7 @@ export default async function LocationPage({
 
     revalidatePath(`/admin/locations/${id}`);
     revalidatePath("/admin/acquisition");
+    revalidatePath("/admin");
     revalidatePath(`/admin/acquisition/${acquisitionId}`);
 
     return {
@@ -597,6 +598,7 @@ export default async function LocationPage({
 
     revalidatePath(`/admin/locations/${id}`);
     revalidatePath("/admin/acquisition");
+    revalidatePath("/admin");
     revalidatePath(`/admin/acquisition/${acquisitionId}`);
 
     return {
@@ -666,6 +668,7 @@ export default async function LocationPage({
 
     revalidatePath(`/admin/locations/${id}`);
     revalidatePath("/admin/acquisition");
+    revalidatePath("/admin");
     revalidatePath(`/admin/acquisition/${acquisitionId}`);
 
     return {

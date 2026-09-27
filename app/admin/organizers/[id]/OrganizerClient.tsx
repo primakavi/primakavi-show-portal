@@ -131,6 +131,7 @@ type ServerAction = (
 const RELATIONSHIP_OPTIONS = [
   "",
   "⚪ Neu",
+  "🟡 Angeschrieben",
   "🟠 Kontakt",
   "🟢 Bestandskontakt",
   "🔴 Nicht relevant",
@@ -1323,8 +1324,8 @@ export default function OrganizerClient({
                     <SelectField
                       label="Typ"
                       name="activity_type"
-                      defaultValue="Kontakt"
-                      options={["Kontakt", "Rückmeldung", "WVL", "Absage", "Buchung", "Notiz"]}
+                      defaultValue="Kontaktversuch"
+                      options={["Kontaktversuch", "Automatische Antwort", "Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Notiz", "Absage", "Buchung"]}
                     />
 
                     <Field
@@ -1473,14 +1474,16 @@ export default function OrganizerClient({
                   <SelectField
                     label="Typ"
                     name="activity_type"
-                    defaultValue="Kontakt"
+                    defaultValue="Kontaktversuch"
                     options={[
-                      "Kontakt",
+                      "Kontaktversuch",
+                      "Automatische Antwort",
                       "Rückmeldung",
-                      "WVL",
+                      "Telefonat",
+                      "Persönlicher Kontakt",
+                      "Notiz",
                       "Absage",
                       "Buchung",
-                      "Notiz",
                     ]}
                   />
 
@@ -3025,7 +3028,7 @@ function AcquisitionCard({
                       <div className="grid gap-3 md:grid-cols-2">
                         <input type="hidden" name="activity_id" value={activity.id} />
                         <input type="hidden" name="acquisition_id" value={item.id} />
-                        <SelectField label="Typ" name="activity_type" defaultValue={activity.activity_type || "Kontakt"} options={["Kontakt", "Rückmeldung", "WVL", "Absage", "Buchung", "Notiz"]} />
+                        <SelectField label="Typ" name="activity_type" defaultValue={activity.activity_type || "Notiz"} options={["Kontaktversuch", "Automatische Antwort", "Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Notiz", "Absage", "Buchung"]} />
                         <Field label="Datum" name="activity_date" type="date" defaultValue={activity.activity_date || ""} />
                         <SelectField label="Kanal" name="channel" defaultValue={activity.channel || ""} options={["", "E-Mail", "Telefon", "Instagram", "LinkedIn", "Persönlich"]} />
                         <Field label="Wiedervorlage" name="follow_up_at" type="date" defaultValue={activity.follow_up_at || ""} />

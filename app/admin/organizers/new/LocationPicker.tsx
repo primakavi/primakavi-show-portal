@@ -36,6 +36,11 @@ export default function LocationPicker({
   ] =
     useState("");
 
+  const [
+    venueSearch,
+    setVenueSearch,
+  ] = useState("");
+
   const selectedVenues =
     useMemo(
       () =>
@@ -54,19 +59,18 @@ export default function LocationPicker({
     );
 
   const availableVenues =
-    useMemo(
-      () =>
-        venues.filter(
-          (venue) =>
-            !selectedIds.includes(
-              venue.id
-            )
-        ),
-      [
-        venues,
-        selectedIds,
-      ]
-    );
+    useMemo(() => {
+      const needle = venueSearch.trim().toLowerCase();
+
+      return venues.filter((venue) => {
+        if (selectedIds.includes(venue.id)) return false;
+        if (!needle) return true;
+
+        return `${venue.name} ${venue.city || ""}`
+          .toLowerCase()
+          .includes(needle);
+      });
+    }, [venues, selectedIds, venueSearch]);
 
   function addVenue() {
     if (!nextVenueId) {
@@ -86,6 +90,7 @@ export default function LocationPicker({
     );
 
     setNextVenueId("");
+    setVenueSearch("");
   }
 
   function removeVenue(
@@ -287,41 +292,51 @@ export default function LocationPicker({
 
         <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
 
-          <select
-            value={
-              nextVenueId
-            }
-            onChange={(
-              event
-            ) =>
-              setNextVenueId(
-                event.target.value
-              )
-            }
-            className="h-12 w-full min-w-0 max-w-full truncate rounded-xl bg-white px-4 text-sm font-bold outline-none ring-1 ring-black/5"
-          >
-            <option value="">
-              Location auswählen …
-            </option>
+          <div className="relative min-w-0">
+            <input
+              type="text"
+              value={venueSearch}
+              onChange={(event) => {
+                setVenueSearch(event.target.value);
+                setNextVenueId("");
+              }}
+              placeholder="Location suchen …"
+              className="h-12 w-full min-w-0 rounded-xl bg-white px-4 text-sm font-bold outline-none ring-1 ring-black/5 transition focus:ring-2 focus:ring-zinc-300"
+            />
 
-            {availableVenues.map(
-              (venue) => (
-                <option
-                  key={
-                    venue.id
-                  }
-                  value={
-                    venue.id
-                  }
-                >
-                  {venue.name}
-                  {venue.city
-                    ? ` · ${venue.city}`
-                    : ""}
-                </option>
-              )
+            {venueSearch.trim() && (
+              <div className="absolute left-0 right-0 top-[52px] z-30 max-h-72 overflow-y-auto rounded-2xl bg-white p-2 shadow-xl ring-1 ring-black/10">
+                {availableVenues.length > 0 ? (
+                  availableVenues.slice(0, 30).map((venue) => (
+                    <button
+                      key={venue.id}
+                      type="button"
+                      onClick={() => {
+                        setNextVenueId(venue.id);
+                        setVenueSearch(
+                          `${venue.name}${venue.city ? ` · ${venue.city}` : ""}`
+                        );
+                      }}
+                      className={`block w-full rounded-xl px-4 py-3 text-left transition hover:bg-[#fbf7ef] ${
+                        nextVenueId === venue.id ? "bg-[#fbf7ef]" : ""
+                      }`}
+                    >
+                      <span className="block text-sm font-black text-zinc-900">
+                        {venue.name}
+                      </span>
+                      <span className="mt-0.5 block text-xs font-semibold text-zinc-400">
+                        {venue.city || "Ort offen"}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-4 py-3 text-sm font-semibold text-zinc-400">
+                    Keine passende Location gefunden.
+                  </p>
+                )}
+              </div>
             )}
-          </select>
+          </div>
 
           <button
             type="button"

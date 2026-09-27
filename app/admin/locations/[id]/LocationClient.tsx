@@ -143,6 +143,7 @@ const RELATIONSHIP_OPTIONS = [
   "",
   "⚪ Zu prüfen",
   "🔵 Neu",
+  "🟡 Angeschrieben",
   "🟠 Kontakt",
   "🟢 Bestandskunde",
   "🔴 Nicht relevant",
@@ -1116,34 +1117,24 @@ export default function LocationClient({
 
                           {!showNewRoundForm && !showManageRounds && (
                             <div className="mt-4 flex justify-end">
-                              <button
-                                type="button"
-                                disabled={!selectedRoundName}
-                                onClick={async () => {
-                                  if (!selectedRoundName) {
-                                    setActionMessage(
-                                      "Bitte zuerst eine Akquise-Runde auswählen."
-                                    );
-                                    return;
-                                  }
-
-                                  const formData = new FormData();
-                                  formData.set("round_name", selectedRoundName);
-
-                                  const result =
-                                    await createAcquisition(formData);
-
-                                  setActionMessage(result.message);
-
-                                  if (result.success) {
-                                    setShowNewAcquisitionForm(false);
-                                    setSelectedRoundName("");
-                                  }
-                                }}
-                                className="rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:translate-y-0"
-                              >
-                                Akquise starten
-                              </button>
+                              {selectedRoundName ? (
+                                <Link
+                                  href={`/admin/acquisition/new?venue=${venue.id}&round=${
+                                    rounds.find((round) => round.name === selectedRoundName)?.id || ""
+                                  }`}
+                                  className="rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-black text-white transition hover:-translate-y-0.5"
+                                >
+                                  Akquise starten →
+                                </Link>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-black text-white opacity-30"
+                                >
+                                  Akquise starten →
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
