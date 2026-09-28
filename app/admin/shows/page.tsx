@@ -14,6 +14,7 @@ export default async function ShowsPage() {
       program,
       show_date,
       weekday,
+      venue_id,
       venue,
       city,
       start_time,
@@ -54,9 +55,52 @@ export default async function ShowsPage() {
     );
   }
 
+  const venueIds = Array.from(
+    new Set(
+      (shows || [])
+        .map((show: any) => show.venue_id)
+        .filter(Boolean)
+    )
+  );
+
+  let venueMap = new Map<string, { name: string | null; city: string | null }>();
+
+  if (venueIds.length > 0) {
+    const { data: venues, error: venuesError } = await supabaseAdmin
+      .from("venues")
+      .select("id,name,city")
+      .in("id", venueIds);
+
+    if (venuesError) {
+      throw new Error(venuesError.message);
+    }
+
+    venueMap = new Map(
+      (venues || []).map((venue: any) => [
+        String(venue.id),
+        {
+          name: venue.name || null,
+          city: venue.city || null,
+        },
+      ])
+    );
+  }
+
+  const showsForList = (shows || []).map((show: any) => {
+    const linkedVenue = show.venue_id
+      ? venueMap.get(String(show.venue_id))
+      : null;
+
+    return {
+      ...show,
+      linked_venue_name: linkedVenue?.name || null,
+      linked_venue_city: linkedVenue?.city || null,
+    };
+  });
+
   return (
     <AdminClient
-      shows={shows || []}
+      shows={showsForList}
       createShowAction={createShowAction}
       deleteShowAction={deleteShowAction}
       duplicateShowAction={duplicateShowAction}

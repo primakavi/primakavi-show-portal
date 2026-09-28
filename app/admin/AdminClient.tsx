@@ -11,8 +11,11 @@ type ShowRow = {
   program: string | null;
   show_date: string | null;
   weekday?: string | null;
+  venue_id?: string | null;
   venue: string | null;
   city: string | null;
+  linked_venue_name?: string | null;
+  linked_venue_city?: string | null;
   start_time: string | null;
   entry_time: string | null;
   contact_name?: string | null;
@@ -166,8 +169,8 @@ const optionsCount = shows.filter((show) => {
       const text = [
         show.artist,
         show.program,
-        show.venue,
-        show.city,
+        showLocationName(show),
+        showLocationCity(show),
         show.token,
         show.contact_name,
         show.contact_email,
@@ -448,6 +451,14 @@ function CreateShowConfirmModal({
   );
 }
 
+function showLocationName(show: ShowRow) {
+  return show.linked_venue_name?.trim() || show.venue?.trim() || "";
+}
+
+function showLocationCity(show: ShowRow) {
+  return show.linked_venue_city?.trim() || show.city?.trim() || "";
+}
+
 function ShowCard({
   show,
   deleteShowAction,
@@ -499,19 +510,19 @@ function ShowCard({
 
       <div className="min-w-0">
         <p className="truncate text-[15px] font-black text-zinc-950">
-          {show.venue || "Location offen"}
+          {showLocationName(show) || "Location offen"}
         </p>
 
         {newPortalInfo && (
           <div className="mt-1">
-            <Badge tone="pink">✨ Neue Infos</Badge>
+            <Badge tone="pink">🔵 Portal-Update prüfen</Badge>
           </div>
         )}
       </div>
 
       <div className="min-w-0">
         <p className="truncate text-sm font-bold text-zinc-700">
-          {show.city || "Ort offen"}
+          {showLocationCity(show) || "Ort offen"}
         </p>
         <p className="mt-1 truncate text-[11px] font-semibold text-zinc-400">
           {show.program || "Programm offen"}
@@ -587,7 +598,7 @@ function ShowCard({
           onSubmit={(event) => {
             const ok = window.confirm(
               `Bist du sicher, dass du die Show "${
-                show.venue || "ohne Location"
+                showLocationName(show) || "ohne Location"
               }" löschen möchtest?`
             );
 
@@ -712,8 +723,8 @@ function isEmptyShowAkte(show: ShowRow) {
 
   return (
     !show.show_date &&
-    !show.venue &&
-    !show.city &&
+    !showLocationName(show) &&
+    !showLocationCity(show) &&
     !show.program &&
     !show.start_time &&
     !show.contact_name &&
@@ -759,7 +770,7 @@ function getActionItems(show: ShowRow) {
   }
 
   if (hasNewPortalInfo(show)) {
-    items.push("Neue Infos prüfen");
+    items.push("Portal-Update prüfen");
   }
 
   if (
@@ -792,8 +803,8 @@ function getMissingFields(show: ShowRow) {
   const missing: string[] = [];
 
   if (!show.show_date) missing.push("Datum");
-  if (!show.venue) missing.push("Location");
-  if (!show.city) missing.push("Stadt");
+  if (!showLocationName(show)) missing.push("Location");
+  if (!showLocationCity(show)) missing.push("Stadt");
   if (!show.start_time) missing.push("Beginn");
   if (!show.contact_name) missing.push("Kontakt");
   if (!show.contact_email) missing.push("E-Mail");

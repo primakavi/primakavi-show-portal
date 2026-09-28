@@ -336,6 +336,17 @@ export default async function ShowAkteV2Page({
     ? `${protocol}://${host}/show/${show.token}`
     : `/show/${show.token}`;
 
+  const portalSubmissions = [...(show.show_portal_submissions || [])].sort(
+    (a: any, b: any) =>
+      new Date(b.submitted_at || "").getTime() -
+      new Date(a.submitted_at || "").getTime()
+  );
+  const unreviewedPortalSubmissions = portalSubmissions.filter(
+    (submission: any) => !submission.reviewed_at
+  );
+  const latestPortalSubmission = portalSubmissions[0] || null;
+  const hasUnreviewedPortalUpdate = unreviewedPortalSubmissions.length > 0;
+
   const paid = payments.reduce(
     (sum: number, payment: any) => sum + Number(payment.amount || 0),
     0
@@ -468,6 +479,40 @@ export default async function ShowAkteV2Page({
               <div className="mt-1 text-sm font-black text-amber-950">Bitte neuen Termin und Besetzung festlegen.</div>
               {copySource && <div className="mt-1 text-xs font-semibold text-amber-800">Erstellt aus: {copySource.venue || "Show"}{copySource.city ? ` · ${copySource.city}` : ""}{copySource.show_date ? ` · ${formatDate(copySource.show_date)}` : ""}</div>}
               <div className="mt-2 text-[11px] font-semibold text-amber-700">Nach dem ersten Speichern mit neuem Datum verschwindet dieser Hinweis. Die neue Show ist dann vollständig eigenständig.</div>
+            </div>
+          )}
+
+          {hasUnreviewedPortalUpdate && (
+            <div className="rounded-[1.4rem] bg-sky-50 p-4 ring-1 ring-sky-200">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[.14em] text-sky-700">
+                    🔵 Portal-Update prüfen
+                  </div>
+                  <div className="mt-1 text-sm font-black text-sky-950">
+                    {unreviewedPortalSubmissions.length === 1
+                      ? "Der Veranstalter hat neue Angaben übermittelt."
+                      : `Der Veranstalter hat ${unreviewedPortalSubmissions.length} neue Übermittlungen geschickt.`}
+                  </div>
+                  {latestPortalSubmission?.submitted_at && (
+                    <div className="mt-1 text-xs font-semibold text-sky-700">
+                      Letzter Eingang: {formatDateTime(latestPortalSubmission.submitted_at)}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  formAction={markPortalUpdateReviewedAction}
+                  className="shrink-0 rounded-xl bg-sky-700 px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-sky-800"
+                >
+                  ✓ Als geprüft markieren
+                </button>
+              </div>
+              <p className="mt-3 text-[11px] font-semibold leading-5 text-sky-700">
+                Die Portalangaben sind bereits in der Show-Akte gespeichert. Dieser Hinweis bedeutet nur:
+                Die neuen Angaben wurden intern noch nicht geprüft.
+              </p>
             </div>
           )}
 
@@ -1016,14 +1061,16 @@ export default async function ShowAkteV2Page({
                 <div className="md:col-span-2">
                   <div className="mb-1.5 flex min-h-[18px] items-center justify-between gap-3">
                     <span className="text-xs font-black text-zinc-500">Spielstätte</span>
-                    {venue && (
-                      <Link
-                        href={`/admin/locations/${venue.id}`}
-                        className="shrink-0 text-[11px] font-black text-[#2867d8] transition hover:underline"
-                      >
-                        Stammdaten öffnen →
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      {venue && (
+                        <Link href={`/admin/locations/${venue.id}`} className="shrink-0 text-[11px] font-black text-[#2867d8] transition hover:underline">
+                          Stammdaten öffnen →
+                        </Link>
+                      )}
+                      <Link href={`/admin/locations/new?returnTo=show&showId=${show.id}`} className="shrink-0 text-[11px] font-black text-emerald-700 transition hover:underline">
+                        + Neue Location
                       </Link>
-                    )}
+                    </div>
                   </div>
                   <LocationCombobox
                     venues={venues}
@@ -1096,14 +1143,16 @@ export default async function ShowAkteV2Page({
                   ]}
                 />
 
-                {organizer && (
-                  <Link
-                    href={`/admin/organizers/${organizer.id}`}
-                    className="mb-0.5 rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-black text-zinc-600 ring-1 ring-black/5 transition hover:text-zinc-950"
-                  >
-                    Stammdaten öffnen →
+                <div className="flex flex-wrap items-center gap-2">
+                  {organizer && (
+                    <Link href={`/admin/organizers/${organizer.id}`} className="rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-black text-zinc-600 ring-1 ring-black/5 transition hover:text-zinc-950">
+                      Stammdaten öffnen →
+                    </Link>
+                  )}
+                  <Link href={`/admin/organizers/new?returnTo=show&showId=${show.id}${show.venue_id ? `&venue=${show.venue_id}` : ""}`} className="rounded-xl bg-emerald-50 px-4 py-3 text-xs font-black text-emerald-700 ring-1 ring-emerald-100 transition hover:bg-emerald-100">
+                    + Neuer Veranstalter
                   </Link>
-                )}
+                </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
@@ -1751,10 +1800,31 @@ export default async function ShowAkteV2Page({
           {/* WERKZEUGE */}
           <section className="grid items-stretch gap-4 xl:grid-cols-2">
             <BottomCard title="📨 Veranstalter-Portal">
-              <p className="text-sm font-bold text-zinc-500">
-                Formular vollständig · {portalProgress(show).done}/
-                {portalProgress(show).total} Angaben
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-bold text-zinc-500">
+                  Formular vollständig · {portalProgress(show).done}/
+                  {portalProgress(show).total} Angaben
+                </p>
+                {hasUnreviewedPortalUpdate ? (
+                  <span className="rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-black text-sky-800">
+                    🔵 {unreviewedPortalSubmissions.length} ungeprüft
+                  </span>
+                ) : latestPortalSubmission ? (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700">
+                    ✓ geprüft
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[11px] font-black text-zinc-500">
+                    noch keine Übermittlung
+                  </span>
+                )}
+              </div>
+
+              {latestPortalSubmission?.submitted_at && (
+                <p className="mt-2 text-xs font-semibold text-zinc-400">
+                  Letzter Eingang: {formatDateTime(latestPortalSubmission.submitted_at)}
+                </p>
+              )}
 
               <div className="mt-4">
                 <a
@@ -1838,6 +1908,40 @@ export default async function ShowAkteV2Page({
       </form>
     </main>
   );
+}
+
+async function markPortalUpdateReviewedAction(formData: FormData) {
+  "use server";
+
+  const showId = str(formData.get("id"));
+  if (!showId) return;
+
+  const reviewedAt = new Date().toISOString();
+
+  const submissionResult = await supabaseAdmin
+    .schema("booking")
+    .from("show_portal_submissions")
+    .update({ reviewed_at: reviewedAt })
+    .eq("show_id", showId)
+    .is("reviewed_at", null);
+
+  if (submissionResult.error) {
+    throw new Error(submissionResult.error.message);
+  }
+
+  const showResult = await supabaseAdmin
+    .schema("booking")
+    .from("shows")
+    .update({ last_reviewed_at: reviewedAt })
+    .eq("id", showId);
+
+  if (showResult.error) {
+    throw new Error(showResult.error.message);
+  }
+
+  revalidatePath(`/admin/shows/${showId}`);
+  revalidatePath("/admin/shows");
+  redirect(`/admin/shows/${showId}?saved=portal-${Date.now()}`);
 }
 
 async function addManualTaskAction(formData: FormData) {
@@ -4253,6 +4357,21 @@ function dateParts(date?: string | null) {
       .toUpperCase(),
     year: String(parsed.getFullYear()),
   };
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function formatDate(date?: string | null) {

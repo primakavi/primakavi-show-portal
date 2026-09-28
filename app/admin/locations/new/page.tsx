@@ -7,10 +7,12 @@ export default async function NewLocationPage({
 }: {
   searchParams: Promise<{
     returnTo?: string;
+    showId?: string;
   }>;
 }) {
   const params = await searchParams;
   const returnTo = params.returnTo || "";
+  const showId = params.showId || "";
 
   const emptyVenue = {
     id: "",
@@ -318,6 +320,29 @@ export default async function NewLocationPage({
           created.id
         )}`
       );
+    }
+
+    if (returnTo === "show" && showId) {
+      const venueAddress = [payload.street, payload.postal_code, payload.city]
+        .filter(Boolean)
+        .join(", ");
+
+      const { error: showError } = await supabaseAdmin
+        .schema("booking")
+        .from("shows")
+        .update({
+          venue_id: created.id,
+          venue: payload.name,
+          city: payload.city,
+          venue_address: venueAddress || null,
+        })
+        .eq("id", showId);
+
+      if (showError) {
+        return { success: false, message: showError.message };
+      }
+
+      redirect(`/admin/shows/${showId}?saved=location-${Date.now()}`);
     }
 
     redirect(

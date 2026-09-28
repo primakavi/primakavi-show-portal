@@ -149,7 +149,7 @@ export default function ShowPortalPage({
       setError("");
 
       const res = await fetch(`/api/show/${token}`, {
-        method: "POST",
+        method: mode === "auto" ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
@@ -222,58 +222,15 @@ export default function ShowPortalPage({
 
   const completion = useMemo(() => {
     const items = [
-      {
-        label: "Veranstaltung",
-        done: !!form.program && !!form.show_date && !!form.venue,
-      },
-      {
-        label: "Kontakt",
-        done: !!form.contact_name && !!form.contact_email,
-      },
-      {
-        label: "Ablauf",
-        done: !!form.entry_time && !!form.start_time,
-      },
-      {
-        label: "Technik",
-        done:
-          !!form.tech_sound_available ||
-          !!form.tech_lights_available ||
-          !!form.tech_notes ||
-          !!form.piano_type,
-      },
-      {
-        label: "Vertrag / Finanzen",
-        done: !!form.contract_status || !!form.fee || !!form.ticket_prices,
-      },
-      {
-        label: "Rechnung",
-        done: !!form.invoice_email || !!form.invoice_address,
-      },
-      {
-        label: "Promotion",
-        done: !!form.flyers_needed || !!form.posters_needed,
-      },
-      {
-        label: "Backstage / Catering",
-        done:
-          !!form.catering_status ||
-          !!form.backstage_room_available ||
-          !!form.backstage_no_room,
-      },
-      {
-        label: "Anreise / Unterkunft",
-        done:
-          !!form.accommodation_type ||
-          !!form.travel_notes ||
-          !!form.parking_available,
-      },
-      {
-        label: "Datei hochgeladen",
-        done: files.length > 0,
-      },
+      { label: "Kontakt", done: !!form.contact_name && (!!form.contact_email || !!form.contact_phone) },
+      { label: "Ablauf", done: !!form.entry_time && !!form.start_time },
+      { label: "Technik", done: !!form.tech_sound_status || !!form.tech_lights_status || !!form.tech_notes },
+      { label: "Rechnung / Vertrag", done: !!form.contract_status || !!form.invoice_email || !!form.invoice_address },
+      { label: "Tickets / Promotion", done: !!form.ticket_link || !!form.capacity || !!form.promotion },
+      { label: "Backstage / Catering", done: !!form.backstage_status || !!form.catering_structured_status },
+      { label: "Anreise / Unterkunft", done: !!form.accommodation_status || !!form.parking_details || !!form.travel_notes },
+      { label: "Datei hochgeladen", done: files.length > 0 },
     ];
-
     return items;
   }, [form, files.length]);
 
@@ -282,10 +239,10 @@ export default function ShowPortalPage({
 
   const saveStatus = useMemo(() => {
     if (error) return error;
-    if (saving) return "Speichert automatisch …";
+    if (saving) return "Speichert …";
     if (dirty) return "Änderungen noch nicht gespeichert";
     if (lastSavedAt) return `Zuletzt gespeichert um ${lastSavedAt} Uhr`;
-    if (saved) return "Gespeichert. Danke euch! ✨";
+    if (saved) return "Übermittelt. Danke euch! ✨";
     return "Ihr macht den Unterschied. 🙌";
   }, [dirty, error, lastSavedAt, saved, saving]);
 
@@ -416,38 +373,27 @@ export default function ShowPortalPage({
               doodle="〰"
               doodleColor="text-orange-400/55"
             >
-              <CompactGrid>
-                <Input
-                  label="Programm"
-                  value={form.program}
-                  onChange={(v) => updateField("program", v)}
-                  placeholder="Jetzt mal Tacheles"
-                />
-                <Input
-                  label="Datum"
-                  type="date"
-                  value={form.show_date}
-                  onChange={(v) => updateField("show_date", v)}
-                />
-                <Input
-                  label="Veranstaltungsort / Location"
-                  value={form.venue}
-                  onChange={(v) => updateField("venue", v)}
-                  placeholder="Name der Location"
-                />
-                <Input
-                  label="Stadt / Ort"
-                  value={form.city}
-                  onChange={(v) => updateField("city", v)}
-                  placeholder="z.B. Hamburg"
-                />
-                <Input
-                  label="Adresse"
-                  value={form.venue_address}
-                  onChange={(v) => updateField("venue_address", v)}
-                  placeholder="Straße, PLZ, Ort"
-                />
-              </CompactGrid>
+              <div className="rounded-2xl bg-zinc-50 p-4 ring-1 ring-black/5">
+                <p className="text-xs font-black uppercase tracking-[.14em] text-zinc-400">Fest hinterlegte Showdaten</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <ReadOnlyValue label="Programm" value={asString(show.program) || "—"} />
+<ReadOnlyValue
+  label="Datum"
+  value={
+    show.show_date
+      ? (() => {
+          const d = formatDate(asString(show.show_date));
+          return `${d.day}.${d.month}.${d.year}`;
+        })()
+      : "—"
+  }
+/>
+                  <ReadOnlyValue label="Location" value={asString(show.venue) || "—"} />
+                  <ReadOnlyValue label="Ort" value={asString(show.city) || "—"} />
+                  <div className="sm:col-span-2"><ReadOnlyValue label="Adresse" value={asString(show.venue_address) || "—"} /></div>
+                </div>
+                <p className="mt-3 text-xs font-semibold text-zinc-500">Stimmt hier etwas nicht? Bitte gebt Virena oder Kathi kurz Bescheid – die Stammdaten werden nicht über das Portal überschrieben.</p>
+              </div>
             </FormSection>
 
             <FormSection
@@ -533,35 +479,27 @@ export default function ShowPortalPage({
             >
               <BlockTitle>Welche Technik ist vor Ort vorhanden?</BlockTitle>
               <CompactGrid>
-                <Checkbox
-                  label="Ton vorhanden"
-                  checked={isChecked("tech_sound_available")}
-                  onChange={() => toggleBooleanField("tech_sound_available")}
-                />
-                <Checkbox
-                  label="Licht vorhanden"
-                  checked={isChecked("tech_lights_available")}
-                  onChange={() => toggleBooleanField("tech_lights_available")}
-                />
+                <Select label="Ton" value={form.tech_sound_status} onChange={(v) => updateField("tech_sound_status", v)} options={["open|Noch offen", "available|Vorhanden", "unavailable|Nicht vorhanden"]} />
+                <Select label="Licht" value={form.tech_lights_status} onChange={(v) => updateField("tech_lights_status", v)} options={["open|Noch offen", "available|Vorhanden", "unavailable|Nicht vorhanden"]} />
               </CompactGrid>
 
               <CompactGrid>
                 <Select
                   label="Ist ein Klavier oder Flügel vor Ort?"
-                  value={form.piano_type}
-                  onChange={(v) => updateField("piano_type", v)}
-                  options={["Klavier", "Flügel", "Nein", "Noch offen"]}
+                  value={form.tech_piano_status}
+                  onChange={(v) => updateField("tech_piano_status", v)}
+                  options={["open|Noch offen", "available|Vorhanden", "unavailable|Nicht vorhanden"]}
                 />
                 <Select
                   label="Ist ein E-Piano vor Ort?"
-                  value={form.epiano_available}
-                  onChange={(v) => updateField("epiano_available", v)}
-                  options={["Ja", "Nein", "Noch offen"]}
+                  value={form.epiano_status}
+                  onChange={(v) => updateField("epiano_status", v)}
+                  options={["open|Noch offen", "available|Vorhanden", "unavailable|Nicht vorhanden"]}
                 />
                 <Input
-                  label="Marke / Modell"
-                  value={form.piano_notes}
-                  onChange={(v) => updateField("piano_notes", v)}
+                  label="Klavier / Flügel · Marke / Modell"
+                  value={form.tech_piano_model}
+                  onChange={(v) => updateField("tech_piano_model", v)}
                   placeholder="z.B. Yamaha CP88, Stimmung etc."
                 />
                 <Input
@@ -570,6 +508,8 @@ export default function ShowPortalPage({
                   onChange={(v) => updateField("tech_contact", v)}
                   placeholder="Name & Kontakt"
                 />
+                <Input label="Telefon Technik" value={form.tech_phone} onChange={(v) => updateField("tech_phone", v)} placeholder="+49 ..." />
+                <Input label="E-Piano · Marke / Modell" value={form.tech_epiano_model} onChange={(v) => updateField("tech_epiano_model", v)} placeholder="z.B. Yamaha CP88" />
               </CompactGrid>
 
               <Textarea
@@ -582,7 +522,7 @@ export default function ShowPortalPage({
 
             <FormSection
               number="05"
-              title="Vertrag & Finanzen"
+              title="Vertrag, Rechnung & Tickets"
               doodle="♡"
               doodleColor="text-orange-400/60"
             >
@@ -598,18 +538,6 @@ export default function ShowPortalPage({
                     "Wird separat per E-Mail geregelt",
                     "Bitte sende mir einen Vertrag zu",
                   ]}
-                />
-                <Input
-                  label="Honorar"
-                  value={form.fee}
-                  onChange={(v) => updateField("fee", v)}
-                  placeholder="netto / brutto"
-                />
-                <Input
-                  label="Eintrittspreise"
-                  value={form.ticket_prices}
-                  onChange={(v) => updateField("ticket_prices", v)}
-                  placeholder="regulär / ermäßigt / VVK / AK"
                 />
                 <Input
                   label="Anzahl Plätze / Kapazität"
@@ -709,9 +637,9 @@ export default function ShowPortalPage({
               <CompactGrid>
                 <Select
                   label="Catering / Getränke vorgesehen?"
-                  value={form.catering_status}
-                  onChange={(v) => updateField("catering_status", v)}
-                  options={["Ja", "Nein", "Noch offen"]}
+                  value={form.catering_structured_status}
+                  onChange={(v) => updateField("catering_structured_status", v)}
+                  options={["open|Noch offen", "available|Vorgesehen", "unavailable|Nicht vorgesehen"]}
                 />
                 <Input
                   label="Details Catering"
@@ -723,37 +651,11 @@ export default function ShowPortalPage({
 
               <BlockTitle>Garderobe / Backstage-Ausstattung</BlockTitle>
               <CompactGrid>
-                <Checkbox
-                  label="Raum vorhanden"
-                  checked={isChecked("backstage_room_available")}
-                  onChange={() => toggleBooleanField("backstage_room_available")}
-                />
-                <Checkbox
-                  label="Spiegel vorhanden"
-                  checked={isChecked("backstage_mirror_available")}
-                  onChange={() =>
-                    toggleBooleanField("backstage_mirror_available")
-                  }
-                />
-                <Checkbox
-                  label="Sitzgelegenheit"
-                  checked={isChecked("backstage_seating_available")}
-                  onChange={() =>
-                    toggleBooleanField("backstage_seating_available")
-                  }
-                />
-                <Checkbox
-                  label="Tisch"
-                  checked={isChecked("backstage_table_available")}
-                  onChange={() => toggleBooleanField("backstage_table_available")}
-                />
-                <Checkbox
-                  label="Kein Backstage Raum vorhanden"
-                  checked={isChecked("backstage_no_room")}
-                  onChange={() => toggleBooleanField("backstage_no_room")}
-                />
+                <Select label="Backstage-Raum" value={form.backstage_status} onChange={(v) => updateField("backstage_status", v)} options={["open|Noch offen", "available|Vorhanden", "unavailable|Nicht vorhanden"]} />
+                <Select label="Spiegel" value={form.backstage_mirror_status} onChange={(v) => updateField("backstage_mirror_status", v)} options={["open|Noch offen", "available|Vorhanden", "unavailable|Nicht vorhanden"]} />
+                <Select label="Sitzgelegenheit" value={form.backstage_seating_status} onChange={(v) => updateField("backstage_seating_status", v)} options={["open|Noch offen", "available|Vorhanden", "unavailable|Nicht vorhanden"]} />
+                <Select label="Tisch" value={form.backstage_table_status} onChange={(v) => updateField("backstage_table_status", v)} options={["open|Noch offen", "available|Vorhanden", "unavailable|Nicht vorhanden"]} />
               </CompactGrid>
-
               <Textarea
                 label="Weitere Hinweise zu Backstage / Garderobe"
                 value={form.backstage_notes}
@@ -770,15 +672,9 @@ export default function ShowPortalPage({
             >
               <Select
                 label="Wie ist die Unterkunft geregelt?"
-                value={form.accommodation_type}
-                onChange={(v) => updateField("accommodation_type", v)}
-                options={[
-                  "Hotel wird vom Veranstalter gestellt",
-                  "Hotel-Buyout wird gezahlt",
-                  "Hotel organisiert Sonja selbst",
-                  "Keine Übernachtung notwendig",
-                  "Sonstiges",
-                ]}
+                value={form.accommodation_status}
+                onChange={(v) => updateField("accommodation_status", v)}
+                options={["open|Noch offen", "organizer|Unterkunft wird vom Veranstalter gestellt", "not_required|Keine Übernachtung notwendig"]}
               />
 
               <CompactGrid>
@@ -788,12 +684,9 @@ export default function ShowPortalPage({
                   onChange={(v) => updateField("accommodation_hotel_name", v)}
                   placeholder="Name der Unterkunft"
                 />
-                <Input
-                  label="Hotel-Buyout"
-                  value={form.accommodation_buyout}
-                  onChange={(v) => updateField("accommodation_buyout", v)}
-                  placeholder="z.B. 120 € netto"
-                />
+                <Input label="Check-in" value={form.accommodation_checkin} onChange={(v) => updateField("accommodation_checkin", v)} placeholder="z.B. ab 15:00" />
+                <Input label="Check-out" value={form.accommodation_checkout} onChange={(v) => updateField("accommodation_checkout", v)} placeholder="z.B. bis 11:00" />
+                <Input label="Reservierung / Buchungsnummer" value={form.accommodation_booking_ref} onChange={(v) => updateField("accommodation_booking_ref", v)} placeholder="falls vorhanden" />
               </CompactGrid>
 
               <Textarea
@@ -1102,16 +995,16 @@ export default function ShowPortalPage({
                 }`}
               >
                 {saved && !dirty
-                  ? "Danke! Eure Angaben sind bei uns angekommen."
+                  ? "Danke! Eure Angaben wurden an primakavi übermittelt."
                   : saveStatus}
               </p>
             </div>
 
             <div className="flex items-center gap-5">
               <p className="hidden text-right text-sm text-zinc-400 sm:block">
-                Autosave aktiv
+                Entwurf wird automatisch gespeichert
                 <br />
-                manuell speichern möglich
+                Übermittlung erst mit Klick
               </p>
 
               <button
@@ -1123,8 +1016,8 @@ export default function ShowPortalPage({
                 {saving
                   ? "Speichert …"
                   : saved && !dirty
-                    ? "Gespeichert ✓"
-                    : "Angaben speichern →"}
+                    ? "Übermittelt ✓"
+                    : "Angaben an primakavi übermitteln →"}
               </button>
             </div>
           </div>
@@ -1319,7 +1212,7 @@ function getSectionTheme(title: string) {
       shell: "border-purple-200 bg-purple-50/60",
       number: "from-purple-200 to-fuchsia-300",
     },
-    "Vertrag & Finanzen": {
+    "Vertrag, Rechnung & Tickets": {
       shell: "border-orange-200 bg-orange-50/60",
       number: "from-orange-200 to-red-300",
     },
@@ -1438,7 +1331,7 @@ function sectionDescription(title: string) {
     "Organisation & Kontakt": "Wer ist vor Ort erreichbar?",
     "Ablauf & Planung": "Alles für Timing und Ablauf.",
     Technik: "Bitte so konkret wie möglich.",
-    "Vertrag & Finanzen": "Vertrag, Honorar und Rechnungsdaten.",
+    "Vertrag, Rechnung & Tickets": "Vertrag, Honorar und Rechnungsdaten.",
     Promotion: "Werbematerial und Ankündigungen.",
     "Verpflegung & Extras": "Backstage, Garderobe und Catering.",
     "Unterkunft & Anreise": "Hotel, Anfahrt und Besonderheiten.",
@@ -1545,6 +1438,10 @@ function Status({
   );
 }
 
+function ReadOnlyValue({ label, value }: { label: string; value: string }) {
+  return <div><p className="text-[10px] font-black uppercase tracking-[.12em] text-zinc-400">{label}</p><p className="mt-1 text-sm font-black text-zinc-800">{value}</p></div>;
+}
+
 function Input({
   label,
   placeholder,
@@ -1617,9 +1514,10 @@ function Select({
         className={FIELD_CONTROL}
       >
         <option value="">Bitte auswählen</option>
-        {options.map((option) => (
-          <option key={option}>{option}</option>
-        ))}
+        {options.map((option) => {
+          const [optionValue, optionLabel] = option.includes("|") ? option.split("|", 2) : [option, option];
+          return <option key={optionValue} value={optionValue}>{optionLabel}</option>;
+        })}
       </select>
     </label>
   );

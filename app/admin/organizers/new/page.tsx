@@ -26,7 +26,19 @@ const ORGANIZER_TYPES = [
   "Sonstiges",
 ];
 
-export default async function NewOrganizerPage() {
+export default async function NewOrganizerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    returnTo?: string;
+    showId?: string;
+    venue?: string;
+  }>;
+}) {
+  const params = await searchParams;
+  const returnTo = params.returnTo || "";
+  const showId = params.showId || "";
+  const preselectedVenueId = params.venue || "";
   // ------------------------------------------------------------
   // LOCATIONS FÜR VERKNÜPFUNG
   // ------------------------------------------------------------
@@ -257,6 +269,27 @@ export default async function NewOrganizerPage() {
     revalidatePath("/admin/organizers");
     revalidatePath("/admin/locations");
 
+    if (returnTo === "show" && showId) {
+      const { error: showError } = await supabaseAdmin
+        .schema("booking")
+        .from("shows")
+        .update({
+          organizer_id: created.id,
+          contact_name: contact1Name || null,
+          contact_email: clean(formData.get("contact_email")),
+          contact_phone: clean(formData.get("contact_phone")),
+        })
+        .eq("id", showId);
+
+      if (showError) {
+        throw new Error(showError.message);
+      }
+
+      revalidatePath(`/admin/shows/${showId}`);
+      revalidatePath("/admin/shows");
+      redirect(`/admin/shows/${showId}?saved=organizer-${Date.now()}`);
+    }
+
     redirect(`/admin/organizers/${created.id}`);
   }
 
@@ -449,7 +482,7 @@ export default async function NewOrganizerPage() {
             icon="🏛️"
             description="Locations, an denen Veranstaltungen dieses Veranstalters stattfinden."
           >
-            <LocationPicker venues={venues || []} />
+            <LocationPicker venues={venues || []} initialSelectedId={preselectedVenueId} />
 
             <div className="mt-4 rounded-xl bg-[#fbf7ef] px-4 py-3 text-xs font-semibold leading-5 text-zinc-500">
               Beispiel: Hamburger Comedy Pokal → Die Motte + Schmidt Theater.

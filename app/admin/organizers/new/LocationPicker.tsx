@@ -13,14 +13,16 @@ type Venue = {
 
 export default function LocationPicker({
   venues,
+  initialSelectedId = "",
 }: {
   venues: Venue[];
+  initialSelectedId?: string;
 }) {
   const [
     selectedIds,
     setSelectedIds,
   ] =
-    useState<string[]>([]);
+    useState<string[]>(initialSelectedId ? [initialSelectedId] : []);
 
   const [
     venueOnlyIds,
