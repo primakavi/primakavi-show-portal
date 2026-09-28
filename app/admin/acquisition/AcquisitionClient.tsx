@@ -2623,23 +2623,25 @@ function MailingPanel({
                             🎉 Show
                           </Link>
                         ) : recipient.acquisition_id ? (
-                          <span
-                            title="Aus diesem Mailing-Empfänger wurde bereits ein Akquise-Vorgang angelegt."
-                            className="inline-flex rounded-full bg-lime-100 px-2.5 py-1.5 text-[11px] font-black text-zinc-700"
+                          <Link
+                            href={`/admin/acquisition/${recipient.acquisition_id}`}
+                            title="Bestehenden Akquise-Vorgang öffnen"
+                            className="inline-flex rounded-full bg-lime-100 px-2.5 py-1.5 text-[11px] font-black text-zinc-700 transition hover:bg-lime-200 hover:text-zinc-950"
                           >
                             🎯 Akquise
-                          </span>
+                          </Link>
                         ) : isSent ? (
-                          <form action={createAcquisitionFromMailing}>
-                            <input type="hidden" name="recipient_id" value={recipient.id} />
-                            <button
-                              type="submit"
-                              title="Als echten Akquise-Vorgang weiterführen"
-                              className="h-9 min-w-[96px] rounded-full bg-lime-100 px-3 text-[11px] font-black text-zinc-700 ring-1 ring-lime-200/70 transition hover:bg-lime-200 hover:text-zinc-950"
-                            >
-                              → Akquise
-                            </button>
-                          </form>
+                          <Link
+                            href={`/admin/acquisition/new?${new URLSearchParams({
+                              ...(recipient.venue_id ? { venue: recipient.venue_id } : {}),
+                              ...(recipient.organizer_id ? { organizer: recipient.organizer_id } : {}),
+                              mailingRecipient: recipient.id,
+                            }).toString()}`}
+                            title="Als echten Akquise-Vorgang weiterführen"
+                            className="inline-flex h-9 min-w-[96px] items-center justify-center rounded-full bg-lime-100 px-3 text-[11px] font-black text-zinc-700 ring-1 ring-lime-200/70 transition hover:bg-lime-200 hover:text-zinc-950"
+                          >
+                            → Akquise
+                          </Link>
                         ) : round.active ? (
                           <form action={deleteMailingRecipient}>
                             <input type="hidden" name="id" value={recipient.id} />

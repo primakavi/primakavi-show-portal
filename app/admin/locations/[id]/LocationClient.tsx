@@ -211,9 +211,6 @@ export default function LocationClient({
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [openAcquisitionId, setOpenAcquisitionId] = useState<string | null>(
-    null
-  );
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [showNewAcquisitionForm, setShowNewAcquisitionForm] = useState(false);
   const [showNewRoundForm, setShowNewRoundForm] = useState(false);
@@ -305,6 +302,25 @@ export default function LocationClient({
       !status.includes("abgesagt")
     );
   });
+
+  const acquisitionsWithoutActivities = acquisition.filter(
+    (item) =>
+      !acquisitionActivities.some(
+        (activity) => activity.acquisition_id === item.id
+      )
+  );
+
+  const contactTimeline = [
+    ...mailingHistory.map((mailing) => ({ key: `mailing-${mailing.id}`, kind: "mailing" as const, date: mailing.sent_at || mailing.scheduled_at || mailing.created_at || "", mailing })),
+    ...acquisitionActivities.map((activity) => ({ key: `activity-${activity.id}`, kind: "activity" as const, date: activity.activity_date || activity.created_at || "", activity, parent: acquisition.find((item) => item.id === activity.acquisition_id) })),
+    ...acquisitionsWithoutActivities.map((item) => ({ key: `acquisition-${item.id}`, kind: "acquisition" as const, date: item.created_at || "", acquisition: item })),
+  ].sort((a, b) => (b.date ? new Date(b.date).getTime() : 0) - (a.date ? new Date(a.date).getTime() : 0));
+
+  const nextAction = acquisition.filter((item) => {
+    if (item.archived_at || !item.next_follow_up_at) return false;
+    const status = String(item.status || "").toLowerCase();
+    return !status.includes("gebucht") && !status.includes("abgesagt");
+  }).sort((a, b) => String(a.next_follow_up_at).localeCompare(String(b.next_follow_up_at)))[0];
 
   return (
     <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
@@ -1141,328 +1157,106 @@ export default function LocationClient({
                       </div>
                     )}
 
-                  {mailingHistory.length > 0 && (
-                     <div>
-                       <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-                         Mailings
-                       </p>
-                       <div className="space-y-2">
-                         {mailingHistory.map((mailing) => (
-                           <section
-                             key={mailing.id}
-                             className={`rounded-2xl border bg-white px-5 py-4 ${mailing.unsubscribed_at ? "border-red-200" : "border-black/10"}`}
-                           >
-                             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                               <div className="min-w-0">
-                                 <div className="flex flex-wrap items-center gap-2">
-                                   <span className="font-black text-zinc-950">📨 {mailing.round_name || "Newsletter"}</span>
-                                   {mailing.sent_at && <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-black text-zinc-600">versendet</span>}
-                                   {mailing.opened_at && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">👁 geöffnet</span>}
-                                   {mailing.clicked_at && <span className="rounded-full bg-lime-100 px-2.5 py-1 text-xs font-black text-lime-800">🔗 geklickt</span>}
-                                   {mailing.bounced_at && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-black text-amber-700">⚠️ Bounce</span>}
-                                   {mailing.unsubscribed_at && <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-black text-red-700">🚫 abgemeldet</span>}
-                                   {mailing.acquisition_id && <span className="rounded-full bg-lime-100 px-2.5 py-1 text-xs font-black text-lime-800">🎯 als Akquise weitergeführt</span>}
-                                 </div>
-                                 <p className="mt-2 text-xs font-semibold text-zinc-400">
-                                   {mailing.sent_at
-                                     ? `Versand ${formatDateTime(mailing.sent_at)}`
-                                     : mailing.scheduled_at
-                                       ? `Geplant ${formatDateTime(mailing.scheduled_at)}`
-                                       : mailing.created_at
-                                         ? `Hinzugefügt ${formatDateTime(mailing.created_at)}`
-                                         : "Datum offen"}
-                                   {mailing.email ? ` · ${mailing.email}` : ""}
-                                 </p>
-                                 {(mailing.reaction || mailing.notes) && (
-                                   <div className="mt-3 space-y-1">
-                                     {mailing.reaction && <p className="text-sm font-black text-zinc-700">Reaktion: {mailing.reaction}</p>}
-                                     {mailing.notes && <p className="whitespace-pre-line text-sm font-semibold leading-6 text-zinc-600">{mailing.notes}</p>}
-                                   </div>
-                                 )}
-                               </div>
-                               {mailing.acquisition_id && (
-                                 <Link href={`/admin/acquisition/${mailing.acquisition_id}`} className="shrink-0 text-sm font-black text-zinc-500 transition hover:text-zinc-950">
-                                   Akquise öffnen →
-                                 </Link>
-                               )}
-                             </div>
-                           </section>
-                         ))}
-                       </div>
-                     </div>
-                   )}
-
-                   {activeAcquisition && (
+                  {nextAction && (
                     <div>
-                      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-                        Aktuell
-                      </p>
-
-                      <div className="rounded-2xl bg-[#fbf7ef] p-5 ring-1 ring-black/5">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
+                      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">Nächste Aktion</p>
+                      <div className="rounded-2xl bg-lime-50 p-5 ring-1 ring-lime-200">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-lg font-black text-zinc-950">
-                                {activeAcquisition.program || "Programm offen"}
-                              </span>
-                              <AcquisitionStatus status={activeAcquisition.status} />
+                              <span className="rounded-full bg-lime-200 px-2.5 py-1 text-xs font-black text-lime-900">📌 WVL</span>
+                              <span className="text-lg font-black">{formatAcquisitionDate(nextAction.next_follow_up_at)}</span>
                             </div>
-
-                            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-zinc-600">
-                              <span>
-                                📅 WVL{" "}
-                                <strong className="font-black">
-                                  {formatAcquisitionDate(
-                                    activeAcquisition.next_follow_up_at
-                                  )}
-                                </strong>
-                              </span>
-
-                              <span>
-                                Letzter Kontakt{" "}
-                                <strong className="font-black">
-                                  {formatAcquisitionDate(
-                                    activeAcquisition.last_contact_at
-                                  )}
-                                </strong>
-                              </span>
-                            </div>
-
-                            {activeAcquisition.next_step && (
-                              <p className="mt-3 text-sm font-semibold text-zinc-700">
-                                → {activeAcquisition.next_step}
-                              </p>
-                            )}
+                            <p className="mt-2 font-black text-zinc-800">{nextAction.next_step || "Nachfassen"}</p>
+                            <p className="mt-1 text-sm font-semibold text-zinc-500">{nextAction.program || "Programm offen"}</p>
                           </div>
-
-                          <Link
-                            href={`/admin/acquisition/${activeAcquisition.id}`}
-                            className="shrink-0 text-sm font-black text-zinc-500 transition hover:text-zinc-950"
-                          >
-                            Vorgang öffnen →
-                          </Link>
+                          <Link href={`/admin/acquisition/${nextAction.id}`} className="text-sm font-black text-zinc-500 hover:text-zinc-950">Vorgang öffnen →</Link>
                         </div>
                       </div>
                     </div>
                   )}
 
                   <div>
-                    <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-                      {activeAcquisition ? "Vorgänge" : "Bisherige Vorgänge"}
-                    </p>
-
-                    <div className="space-y-2">
-                      {acquisition.map((item) => {
-                        const activities = acquisitionActivities.filter(
-                          (activity) => activity.acquisition_id === item.id
-                        );
-                        const isOpen = openAcquisitionId === item.id;
-                        const isCurrent = activeAcquisition?.id === item.id;
-
-                        return (
-                          <section
-                            key={item.id}
-                            className="overflow-hidden rounded-2xl border border-black/10 bg-white"
-                          >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setOpenAcquisitionId(isOpen ? null : item.id)
-                              }
-                              className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-[#fbf7ef]"
-                              aria-expanded={isOpen}
-                            >
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="font-black text-zinc-950">
-                                    {item.program || "Programm offen"}
-                                  </span>
-
-                                  <AcquisitionStatus status={item.status} />
-
-                                  {isCurrent && (
-                                    <span className="rounded-full bg-lime-200 px-2.5 py-1 text-xs font-black text-lime-900">
-                                      Aktuell
-                                    </span>
-                                  )}
-
-                                  {item.archived_at && (
-                                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-black text-zinc-500">
-                                      Archiv
-                                    </span>
-                                  )}
-                                </div>
-
-                                <p className="mt-1 text-xs font-semibold text-zinc-400">
-                                  {activities.length}{" "}
-                                  {activities.length === 1 ? "Eintrag" : "Einträge"}
-                                  {item.created_at
-                                    ? ` · gestartet ${formatAcquisitionDate(
-                                        item.created_at.slice(0, 10)
-                                      )}`
-                                    : ""}
-                                </p>
-                              </div>
-
-                              <span className="shrink-0 text-xl font-black text-zinc-400">
-                                {isOpen ? "⌃" : "⌄"}
-                              </span>
-                            </button>
-
-                            {isOpen && (
-                              <div className="border-t border-black/5">
-                                {activities.length === 0 ? (
-                                  <div className="px-5 py-5 text-sm font-semibold text-zinc-400">
-                                    Für diesen Vorgang gibt es noch keine Verlaufseinträge.
-                                  </div>
-                                ) : (
-                                  <div className="divide-y divide-black/5">
-                                    {activities.map((activity) => (
-                                      <div
-                                        key={activity.id}
-                                        className="grid gap-3 px-5 py-4 md:grid-cols-[110px_135px_minmax(0,1fr)_190px] md:items-start"
-                                      >
-                                        <div className="text-sm font-black text-zinc-700">
-                                          {formatAcquisitionDate(
-                                            activity.activity_date
-                                          )}
-                                        </div>
-
-                                        <div className="flex items-center gap-2 text-sm font-black text-zinc-700">
-                                          <span>
-                                            {activityIcon(
-                                              activity.activity_type,
-                                              activity.channel
-                                            )}
-                                          </span>
-                                          <span>
-                                            {activity.activity_type || "Kontakt"}
-                                          </span>
-                                        </div>
-
-                                        <div className="min-w-0">
-                                          <p className="text-sm font-semibold leading-6 text-zinc-700">
-                                            {activity.note ||
-                                              activity.response ||
-                                              "—"}
-                                          </p>
-
-                                          {activity.response && activity.note && (
-                                            <p className="mt-1 text-sm font-semibold text-zinc-500">
-                                              {activity.response}
-                                            </p>
-                                          )}
-
-                                          {activity.channel && (
-                                            <p className="mt-1 text-xs font-bold text-zinc-400">
-                                              via {activity.channel}
-                                            </p>
-                                          )}
-                                        </div>
-
-                                        <div className="flex items-start justify-between gap-3">
-                                          <div className="space-y-1 text-xs font-black">
-                                            {activity.next_step && (
-                                              <p className="text-zinc-600">
-                                                → {activity.next_step}
-                                              </p>
-                                            )}
-
-                                            {activity.follow_up_at && (
-                                              <p className="text-amber-700">
-                                                📅 WVL{" "}
-                                                {formatAcquisitionDate(
-                                                  activity.follow_up_at
-                                                )}
-                                              </p>
-                                            )}
-                                          </div>
-
-                                          {deleteActivity && (
-                                            <button
-                                              type="button"
-                                              title="Kontakteintrag löschen"
-                                              onClick={async () => {
-                                                const confirmed = window.confirm(
-                                                  "Diesen Kontakteintrag wirklich löschen?"
-                                                );
-
-                                                if (!confirmed) return;
-
-                                                const formData = new FormData();
-                                                formData.set(
-                                                  "acquisition_id",
-                                                  item.id
-                                                );
-                                                formData.set(
-                                                  "activity_id",
-                                                  activity.id
-                                                );
-                                                formData.set(
-                                                  "venue_id",
-                                                  venue.id
-                                                );
-
-                                                const result =
-                                                  await deleteActivity(formData);
-
-                                                setActionMessage(result.message);
-                                              }}
-                                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm shadow-sm ring-1 ring-black/5 transition hover:bg-red-50"
-                                            >
-                                              🗑️
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-
-                                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/5 bg-[#fbf7ef] px-5 py-3">
-                                  <Link
-                                    href={`/admin/acquisition/${item.id}`}
-                                    className="text-sm font-black text-zinc-500 transition hover:text-zinc-950"
-                                  >
-                                    Vorgang öffnen →
-                                  </Link>
-
-                                  {deleteAcquisition && (
-                                    <button
-                                      type="button"
-                                      onClick={async () => {
-                                        const confirmed = window.confirm(
-                                          "Diese Akquise inklusive aller Kontakteinträge wirklich löschen?"
-                                        );
-
-                                        if (!confirmed) return;
-
-                                        const formData = new FormData();
-                                        formData.set("acquisition_id", item.id);
-
-                                        const result =
-                                          await deleteAcquisition(formData);
-
-                                        setActionMessage(result.message);
-
-                                        if (result.success) {
-                                          setOpenAcquisitionId(null);
-                                          setShowActivityForm(false);
-                                        }
-                                      }}
-                                      className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-black text-red-700 transition hover:bg-red-100"
-                                    >
-                                      🗑 Akquise löschen
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </section>
-                        );
-                      })}
+                    <div className="mb-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">Kontaktverlauf</p>
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-black text-zinc-500">
+                          {contactTimeline.length} {contactTimeline.length === 1 ? "Kontakt" : "Kontakte"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold text-zinc-500">Alle Kontakte und Mailings – neueste zuerst.</p>
                     </div>
+                    {contactTimeline.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-7 text-center text-sm font-semibold text-zinc-400">Noch keine Kontakte im Verlauf.</div>
+                    ) : (
+                      <div className="relative max-h-[350px] space-y-2 overflow-y-auto pr-2 md:pl-9">
+                        <div className="absolute bottom-4 left-[11px] top-4 hidden border-l border-dashed border-zinc-300 md:block" />
+                        {contactTimeline.map((entry) => entry.kind === "mailing" ? (
+                          <section key={entry.key} className="relative rounded-xl border border-black/10 bg-white px-4 py-3">
+                            <div className="absolute -left-[35px] top-4 hidden h-3 w-3 rounded-full bg-blue-400 ring-4 ring-white md:block" />
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-black text-zinc-400">{formatAcquisitionDate(entry.date ? entry.date.slice(0,10) : null)}</span>
+                                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">📨 Newsletter</span>
+                                  <span className="font-black">{entry.mailing.round_name || "Newsletter"}</span>
+                                  {entry.mailing.opened_at && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">👁 geöffnet</span>}
+                                  {entry.mailing.clicked_at && <span className="rounded-full bg-lime-100 px-2.5 py-1 text-xs font-black text-lime-800">🔗 geklickt</span>}
+                                  {entry.mailing.unsubscribed_at && <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-black text-red-700">🚫 abgemeldet</span>}
+                                </div>
+                                {entry.mailing.email && <p className="mt-1 text-xs font-semibold text-zinc-400">{entry.mailing.email}</p>}
+                                {entry.mailing.reaction && <p className="mt-2 text-sm font-black text-zinc-700">Reaktion: {entry.mailing.reaction}</p>}
+                                {entry.mailing.notes && <p className="mt-1 whitespace-pre-line text-sm font-semibold text-zinc-600">{entry.mailing.notes}</p>}
+                              </div>
+                              {entry.mailing.acquisition_id && <Link href={`/admin/acquisition/${entry.mailing.acquisition_id}`} className="text-sm font-black text-zinc-500 hover:text-zinc-950">Vorgang öffnen →</Link>}
+                            </div>
+                          </section>
+                        ) : entry.kind === "acquisition" ? (
+                          <section key={entry.key} className="relative rounded-xl border border-black/10 bg-white px-4 py-3">
+                            <div className="absolute -left-[35px] top-4 hidden h-3 w-3 rounded-full bg-zinc-300 ring-4 ring-white md:block" />
+                            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-black text-zinc-400">{entry.acquisition.created_at ? formatAcquisitionDate(entry.acquisition.created_at.slice(0, 10)) : "—"}</span>
+                                  <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-black text-zinc-600">🗂 Akquise</span>
+                                  <span className="font-black">{entry.acquisition.program || "Programm offen"}</span>
+                                  {entry.acquisition.archived_at ? (
+                                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-black text-zinc-500">Archiv</span>
+                                  ) : (
+                                    <AcquisitionStatus status={entry.acquisition.status} />
+                                  )}
+                                </div>
+                                <p className="mt-1 text-xs font-semibold text-zinc-500">Akquise-Vorgang angelegt · noch keine Kontakte dokumentiert</p>
+                              </div>
+                              <Link href={`/admin/acquisition/${entry.acquisition.id}`} className="text-sm font-black text-zinc-500 hover:text-zinc-950">Vorgang öffnen →</Link>
+                            </div>
+                          </section>
+                        ) : (
+                          <section key={entry.key} className="relative rounded-xl border border-black/10 bg-white px-4 py-3">
+                            <div className="absolute -left-[35px] top-4 hidden h-3 w-3 rounded-full bg-lime-400 ring-4 ring-white md:block" />
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-black text-zinc-400">{formatAcquisitionDate(entry.activity.activity_date)}</span>
+                                  <span className="rounded-full bg-[#fbf7ef] px-2.5 py-1 text-xs font-black text-zinc-700">{activityIcon(entry.activity.activity_type, entry.activity.channel)} {entry.activity.channel || entry.activity.activity_type || "Kontakt"}</span>
+                                  {entry.parent?.program && <span className="font-black">{entry.parent.program}</span>}
+                                  {entry.activity.status_after && <AcquisitionStatus status={entry.activity.status_after} />}
+                                </div>
+                                {entry.activity.note && <p className="mt-2 whitespace-pre-line text-sm font-semibold leading-5 text-zinc-700">{entry.activity.note}</p>}
+                                {entry.activity.response && <p className="mt-1 whitespace-pre-line text-sm font-semibold leading-6 text-zinc-500">{entry.activity.response}</p>}
+                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-black">
+                                  {entry.activity.next_step && <span className="text-zinc-600">→ {entry.activity.next_step}</span>}
+                                  {entry.activity.follow_up_at && <span className="text-amber-700">📅 WVL {formatAcquisitionDate(entry.activity.follow_up_at)}</span>}
+                                </div>
+                              </div>
+                              {entry.parent && <Link href={`/admin/acquisition/${entry.parent.id}`} className="text-sm font-black text-zinc-500 hover:text-zinc-950">Vorgang öffnen →</Link>}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    )}
                   </div>
+
                 </div>
               )}
             </Card>
