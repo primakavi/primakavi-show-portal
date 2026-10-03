@@ -1,9 +1,7 @@
 "use client";
-
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-
 type ShowRow = {
   id: string;
   token: string;
@@ -16,6 +14,9 @@ type ShowRow = {
   city: string | null;
   linked_venue_name?: string | null;
   linked_venue_city?: string | null;
+  linked_venue_street?: string | null;
+  linked_venue_postal_code?: string | null;
+  linked_venue_address?: string | null;
   start_time: string | null;
   entry_time: string | null;
   contact_name?: string | null;
@@ -29,7 +30,10 @@ type ShowRow = {
   show_follow_up_date?: string | null;
   checklist?: Record<string, boolean> | null;
   markus_included?: boolean | null;
-  last_portal_update?: string | null;
+  website_visible?: boolean | null;
+  ticket_link?: string | null;
+  ticket_status?: "available" | "low_stock" | "sold_out" | null;
+last_portal_update?: string | null;
   last_reviewed_at?: string | null;
   show_portal_submissions?: {
     id: string;
@@ -37,14 +41,12 @@ type ShowRow = {
     reviewed_at?: string | null;
   }[] | null;
 };
-
 type FilterKey =
   | "alle"
   | "kommend"
   | "gespielt"
   | "option"
   | "abgesagt";
-
 type PhaseKey =
   | "alle"
   | "zurueckgestellt"
@@ -54,7 +56,6 @@ type PhaseKey =
   | "spielbereit"
   | "nachbereitung"
   | "abgeschlossen";
-
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "alle", label: "Alle" },
   { key: "kommend", label: "Kommend" },
@@ -62,7 +63,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "option", label: "Optionen" },
   { key: "abgesagt", label: "Abgesagt" },
 ];
-
 const PHASES: { key: PhaseKey; label: string }[] = [
   { key: "alle", label: "Alle Phasen" },
   { key: "zurueckgestellt", label: "Noch nicht in Bearbeitung" },
@@ -73,7 +73,6 @@ const PHASES: { key: PhaseKey; label: string }[] = [
   { key: "nachbereitung", label: "Nachbereitung" },
   { key: "abgeschlossen", label: "Abgeschlossen" },
 ];
-
 export default function AdminClient({
   shows,
   createShowAction,
@@ -83,70 +82,58 @@ export default function AdminClient({
   shows: ShowRow[];
   createShowAction: () => Promise<{ id: string }>;
   deleteShowAction: (formData: FormData) => void | Promise<void>;
-  duplicateShowAction: (formData: FormData) => void | Promise<void>;
+  duplicateShowAction: (formData: FormData) => Promise<{ id: string }>;
 }) {
   const router = useRouter();
-
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("kommend");
   const [phase, setPhase] = useState<PhaseKey>("alle");
   const [year, setYear] = useState("alle");
   const [showCreateConfirm, setShowCreateConfirm] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-
+  const [copyShow, setCopyShow] = useState<ShowRow | null>(null);
   const today = startOfToday();
 const currentYear = String(new Date().getFullYear());
-
 const upcomingShows = shows.filter((show) => {
   const date = parseDate(show.show_date);
-
   return (
     date &&
     date >= today &&
     !isArchivedShow(show)
   );
 });
-
 const showsThisYear = shows.filter((show) => {
   return (
     show.show_date?.startsWith(currentYear) &&
     !isArchivedShow(show)
   );
 });
-
 const locationsThisYear = new Set(
   showsThisYear
     .map((show) => show.venue?.trim())
     .filter(Boolean)
 ).size;
-
 const optionsCount = shows.filter((show) => {
   return show.internal_status === "option";
 }).length;
   const years = Array.from(
     new Set(shows.map((show) => show.show_date?.slice(0, 4)).filter(Boolean))
   ).sort();
-
   const existingEmptyShow = useMemo(() => {
     return shows.find((show) => isEmptyShowAkte(show));
   }, [shows]);
-
   async function handleCreateShow() {
     if (existingEmptyShow) {
       setShowCreateConfirm(false);
       router.push(`/admin/shows/${existingEmptyShow.id}`);
       return;
     }
-
     setIsCreating(true);
-
     try {
       const result = await createShowAction();
-
       if (!result?.id) {
         throw new Error("Keine Show-ID zurückgegeben.");
       }
-
       setShowCreateConfirm(false);
       router.push(`/admin/shows/${result.id}`);
     } catch (error) {
@@ -156,7 +143,6 @@ const optionsCount = shows.filter((show) => {
       setShowCreateConfirm(false);
     }
   }
-
   const rows = useMemo(() => {
     return shows.filter((show) => {
       const date = parseDate(show.show_date);
@@ -165,7 +151,6 @@ const optionsCount = shows.filter((show) => {
       const isOption = show.internal_status === "option";
       const isCancelled = show.internal_status === "abgesagt";
       const status = getStatus(show);
-
       const text = [
         show.artist,
         show.program,
@@ -179,25 +164,19 @@ const optionsCount = shows.filter((show) => {
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-
       const matchesSearch = text.includes(query.trim().toLowerCase());
       const matchesYear = year === "alle" || show.show_date?.startsWith(year);
-
       const matchesFilter =
         filter === "alle" ||
         (filter === "kommend" && isFuture && !isOption && !isCancelled) ||
         (filter === "gespielt" && isPast && !isOption && !isCancelled) ||
         (filter === "option" && isOption) ||
         (filter === "abgesagt" && isCancelled);
-
       const matchesPhase = phase === "alle" || status.key === phase;
-
       return matchesSearch && matchesYear && matchesFilter && matchesPhase;
     });
   }, [shows, query, filter, phase, year, today]);
-
   const grouped = groupByMonth(rows);
-
   return (
     <div className="space-y-5 text-zinc-950 sm:space-y-6">
      <header className="flex flex-col gap-5 px-1 py-3 md:flex-row md:items-end md:justify-between">
@@ -205,16 +184,13 @@ const optionsCount = shows.filter((show) => {
     <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-400">
       PRIMAKAVI · BOOKING CRM
     </p>
-
     <h1 className="mt-2 text-5xl font-black tracking-tight text-zinc-950">
       Alle Shows
     </h1>
-
     <p className="mt-2 text-zinc-500">
       Termine, Optionen und gebuchte Shows im Überblick.
     </p>
   </div>
-
   <button
     type="button"
     onClick={() => setShowCreateConfirm(true)}
@@ -223,39 +199,33 @@ const optionsCount = shows.filter((show) => {
     + Neue Show-Akte
   </button>
 </header>
-
 <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
   <ShowStat
     icon="🎭"
     value={upcomingShows.length}
     label="Kommende Shows"
   />
-
   <ShowStat
     icon="📅"
     value={showsThisYear.length}
     label="Shows dieses Jahr"
   />
-
   <ShowStat
     icon="🏛️"
     value={locationsThisYear}
     label="Locations dieses Jahr"
   />
-
   <ShowStat
     icon="🟣"
     value={optionsCount}
     label="Optionen"
   />
 </section>
-
       <section className="rounded-[1.7rem] bg-white p-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
         <div className="space-y-3">
           <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1">
             {FILTERS.map((item) => {
               const isActive = filter === item.key;
-
               return (
                 <button
                   key={item.key}
@@ -276,13 +246,11 @@ const optionsCount = shows.filter((show) => {
               );
             })}
           </div>
-
           <div className="grid gap-3 md:grid-cols-[minmax(260px,1fr)_220px_150px]">
             <div className="relative min-w-0">
               <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
                 🔎
               </span>
-
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -290,7 +258,6 @@ const optionsCount = shows.filter((show) => {
                 className="h-12 w-full rounded-xl bg-[#fbf7ef] pl-10 pr-4 text-sm font-semibold outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-black/10"
               />
             </div>
-
             <select
               value={phase}
               onChange={(event) => setPhase(event.target.value as PhaseKey)}
@@ -303,7 +270,6 @@ const optionsCount = shows.filter((show) => {
                 </option>
               ))}
             </select>
-
             <select
               value={year}
               onChange={(event) => setYear(event.target.value)}
@@ -320,7 +286,6 @@ const optionsCount = shows.filter((show) => {
           </div>
         </div>
       </section>
-
       {rows.length === 0 ? (
         <section className="rounded-[2rem] bg-white p-10 text-center shadow-xl shadow-black/5 ring-1 ring-black/5">
           <p className="font-black">Keine Shows gefunden.</p>
@@ -343,24 +308,22 @@ const optionsCount = shows.filter((show) => {
                   {monthShows.length === 1 ? "" : "s"}
                 </span>
               </div>
-
               <div className="overflow-hidden rounded-[1.7rem] bg-white shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
                 <div className="hidden gap-3 border-b border-black/5 px-5 py-3 text-[10px] font-black uppercase tracking-[0.12em] text-zinc-400 md:grid md:grid-cols-[125px_minmax(220px,1.35fr)_minmax(210px,1fr)_145px_minmax(180px,1fr)_130px]">
                   <span>Datum</span>
                   <span>Location</span>
-                  <span>Ort / Programm</span>
+                  <span>Programm</span>
                   <span>Status</span>
                   <span>Offene Punkte</span>
                   <span className="text-right">Aktionen</span>
                 </div>
-
                 <div>
                   {monthShows.map((show) => (
                     <ShowCard
                       key={show.id}
                       show={show}
                       deleteShowAction={deleteShowAction}
-                      duplicateShowAction={duplicateShowAction}
+                      onDuplicate={() => setCopyShow(show)}
                     />
                   ))}
                 </div>
@@ -369,7 +332,6 @@ const optionsCount = shows.filter((show) => {
           ))}
         </section>
       )}
-
       {showCreateConfirm && (
         <CreateShowConfirmModal
           existingEmptyShow={existingEmptyShow}
@@ -378,10 +340,16 @@ const optionsCount = shows.filter((show) => {
           onConfirm={handleCreateShow}
         />
       )}
+      {copyShow && (
+        <CopyShowModal
+          show={copyShow}
+          duplicateShowAction={duplicateShowAction}
+          onCancel={() => setCopyShow(null)}
+        />
+      )}
     </div>
   );
 }
-
 function CreateShowConfirmModal({
   existingEmptyShow,
   isCreating,
@@ -397,15 +365,12 @@ function CreateShowConfirmModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm">
       <div className="relative w-full max-w-lg overflow-hidden rounded-[2rem] bg-white p-6 shadow-2xl ring-1 ring-black/5">
         <div className="absolute right-6 top-5 text-4xl opacity-20">✨</div>
-
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-pink-500">
           Sicherheitscheck
         </p>
-
         <h2 className="mt-3 text-2xl font-black tracking-tight text-zinc-950">
           Neue Show-Akte anlegen?
         </h2>
-
         {existingEmptyShow ? (
           <div className="mt-4 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-100">
             <p className="text-sm font-black text-amber-900">
@@ -422,7 +387,6 @@ function CreateShowConfirmModal({
             fortfahren, wenn wirklich ein neuer Termin erfasst werden soll.
           </p>
         )}
-
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -432,7 +396,6 @@ function CreateShowConfirmModal({
           >
             Abbrechen
           </button>
-
           <button
             type="button"
             onClick={onConfirm}
@@ -450,23 +413,20 @@ function CreateShowConfirmModal({
     </div>
   );
 }
-
 function showLocationName(show: ShowRow) {
   return show.linked_venue_name?.trim() || show.venue?.trim() || "";
 }
-
 function showLocationCity(show: ShowRow) {
   return show.linked_venue_city?.trim() || show.city?.trim() || "";
 }
-
 function ShowCard({
   show,
   deleteShowAction,
-  duplicateShowAction,
+  onDuplicate,
 }: {
   show: ShowRow;
   deleteShowAction: (formData: FormData) => void | Promise<void>;
-  duplicateShowAction: (formData: FormData) => void | Promise<void>;
+  onDuplicate: () => void;
 }) {
   const router = useRouter();
   const status = getStatus(show);
@@ -478,7 +438,6 @@ function ShowCard({
   const missing = getMissingFields(show);
   const isPast = isPastDate(show.show_date);
   const newPortalInfo = hasNewPortalInfo(show);
-
   return (
     <div
       role="link"
@@ -507,36 +466,51 @@ function ShowCard({
           )}
         </div>
       </div>
-
       <div className="min-w-0">
         <p className="truncate text-[15px] font-black text-zinc-950">
           {showLocationName(show) || "Location offen"}
         </p>
-
+        <p className="mt-1 truncate text-[11px] font-semibold text-zinc-400">
+          {showLocationCity(show) || "Ort offen"}
+        </p>
         {newPortalInfo && (
           <div className="mt-1">
             <Badge tone="pink">🔵 Portal-Update prüfen</Badge>
           </div>
         )}
       </div>
-
       <div className="min-w-0">
         <p className="truncate text-sm font-bold text-zinc-700">
-          {showLocationCity(show) || "Ort offen"}
+          {show.program || "Programm offen"}
         </p>
         <p className="mt-1 truncate text-[11px] font-semibold text-zinc-400">
-          {show.program || "Programm offen"}
-          {show.markus_included && " · 🎹 Markus"}
+          {show.markus_included && <span>🎹 Markus</span>}
+          {show.website_visible && (
+            <>
+              {show.markus_included && " · "}
+              <span className="text-emerald-600">🌐 Online</span>
+              {show.ticket_status === "sold_out" ? (
+                <span className="font-black text-rose-600"> · ● Ausverkauft</span>
+              ) : show.ticket_status === "low_stock" ? (
+                <span className="font-black text-amber-600"> · 🎟 Restkarten</span>
+              ) : (
+                <span className={show.ticket_link ? "text-sky-600" : "text-amber-600"}>
+                  {show.ticket_link ? " · 🎟 Tickets" : " · Ticket offen"}
+                </span>
+              )}
+            </>
+          )}
+          {!show.markus_included && !show.website_visible && (
+            <span className="text-zinc-300">—</span>
+          )}
         </p>
       </div>
-
       <div>
         <span
           className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${status.className}`}
         >
           {status.label}
         </span>
-
         {isPast &&
           show.billing_status &&
           show.internal_status !== "abgesagt" &&
@@ -546,28 +520,23 @@ function ShowCard({
             </p>
           )}
       </div>
-
       <div className="flex min-w-0 flex-wrap gap-1.5">
         {visibleActions.slice(0, 2).map((item) => {
           let tone: "red" | "green" | "blue" | "purple" | "zinc" = "red";
-
           if (item.includes("WVL")) tone = "blue";
           else if (item === "Spielbereit") tone = "green";
           else if (item === "Abgesagt") tone = "red";
           else if (item === "Abrechnung offen") tone = "purple";
           else if (item === "Offene Punkte vorhanden") tone = "zinc";
-
           return (
             <Badge key={item} tone={tone}>
               {item}
             </Badge>
           );
         })}
-
         {visibleActions.length > 2 && (
           <Badge tone="zinc">+{visibleActions.length - 2}</Badge>
         )}
-
         {status.key !== "abgeschlossen" &&
           visibleActions.length === 0 &&
           missing.length > 0 && (
@@ -576,7 +545,6 @@ function ShowCard({
             </Badge>
           )}
       </div>
-
       <div
         className="relative z-10 flex flex-wrap justify-start gap-1.5 md:justify-end"
         onClick={(event) => event.stopPropagation()}
@@ -585,14 +553,15 @@ function ShowCard({
         <ActionLink href={`/show/${show.token}`} label="Formular öffnen">
           🔗
         </ActionLink>
-
-        <form action={duplicateShowAction}>
-          <input type="hidden" name="show_id" value={show.id} />
-          <ActionButton label="Show duplizieren" tone="purple">
-            ⧉
-          </ActionButton>
-        </form>
-
+        <button
+          type="button"
+          onClick={onDuplicate}
+          title="Neue Show aus Vorlage"
+          aria-label="Neue Show aus Vorlage"
+          className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-[11px] font-black text-zinc-500 ring-1 ring-black/[0.07] transition hover:bg-[#fbf7ef] hover:text-zinc-950"
+        >
+          ⧉
+        </button>
         <form
           action={deleteShowAction}
           onSubmit={(event) => {
@@ -601,7 +570,6 @@ function ShowCard({
                 showLocationName(show) || "ohne Location"
               }" löschen möchtest?`
             );
-
             if (!ok) event.preventDefault();
           }}
         >
@@ -614,7 +582,77 @@ function ShowCard({
     </div>
   );
 }
-
+function CopyShowModal({ show, duplicateShowAction, onCancel }: {
+  show: ShowRow;
+  duplicateShowAction: (formData: FormData) => Promise<{ id: string }>;
+  onCancel: () => void;
+}) {
+  const router = useRouter();
+  const [date, setDate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [partner, setPartner] = useState(true);
+  const [production, setProduction] = useState(true);
+  const [contract, setContract] = useState(false);
+  const [promo, setPromo] = useState(false);
+  const [travel, setTravel] = useState(false);
+  async function submit() {
+    if (!date) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.set("show_id", show.id);
+      fd.set("show_date", date);
+      fd.set("take_partner", String(partner));
+      fd.set("take_production", String(production));
+      fd.set("take_contract", String(contract));
+      fd.set("take_promo", String(promo));
+      fd.set("take_travel", String(travel));
+      const result = await duplicateShowAction(fd);
+      router.push(`/admin/shows/${result.id}`);
+    } catch (error) {
+      console.error(error);
+      alert("Die neue Show konnte nicht erstellt werden.");
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] bg-white p-6 shadow-2xl ring-1 ring-black/5">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-purple-500">Neue Show aus Vorlage</p>
+        <h2 className="mt-2 text-2xl font-black">{show.venue || show.city || "Show"} erneut spielen</h2>
+        <p className="mt-2 text-sm font-semibold leading-6 text-zinc-500">Neue Show mit neuem Termin. Ergebnisse, Zahlungen, Ticketstände und Nachbereitung bleiben bei der alten Show.</p>
+        <label className="mt-6 block text-xs font-black uppercase tracking-[0.12em] text-zinc-500">Wann findet die neue Show statt? *</label>
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="mt-2 h-12 w-full rounded-xl bg-[#fbf7ef] px-4 text-sm font-black outline-none ring-1 ring-black/[0.06]" />
+        <p className="mt-6 text-xs font-black uppercase tracking-[0.12em] text-zinc-500">Was soll mitkommen?</p>
+        <div className="mt-3 grid gap-2">
+          <CopyOption checked={partner} set={setPartner} title="Spielstätte & Veranstalter" text="Location, Veranstalter und Ansprechpartner." />
+          <CopyOption checked={production} set={setProduction} title="Technik & Backstage" text="Technische, Ablauf- und Backstage-Grundlagen." />
+          <CopyOption checked={contract} set={setContract} title="Vertragliche Grundlagen" text="Konditionen und Vertragsangaben als Vorlage." />
+          <CopyOption checked={promo} set={setPromo} title="Promotion-Grundlagen" text="Promo-Vorgaben – ohne Ticketstände und alten Ticketlink." />
+          <CopyOption checked={travel} set={setTravel} title="Anreise & Unterkunft" text="Nur übernehmen, wenn die Planung wirklich gleich bleibt." />
+        </div>
+        <div className="mt-5 rounded-2xl bg-zinc-50 p-4 text-xs font-semibold leading-5 text-zinc-500">Immer neu: Datum, Verschiebung, Ticketverkäufe, Abrechnung, Zahlungen, Portal-Updates, Aufgaben und Nachbereitung.</div>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} disabled={busy} className="rounded-2xl bg-zinc-100 px-5 py-3 text-sm font-black">Abbrechen</button>
+          <button type="button" onClick={submit} disabled={busy || !date} className="rounded-2xl bg-zinc-950 px-5 py-3 text-sm font-black text-white disabled:opacity-40">{busy ? "Wird erstellt..." : "Show erstellen →"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function CopyOption({ checked, set, title, text }: {
+  checked: boolean;
+  set: (value: boolean) => void;
+  title: string;
+  text: string;
+}) {
+  return (
+    <label className="flex cursor-pointer gap-3 rounded-2xl bg-[#fbf7ef] p-4 ring-1 ring-black/[0.05]">
+      <input type="checkbox" checked={checked} onChange={(e) => set(e.target.checked)} className="mt-1 h-4 w-4 accent-zinc-950" />
+      <span><span className="block text-sm font-black">{title}</span><span className="mt-1 block text-xs font-semibold text-zinc-500">{text}</span></span>
+    </label>
+  );
+}
 function Badge({
   tone,
   children,
@@ -630,14 +668,12 @@ function Badge({
     blue: "bg-sky-100 text-sky-700",
     purple: "bg-purple-100 text-purple-700",
   }[tone];
-
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-black ${className}`}>
       {children}
     </span>
   );
 }
-
 function ActionLink({
   href,
   label,
@@ -659,7 +695,6 @@ function ActionLink({
     </Link>
   );
 }
-
 function ActionButton({
   label,
   tone,
@@ -673,7 +708,6 @@ function ActionButton({
     tone === "purple"
       ? "bg-white text-zinc-500 ring-1 ring-black/[0.07] hover:bg-[#fbf7ef] hover:text-zinc-950"
       : "bg-white text-zinc-400 ring-1 ring-black/[0.07] hover:bg-red-50 hover:text-red-600 hover:ring-red-100";
-
   return (
     <button
       type="submit"
@@ -703,12 +737,10 @@ function ShowStat({
         <div className="shrink-0 text-[24px] leading-none">
           {icon}
         </div>
-
         <div className="min-w-0">
           <p className="text-[20px] font-black leading-none text-zinc-950">
             {value}
           </p>
-
           <p className="mt-1 truncate text-[11px] font-semibold leading-none text-zinc-400">
             {label}
           </p>
@@ -717,10 +749,8 @@ function ShowStat({
     </div>
   );
 }
-
 function isEmptyShowAkte(show: ShowRow) {
   if (isArchivedShow(show)) return false;
-
   return (
     !show.show_date &&
     !showLocationName(show) &&
@@ -731,6 +761,13 @@ function isEmptyShowAkte(show: ShowRow) {
     !show.contact_email
   );
 }
+function hasShowAddress(show: ShowRow) {
+  return Boolean(
+    show.venue_address?.trim() ||
+      show.linked_venue_address?.trim() ||
+      show.linked_venue_street?.trim()
+  );
+}
 
 function getActionItems(show: ShowRow) {
   const items: string[] = [];
@@ -738,12 +775,10 @@ function getActionItems(show: ShowRow) {
   const finalcheckDue = isFinalcheckDue(show);
   const finalcheckComplete = isFinalcheckComplete(show);
   const hasFutureFollowUp = hasFollowUpInFuture(show.follow_up_date);
-
   if (show.internal_status === "abgesagt") {
     items.push("Abgesagt");
     return items;
   }
-
   if (
     show.internal_status === "archiv" ||
     show.internal_status === "archiviert" ||
@@ -752,7 +787,6 @@ function getActionItems(show: ShowRow) {
   ) {
     return items;
   }
-
   if (
     isPast &&
     show.billing_status !== "bezahlt" &&
@@ -761,58 +795,46 @@ function getActionItems(show: ShowRow) {
     items.push("Abrechnung offen");
     return items;
   }
-
   // Eine manuelle Aufgaben-WVL darf die Show zurückstellen.
   // Der Finalcheck hat in den letzten 7 Tagen aber immer Vorrang.
   if (hasFutureFollowUp && !finalcheckDue && !isPast) {
     items.push(`WVL ${formatDate(show.follow_up_date)}`);
     return items;
   }
-
   if (hasNewPortalInfo(show)) {
     items.push("Portal-Update prüfen");
   }
-
   if (
     !isContractDone(show.contract_status) &&
     !show.checklist?.["Vertrag geklärt"]
   ) {
     items.push("Vertrag offen");
   }
-
   if (!show.contact_name || !show.contact_email) {
     items.push("Kontakt fehlt");
   }
-
-  if (!show.venue_address) {
+  if (!hasShowAddress(show)) {
     items.push("Adresse fehlt");
   }
-
   if (!show.start_time) {
     items.push("Beginn fehlt");
   }
-
   if (finalcheckDue && !finalcheckComplete) {
     items.push("Finalcheck");
   }
-
   return items;
 }
-
 function getMissingFields(show: ShowRow) {
   const missing: string[] = [];
-
   if (!show.show_date) missing.push("Datum");
   if (!showLocationName(show)) missing.push("Location");
   if (!showLocationCity(show)) missing.push("Stadt");
   if (!show.start_time) missing.push("Beginn");
   if (!show.contact_name) missing.push("Kontakt");
   if (!show.contact_email) missing.push("E-Mail");
-  if (!show.venue_address) missing.push("Adresse");
-
+  if (!hasShowAddress(show)) missing.push("Adresse");
   return missing;
 }
-
 function getStatus(show: ShowRow) {
   if (show.internal_status === "abgesagt") {
     return {
@@ -821,7 +843,6 @@ function getStatus(show: ShowRow) {
       className: "bg-red-100 text-red-700",
     };
   }
-
   if (show.internal_status === "option") {
     return {
       key: "option",
@@ -829,12 +850,10 @@ function getStatus(show: ShowRow) {
       className: "bg-purple-100 text-purple-700",
     };
   }
-
   if (isPastDate(show.show_date)) {
     const billingDone =
       show.billing_status === "bezahlt" ||
       show.billing_status === "nicht_relevant";
-
     if (show.internal_status === "abgeschlossen" || billingDone) {
       return {
         key: "abgeschlossen",
@@ -842,14 +861,12 @@ function getStatus(show: ShowRow) {
         className: "bg-emerald-100 text-emerald-700",
       };
     }
-
     return {
       key: "nachbereitung",
       label: "🟣 Nachbereitung",
       className: "bg-purple-100 text-purple-700",
     };
   }
-
   if (isFinalcheckDue(show)) {
     if (isFinalcheckComplete(show)) {
       return {
@@ -858,14 +875,12 @@ function getStatus(show: ShowRow) {
         className: "bg-emerald-100 text-emerald-700",
       };
     }
-
     return {
       key: "finalcheck",
       label: "🧭 Finalcheck",
       className: "bg-sky-100 text-sky-700",
     };
   }
-
   if (isProductionCheckDue(show)) {
     return {
       key: "produktionscheck",
@@ -873,7 +888,6 @@ function getStatus(show: ShowRow) {
       className: "bg-amber-100 text-amber-800",
     };
   }
-
   const processingStart = getProcessingStartDate(show);
   if (processingStart && processingStart > startOfToday()) {
     return {
@@ -884,7 +898,6 @@ function getStatus(show: ShowRow) {
       className: "bg-sky-50 text-sky-700",
     };
   }
-
   if (show.show_date) {
     return {
       key: "vorbereitung",
@@ -892,29 +905,23 @@ function getStatus(show: ShowRow) {
       className: "bg-orange-100 text-orange-700",
     };
   }
-
   return {
     key: "vorbereitung",
     label: "🔴 Daten offen",
     className: "bg-red-100 text-red-700",
   };
 }
-
 function hasNewPortalInfo(show: ShowRow) {
   const latestSubmission = getLatestSubmission(show);
-
   if (!latestSubmission?.submitted_at) return false;
   if (!show.last_reviewed_at) return true;
-
   return (
     new Date(latestSubmission.submitted_at).getTime() >
     new Date(show.last_reviewed_at).getTime()
   );
 }
-
 function getLatestSubmission(show: ShowRow) {
   const submissions = show.show_portal_submissions || [];
-
   return [...submissions].sort((a, b) => {
     return (
       new Date(b.submitted_at || "").getTime() -
@@ -922,13 +929,10 @@ function getLatestSubmission(show: ShowRow) {
     );
   })[0];
 }
-
 function isFinalcheckComplete(show: ShowRow) {
   const checklist = show.checklist || {};
-
   const checked = (...keys: string[]) =>
     keys.some((key) => checklist[key] === true);
-
   const required = [
     checked("Technik bestätigt", "Technik bestaetigt", "finalcheck_technik"),
     checked("Ablauf klar", "finalcheck_ablauf"),
@@ -939,63 +943,50 @@ function isFinalcheckComplete(show: ShowRow) {
     !show.markus_included ||
       checked("Markus informiert", "finalcheck_markus"),
   ];
-
   return required.every(Boolean);
 }
-
 function isFinalcheckDue(show: ShowRow) {
   return (
     isWithinNextDays(show.show_date, 7) &&
     !isPastDate(show.show_date)
   );
 }
-
 function isProductionCheckDue(show: ShowRow) {
   const date = parseDate(show.show_date);
   if (!date || isPastDate(show.show_date)) return false;
-
   const today = startOfToday();
   const limit = new Date(today);
   limit.setDate(limit.getDate() + 30);
-
   return date >= today && date <= limit;
 }
-
 function getProcessingStartDate(show: ShowRow) {
   const manual = parseDate(show.show_follow_up_date);
   if (manual) return manual;
-
   const showDate = parseDate(show.show_date);
   if (!showDate) return null;
-
   const result = new Date(showDate);
   result.setMonth(result.getMonth() - 3);
   return result;
 }
-
 function formatISODate(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
-
 function formatShortDate(date?: string | null) {
   if (!date) return "später";
   const parsed = parseDate(date);
   if (!parsed) return date;
-
   return parsed.toLocaleDateString("de-DE", {
     day: "2-digit",
     month: "2-digit",
   });
 }
-
 function isContractDone(value?: string | null) {
   const text = String(value || "")
     .trim()
     .toLocaleLowerCase("de-DE");
-
   return (
     text === "erledigt" ||
     text === "nicht_erforderlich" ||
@@ -1005,7 +996,6 @@ function isContractDone(value?: string | null) {
     text.includes("erstellt")
   );
 }
-
 function isArchivedShow(show: ShowRow) {
   return (
     show.internal_status === "abgeschlossen" ||
@@ -1014,7 +1004,6 @@ function isArchivedShow(show: ShowRow) {
     show.internal_status === "abgesagt"
   );
 }
-
 function billingLabel(value?: string | null) {
   const labels: Record<string, string> = {
     offen: "offen",
@@ -1024,10 +1013,8 @@ function billingLabel(value?: string | null) {
     bezahlt: "bezahlt",
     nicht_relevant: "nicht relevant",
   };
-
   return labels[value || ""] || value || "offen";
 }
-
 function groupByMonth(shows: ShowRow[]) {
   return shows.reduce<Record<string, ShowRow[]>>((acc, show) => {
     const label = monthLabel(show.show_date);
@@ -1036,63 +1023,50 @@ function groupByMonth(shows: ShowRow[]) {
     return acc;
   }, {});
 }
-
 function monthLabel(date?: string | null) {
   if (!date) return "Ohne Datum";
-
   const parsed = parseDate(date);
   if (!parsed) return "Ohne Datum";
-
   return parsed.toLocaleDateString("de-DE", {
     month: "long",
     year: "numeric",
   });
 }
-
 function formatDate(date?: string | null) {
   if (!date) return "Datum offen";
-
   const parsed = parseDate(date);
   if (!parsed) return date;
-
   return parsed.toLocaleDateString("de-DE", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   });
 }
-
 function parseDate(date?: string | null) {
   if (!date) return null;
   const parsed = new Date(`${date}T00:00:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
-
 function startOfToday() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return today;
 }
-
 function isPastDate(date?: string | null) {
   const parsed = parseDate(date);
   if (!parsed) return false;
   return parsed < startOfToday();
 }
-
 function hasFollowUpInFuture(date?: string | null) {
   const parsed = parseDate(date);
   if (!parsed) return false;
-
   return parsed > startOfToday();
 }
-
 function isWithinNextDays(date?: string | null, days = 7) {
   const parsed = parseDate(date);
   if (!parsed) return false;
   const today = startOfToday();
   const limit = new Date(today);
   limit.setDate(limit.getDate() + days);
-
   return parsed >= today && parsed <= limit;
 }

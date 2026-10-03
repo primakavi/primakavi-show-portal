@@ -8,13 +8,13 @@ import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 import CopyMailButtons from "./CopyMailButtons";
 import FileUploadBox from "./FileUploadBox";
 
-import StatusSelectCard from "./StatusSelectCard";
 import QuickChecklistToggle from "./QuickChecklistToggle";
 import CastEditor from "./CastEditor";
 import PriceCategoryEditor from "./PriceCategoryEditor";
 import TicketSalesEditor from "./TicketSalesEditor";
 import InvoiceRecipientEditor from "./InvoiceRecipientEditor";
 import PromoEditor from "./PromoEditor";
+import WebsiteTicketsEditor from "./WebsiteTicketsEditor";
 import TechEditor from "./TechEditor";
 import BackstageEditor from "./BackstageEditor";
 import AccommodationEditor from "./AccommodationEditor";
@@ -32,13 +32,12 @@ import VenueCapacityEditor from "./VenueCapacityEditor";
 import SettlementEditor from "./SettlementEditor";
 import ProgramEditor from "./ProgramEditor";
 
-type AreaState = "open" | "done";
+type AreaState = "open" | "planned" | "done";
 
 const CHECKLIST_BEFORE = [
   "Showdaten geprüft",
   "Vertrag geklärt",
   "Ticketlink vorhanden",
-  "Ticketlink auf Homepage verlinkt",
   "Technik geklärt",
   "Ablauf geklärt",
   "Zugang zur Spielstätte geklärt",
@@ -546,6 +545,26 @@ export default async function ShowAkteV2Page({
                 </div>
 
                 <div className="mt-5 flex flex-wrap gap-2">
+                  <label className="relative">
+                    <span className="sr-only">Showstatus</span>
+                    <select
+                      form="show-main-form"
+                      name="internal_status"
+                      defaultValue={show.internal_status || "option"}
+                      aria-label="Showstatus"
+                      className="h-8 cursor-pointer appearance-none rounded-full bg-emerald-50 pl-3 pr-8 text-xs font-black text-emerald-700 ring-1 ring-emerald-100 outline-none transition hover:bg-emerald-100"
+                    >
+                      <option value="option">Option</option>
+                      <option value="fix">Fix gebucht</option>
+                      <option value="gespielt">Gespielt</option>
+                      <option value="abgeschlossen">Abgeschlossen</option>
+                      <option value="abgesagt">Abgesagt</option>
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-emerald-700">
+                      ▾
+                    </span>
+                  </label>
+
                   <span className="rounded-full bg-[#fbf7ef] px-3 py-2 text-xs font-black text-zinc-800">
                     {castLabel}
                   </span>
@@ -763,73 +782,6 @@ export default async function ShowAkteV2Page({
                     </span>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            {/* 4 STATUS-KACHELN */}
-            <div className="border-t border-black/5 px-5 py-4 sm:px-6">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <StatusSelectCard
-                  name="internal_status"
-                  icon="🎟️"
-                  tone="green"
-                  defaultValue={show.internal_status}
-                  options={[
-                    ["option", "Option"],
-                    ["fix", "Fix gebucht"],
-                    ["gespielt", "Gespielt"],
-                    ["abgeschlossen", "Abgeschlossen"],
-                    ["abgesagt", "Abgesagt"],
-                  ]}
-                />
-
-                <StatusSelectCard
-                  name="work_status"
-                  icon="✅"
-                  tone="blue"
-                  defaultValue={show.work_status}
-                  options={[
-                    ["offen", "Offen"],
-                    ["wartet_auf_booking", "Wartet auf Booking"],
-                    [
-                      "wartet_auf_vertragspartner",
-                      "Wartet auf Vertragspartner",
-                    ],
-                    ["wartet_auf_kuenstler", "Wartet auf Künstler:in"],
-                    ["nichts_offen", "Nichts offen"],
-                  ]}
-                />
-
-                <StatusSelectCard
-                  name="contract_status"
-                  icon="📝"
-                  tone="yellow"
-                  defaultValue={show.contract_status}
-                  options={[
-                    ["offen", "Vertrag offen"],
-                    [
-                      "wartet_auf_vertragspartner",
-                      "Wartet auf Vertragspartner",
-                    ],
-                    ["wartet_auf_kuenstler", "Wartet auf Künstler:in"],
-                    ["erledigt", "Vertrag erledigt"],
-                    ["nicht_erforderlich", "Nicht erforderlich"],
-                  ]}
-                />
-
-                <StatusSelectCard
-                  name="billing_status"
-                  icon="💶"
-                  tone="red"
-                  defaultValue={show.billing_status}
-                  options={[
-                    ["offen", "Abrechnung offen"],
-                    ["rechnung_zu_schreiben", "Rechnung zu schreiben"],
-                    ["rechnung_verschickt", "Rechnung verschickt"],
-                    ["bezahlt", "Bezahlt"],
-                    ["nicht_relevant", "Nicht relevant"],
-                  ]}
-                />
               </div>
             </div>
           </header>
@@ -1316,19 +1268,38 @@ export default async function ShowAkteV2Page({
             </FormSection>
 
             <FormSection
-              id="promo-ticketing"
-              icon="📣"
-              title="Promo & Ticketing"
-              state={sectionStates.promo}
+              id="website-tickets"
+              icon="🌐"
+              title="Website & Tickets"
+              state={sectionStates.website}
               preview={[
-                show.ticket_link ? "Ticketlink ✓" : "Ticketlink offen",
-                show.homepage_ticket_linked ? "Homepage ✓" : null,
-                promoStatusPreview(show),
-                show.flyer_amount
-                  ? `Flyer ${show.flyer_amount}`
-                  : null,
-                posterPreview(show),
+                show.website_visible ? "Homepage ✓" : "Homepage offline",
+                show.ticket_status === "sold_out"
+                  ? "Ausverkauft"
+                  : show.ticket_status === "low_stock"
+                    ? "Restkarten"
+                    : show.free_entry === true
+                      ? "Eintritt frei"
+                      : show.ticket_link
+                        ? "Ticketlink ✓"
+                        : "Ticketlink offen",
+                show.website_badge ? `Badge: ${show.website_badge}` : null,
               ]}
+            >
+              <WebsiteTicketsEditor
+                show={show}
+                venueName={venueName === "Spielstätte offen" ? "" : venueName}
+                venueCity={venue?.city || show.city || ""}
+                hasMarkus={hasMarkus}
+              />
+            </FormSection>
+
+            <FormSection
+              id="promo"
+              icon="📣"
+              title="Promo"
+              state={sectionStates.promo}
+              preview={[promoStatusPreview(show)]}
             >
               <PromoEditor show={show} />
               <ContextFiles
@@ -2325,8 +2296,16 @@ async function saveShowV2Action(formData: FormData) {
     markus_notes: nullable(formData.get("markus_notes")),
 
     ticket_link: nullable(formData.get("ticket_link")),
-    homepage_ticket_linked:
-      formData.get("homepage_ticket_linked") === "on",
+    free_entry: formData.get("free_entry") === "on",
+    ticket_status:
+      nullable(formData.get("ticket_status")) || "available",
+    website_badge: (() => {
+      const badge = nullable(formData.get("website_badge"));
+      const freeEntry = formData.get("free_entry") === "on";
+      return badge || (freeEntry ? "EINTRITT FREI" : null);
+    })(),
+    website_visible:
+      formData.get("website_visible") === "on",
     flyers_needed: nullable(formData.get("flyers_needed")),
     flyer_amount: nullable(formData.get("flyer_amount")),
     posters_needed: nullable(formData.get("posters_needed")),
@@ -2852,9 +2831,11 @@ function getSectionStates({
     String(show.flyers_needed || "") === "Ja" ||
     String(show.posters_needed || "") === "Ja";
 
+  const websiteReady =
+    show.website_visible === true &&
+    (show.free_entry === true || Boolean(show.ticket_link));
+
   const promoReady =
-    Boolean(show.ticket_link) &&
-    show.homepage_ticket_linked === true &&
     promoMaterialsKnown &&
     (!promoNeeded || Boolean(show.promo_sent_at) || show.promo_send_status === "sent");
 
@@ -2884,6 +2865,19 @@ function getSectionStates({
       String(show.accommodation_status || "")
     );
 
+  const travelHasPlan =
+    String(show.travel_planning_status || "") === "planning_required" ||
+    travelLegs.length > 0 ||
+    ["organizer", "buyout", "not_required"].includes(
+      String(show.accommodation_status || "")
+    );
+
+  const travelAreaState: AreaState = travelReadyState
+    ? "done"
+    : travelHasPlan
+      ? "planned"
+      : "open";
+
   return {
     showdata: state(
       phaseOver || Boolean(
@@ -2908,13 +2902,15 @@ function getSectionStates({
 
     cast: state(phaseOver || show.cast_confirmed === true),
 
+    website: state(phaseOver || websiteReady),
+
     promo: state(phaseOver || promoReady),
 
     tech: state(phaseOver || techReady),
 
     backstage: state(phaseOver || backstageReady),
 
-    travel: state(phaseOver || travelReadyState),
+    travel: phaseOver ? "done" : travelAreaState,
 
     schedule: state(
       phaseOver ||
@@ -2950,11 +2946,8 @@ function buildChecklistView({
       ) ||
       Boolean(show.checklist?.["Vertrag geklärt"]),
 
-    "Ticketlink vorhanden": Boolean(show.ticket_link),
+    "Ticketlink vorhanden": show.free_entry === true || Boolean(show.ticket_link),
 
-    "Ticketlink auf Homepage verlinkt":
-      show.homepage_ticket_linked === true ||
-      Boolean(show.checklist?.["Ticketlink auf Homepage verlinkt"]),
 
     "Technik geklärt":
       sectionStates.tech === "done",
@@ -3042,8 +3035,7 @@ function getSmartTasks({
   if (!played && !cancelled && !showIsDeferred) {
     push("Showdaten geprüft", "#showdaten", true);
     push("Vertrag geklärt", "#vertrag-finanzen", true);
-    if (!show.ticket_link) push("Ticketlink vorhanden", "#promo-ticketing");
-    else if (!show.homepage_ticket_linked) push("Ticketlink auf Homepage verlinkt", "#promo-ticketing");
+    if (show.free_entry !== true && !show.ticket_link) push("Ticketlink vorhanden", "#website-tickets");
     if (sectionStates.tech !== "done") push("Technik geklärt", "#technik");
     if (!checklistState["Ablauf geklärt"]) push("Ablauf geklärt", "#ablauf", true);
     if (sectionStates.travel !== "done") push("Anreise / Unterkunft geklärt", "#anreise");
@@ -3052,7 +3044,7 @@ function getSmartTasks({
     if (show.markus_included) {
       push("Markus / Team informiert", "#arbeitsliste", true);
     }
-    if (promoNeeded && !show.promo_sent_at && show.promo_send_status !== "sent") tasks.push({ label: "Promo verschicken", href: "#promo-ticketing", manual: false, followUpDate: show.promo_follow_up_date });
+    if (promoNeeded && !show.promo_sent_at && show.promo_send_status !== "sent") tasks.push({ label: "Promo verschicken", href: "#promo", manual: false, followUpDate: show.promo_follow_up_date });
     push("GEMA geklärt", "#arbeitsliste", true);
   }
 
@@ -3211,9 +3203,9 @@ function buildFinalCheck({ show, sectionStates, checklistState }: { show: any; s
     { label: "Technik bestätigt", done: sectionStates.tech === "done", href: "#technik" },
     { label: "Ablauf klar", done: sectionStates.schedule === "done" || checklistState["Ablauf geklärt"] === true, href: "#ablauf" },
     { label: "Hotel klar", done: ["organizer", "buyout", "not_required"].includes(String(show.accommodation_status || "")), href: "#anreise" },
-    { label: "Homepage online", done: show.homepage_ticket_linked === true, href: "#promo-ticketing" },
-    { label: "Ticketlink vorhanden", done: Boolean(show.ticket_link), href: "#promo-ticketing" },
-    { label: "Promo gelaufen", done: !promoNeeded || Boolean(show.promo_sent_at) || show.promo_send_status === "sent", href: "#promo-ticketing" },
+    { label: "Homepage online", done: show.website_visible === true, href: "#website-tickets" },
+    { label: "Ticketlink / Eintritt geklärt", done: show.free_entry === true || Boolean(show.ticket_link), href: "#website-tickets" },
+    { label: "Promo gelaufen", done: !promoNeeded || Boolean(show.promo_sent_at) || show.promo_send_status === "sent", href: "#promo" },
     ...(hasMarkus
       ? [{
           label: "Markus informiert",
@@ -3228,8 +3220,21 @@ function buildFinalCheck({ show, sectionStates, checklistState }: { show: any; s
 function promoStatusPreview(show: any) {
   if (show.promo_sent_at) return `Verschickt ${formatDate(show.promo_sent_at)}`;
   if (show.promo_follow_up_date) return `Promo-WVL ${formatDate(show.promo_follow_up_date)}`;
-  const needed = String(show.flyers_needed || "") === "Ja" || String(show.posters_needed || "") === "Ja";
-  return needed ? "Promo offen" : null;
+
+  const flyerStatus = String(show.flyers_needed || "").trim();
+  const posterStatus = String(show.posters_needed || "").trim();
+
+  const parts: string[] = [];
+
+  if (!flyerStatus || flyerStatus === "Offen") parts.push("Flyer offen");
+  else if (flyerStatus === "Nein") parts.push("Keine Flyer");
+  else if (flyerStatus === "Ja") parts.push(show.flyer_amount ? `Flyer ${show.flyer_amount}` : "Flyer: Menge offen");
+
+  if (!posterStatus || posterStatus === "Offen") parts.push("Plakate offen");
+  else if (posterStatus === "Nein") parts.push("Keine Plakate");
+  else if (posterStatus === "Ja") parts.push(posterPreview(show) || "Plakate: Menge offen");
+
+  return parts.join(" · ");
 }
 
 function defaultShowFollowUpDate(showDate?: string | null) {
@@ -3437,10 +3442,16 @@ className="group scroll-mt-6 overflow-visible rounded-[1.15rem] bg-white shadow-
             className={`rounded-full px-3 py-1 text-[10px] font-black ring-1 ${
               state === "done"
                 ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
-                : "bg-amber-50 text-amber-700 ring-amber-100"
+                : state === "planned"
+                  ? "bg-sky-50 text-sky-700 ring-sky-100"
+                  : "bg-amber-50 text-amber-700 ring-amber-100"
             }`}
           >
-            {state === "done" ? doneLabel : "Offen"}
+            {state === "done"
+              ? doneLabel
+              : state === "planned"
+                ? "Geplant"
+                : "Offen"}
           </span>
 
           <span className="justify-self-end text-lg font-black text-zinc-500 transition group-open:rotate-90">
