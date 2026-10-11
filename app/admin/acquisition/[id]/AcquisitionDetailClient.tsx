@@ -826,7 +826,7 @@ export default function AcquisitionDetailClient({
 
                       <div className="flex flex-col items-center pt-[19px]">
 
-                        <span className="h-3 w-3 shrink-0 rounded-full bg-lime-400 ring-2 ring-white" />
+                        <span className={`h-3 w-3 shrink-0 rounded-full ring-2 ring-white ${mail.direction === "incoming" ? "bg-blue-500" : "bg-lime-400"}`} />
 
                         {index < timelineItems.length - 1 && <span className="mt-2 min-h-5 w-px flex-1 border-l border-dashed border-zinc-300" />}
 
@@ -844,13 +844,13 @@ export default function AcquisitionDetailClient({
 
                           {emailWvlStatus.has(mail.id) && <span className={`hidden shrink-0 rounded-md px-2 py-1 text-[11px] font-bold sm:inline ${emailWvlStatus.get(mail.id)?.done ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-800"}`}>{emailWvlStatus.get(mail.id)?.done ? `✓ Erledigt${mail.follow_up_status_override === "done" ? " (manuell)" : emailWvlStatus.get(mail.id)?.completedDate ? ` am ${formatDate(emailWvlStatus.get(mail.id)?.completedDate)}` : ""}` : `WVL ${formatDate(mail.follow_up_at)}`}</span>}
 
-<span className="hidden shrink-0 text-xs font-semibold text-zinc-500 sm:inline">{mail.status === "sent" ? "✓ Versendet" : mail.status === "sending" ? "Versand prüfen" : mail.status}</span>
+<span className="hidden shrink-0 text-xs font-semibold text-zinc-500 sm:inline">{mail.direction === "incoming" ? "↓ Empfangen" : mail.status === "sent" ? "↑ Versendet" : mail.status === "sending" ? "Versand prüfen" : mail.status}</span>
 
                           <span className="shrink-0 text-zinc-500">{expanded ? "⌃" : "⌄"}</span>
 
                         </button>
 
-                        {expanded && <div className="mt-3 rounded-xl bg-[#fffdf8] p-4"><p className="whitespace-pre-wrap break-words text-sm text-zinc-800">{mail.body_text || "(Kein Nachrichtentext gespeichert)"}</p>{mail.follow_up_at && <div className="mt-3 flex items-center gap-3"><span className="text-xs font-semibold">Wiedervorlage: {formatDate(mail.follow_up_at)}</span><button type="submit" form={`toggle-email-wvl-${mail.id}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-bold">{emailWvlStatus.get(mail.id)?.done ? "↺ WVL wieder öffnen" : "✓ WVL erledigen"}</button></div>}{mail.status === "sent" && <button type="button" disabled={!mail.message_id} onClick={() => { setReplyMail(mail); setShowMailComposer(true); }} className="mt-3 rounded-xl bg-lime-300 px-4 py-2 text-sm font-black disabled:opacity-50">↩ Antworten / Follow-up</button>}</div>}
+                        {expanded && <div className="mt-3 rounded-xl bg-[#fffdf8] p-4"><div className="mb-4 space-y-1 border-b border-zinc-200 pb-3 text-xs text-zinc-600"><p><strong>Von:</strong> {mail.from_email}</p><p><strong>An:</strong> {(mail.to_emails || []).join(", ")}</p><p><strong>Richtung:</strong> {mail.direction === "incoming" ? "Eingegangen" : "Gesendet"}</p></div><p className="whitespace-pre-wrap break-words text-sm text-zinc-800">{mail.body_text || "(Kein Nachrichtentext gespeichert)"}</p>{mail.follow_up_at && <div className="mt-3 flex items-center gap-3"><span className="text-xs font-semibold">Wiedervorlage: {formatDate(mail.follow_up_at)}</span><button type="submit" form={`toggle-email-wvl-${mail.id}`} className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-bold">{emailWvlStatus.get(mail.id)?.done ? "↺ WVL wieder öffnen" : "✓ WVL erledigen"}</button></div>}{mail.status === "sent" && <button type="button" disabled={!mail.message_id} onClick={() => { setReplyMail(mail); setShowMailComposer(true); }} className="mt-3 rounded-xl bg-lime-300 px-4 py-2 text-sm font-black disabled:opacity-50">↩ Antworten / Follow-up</button>}</div>}
 
                       </div>
 

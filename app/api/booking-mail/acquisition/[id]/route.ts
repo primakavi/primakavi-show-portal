@@ -19,7 +19,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     .from("crm_emails")
     .select("id, direction, status, from_email, to_emails, cc_emails, subject, body_text, sent_at, received_at, created_at, message_id, in_reply_to, email_references, follow_up_at, follow_up_status_override")
     .eq("acquisition_id", id)
-    .eq("direction", "outgoing")
     .order("created_at", { ascending: false })
     .limit(100);
   if (error) {

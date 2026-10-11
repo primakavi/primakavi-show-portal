@@ -30,7 +30,7 @@ export default function MailCenterClient({ initialMails, acquisitions, suggestio
   const visible = useMemo(() => initialMails.filter(m => {
     const matchesFilter = filter === "sent" ? m.direction === "outgoing"
       : filter === "unassigned" ? m.direction === "incoming" && !m.acquisition_id
-      : m.direction === "incoming";
+: m.direction === "incoming" && !m.acquisition_id;
     return matchesFilter && `${m.subject ?? ""} ${m.from_email} ${m.body_text || ""}`.toLowerCase().includes(search.toLowerCase());
   }), [initialMails, filter, search]);
   const selected = visible.find(m => m.id === selectedId) || visible[0];
