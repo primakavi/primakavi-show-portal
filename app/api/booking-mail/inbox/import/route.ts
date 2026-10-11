@@ -70,7 +70,12 @@ const parsed = await simpleParser(downloaded.content);
             subject: parsed.subject || "(ohne Betreff)",
             body_text: parsed.text || "", body_html: null,
             message_id: messageId, in_reply_to: parsed.inReplyTo || null,
-            email_references: parsed.references || [], received_at: receivedAt,
+email_references: parsed.references
+  ? Array.isArray(parsed.references)
+    ? parsed.references
+    : [parsed.references]
+  : [],
+received_at: receivedAt,
             imap_folder: FOLDER, imap_uid: uid, imap_uidvalidity: validity,
           });
           if (insertError) {
