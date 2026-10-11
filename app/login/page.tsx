@@ -2,11 +2,12 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { createClient } from "@/app/lib/supabase/server";
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams?: { error?: string };
+  searchParams?: Promise<{ error?: string }>;
 }) {
+  const params = await searchParams;
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#fbf7ef] px-5 py-6">
       <div className="relative mx-auto w-full max-w-6xl overflow-hidden rounded-[3rem] bg-[#101014] text-white shadow-2xl shadow-black/15">
@@ -73,8 +74,8 @@ export default function LoginPage({
                 Zugriff auf Shows, Tourkarte und Read-Only-Bereich.
               </p>
 
-              {searchParams?.error && (
-                <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+{params?.error && (
+                  <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
                   Login fehlgeschlagen.
                 </div>
               )}
