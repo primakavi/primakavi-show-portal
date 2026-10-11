@@ -17,9 +17,9 @@ export default async function MailCenterPage() {
     supabaseAdmin.from("crm_emails")
       .select("id,acquisition_id,direction,status,from_email,to_emails,subject,body_text,received_at,sent_at,created_at")
       .order("created_at", { ascending: false }).limit(200),
-    supabaseAdmin.from("acquisition")
-      .select("id,organizer_id,venue_id,primary_contact_id,program,status")
-      .is("archived_at", null).limit(1000),
+supabaseAdmin.from("acquisition")
+  .select("id,organizer_id,venue_id,primary_contact_id,program,status,archived_at")
+  .limit(1000),
     supabaseAdmin.from("organizers").select("id,name,email").limit(2000),
     supabaseAdmin.from("contacts").select("id,venue_id,organizer_id,email").limit(3000),
     supabaseAdmin.from("organizer_contacts").select("id,organizer_id,email").limit(3000),
@@ -39,8 +39,7 @@ export default async function MailCenterPage() {
   const names = new Map(organizers.map(o => [o.id, o.name]));
   const acquisitions = acquisitionRows.map(a => ({
     id: a.id,
-    label: `${names.get(a.organizer_id) || "Ohne Veranstalter"} · ${a.program || "Akquise"} · ${a.id.slice(0, 8)}`,
-  }));
+label: `${names.get(a.organizer_id) || "Ohne Veranstalter"} · ${a.program || "Akquise"} · ${a.status || "Ohne Status"}${a.archived_at ? " · Archiviert" : ""} · ${a.id.slice(0, 8)}`,  }));
 
   // A matching venue alone is NEVER enough: two independent organizers can use the same venue.
   const organizerEmails = new Map<string, Set<string>>();
