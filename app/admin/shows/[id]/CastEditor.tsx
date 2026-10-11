@@ -178,10 +178,7 @@ export default function CastEditor({
 
           return (
             <div
-              key={
-                row.id ||
-                `cast-${index}-${row.name || "neu"}`
-              }
+             key={row.id || `cast-${index}`}
               className={`grid gap-2 rounded-2xl p-3 ring-1 ring-black/5 md:grid-cols-[1.2fr_1fr_150px_42px] md:items-center md:p-0 md:ring-0 ${
                 sonja
                   ? "bg-[#f4f1e9] md:bg-transparent"

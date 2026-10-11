@@ -313,6 +313,16 @@ export default async function ShowAkteV2Page({
       /markus schell/i.test(String(person.name || ""))
     );
 
+  const websiteCastDisplay = castForEditor
+    .filter(
+      (person: any) =>
+        person?.name &&
+        !/sonja gründemann/i.test(String(person.name))
+    )
+    .map((person: any) => String(person.name).trim())
+    .filter(Boolean)
+    .join(" & ");
+
   const castLabel = hasMarkus ? "🎹 Mit Markus Schell" : "Solo";
 
   const files = await Promise.all(
@@ -1278,18 +1288,24 @@ export default async function ShowAkteV2Page({
                   ? "Ausverkauft"
                   : show.ticket_status === "low_stock"
                     ? "Restkarten"
-                    : show.free_entry === true
+                    : show.ticket_status === "free_entry" || show.free_entry === true
                       ? "Eintritt frei"
-                      : show.ticket_link
-                        ? "Ticketlink ✓"
-                        : "Ticketlink offen",
-                show.website_badge ? `Badge: ${show.website_badge}` : null,
+                      : show.ticket_status === "info_pending"
+                        ? "Infos folgen"
+                        : show.ticket_link
+                          ? "Ticketlink ✓"
+                          : "Ticketlink offen",
+                show.website_badge &&
+                String(show.website_badge).trim().toUpperCase() !== "EINTRITT FREI"
+                  ? `Badge: ${show.website_badge}`
+                  : null,
               ]}
             >
               <WebsiteTicketsEditor
                 show={show}
                 venueName={venueName === "Spielstätte offen" ? "" : venueName}
                 venueCity={venue?.city || show.city || ""}
+                castDisplay={websiteCastDisplay}
                 hasMarkus={hasMarkus}
               />
             </FormSection>
@@ -2296,13 +2312,16 @@ async function saveShowV2Action(formData: FormData) {
     markus_notes: nullable(formData.get("markus_notes")),
 
     ticket_link: nullable(formData.get("ticket_link")),
-    free_entry: formData.get("free_entry") === "on",
+    free_entry:
+      str(formData.get("ticket_status")) === "free_entry",
     ticket_status:
       nullable(formData.get("ticket_status")) || "available",
     website_badge: (() => {
       const badge = nullable(formData.get("website_badge"));
-      const freeEntry = formData.get("free_entry") === "on";
-      return badge || (freeEntry ? "EINTRITT FREI" : null);
+      return badge &&
+        String(badge).trim().toUpperCase() !== "EINTRITT FREI"
+        ? badge
+        : null;
     })(),
     website_visible:
       formData.get("website_visible") === "on",

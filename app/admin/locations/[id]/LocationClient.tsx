@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   useState,
+  useEffect,
   useTransition,
   type FormEvent,
   type ReactNode,
@@ -56,6 +57,27 @@ type Venue = {
   logo_url: string | null;
 };
 
+type LinkedOrganizer = {
+  id: string;
+  name: string;
+  city: string | null;
+  email: string | null;
+  phone: string | null;
+  is_primary: boolean;
+  link_notes: string | null;
+};
+
+type LinkedOrganizerAcquisition = {
+  id: string;
+  organizer_id: string;
+  venue_id: string | null;
+  organizer_name: string;
+  program: string | null;
+  status: string | null;
+  next_follow_up_at: string | null;
+  archived_at: string | null;
+};
+
 type LocationShow = {
   id: string;
   show_date: string | null;
@@ -91,8 +113,25 @@ type AcquisitionActivity = {
   response: string | null;
   next_step: string | null;
   follow_up_at: string | null;
+  follow_up_status_override?: string | null;
   status_after: string | null;
   interest_after: string | null;
+  created_at: string | null;
+};
+
+type CrmEmail = {
+  id: string;
+  acquisition_id: string;
+  direction: string;
+  status: string;
+  from_email: string | null;
+  to_emails: string[] | null;
+  subject: string | null;
+  body_text: string | null;
+  sent_at: string | null;
+  follow_up_at?: string | null;
+  follow_up_status_override?: string | null;
+  received_at: string | null;
   created_at: string | null;
 };
 
@@ -171,6 +210,8 @@ const STATES = [
 
 export default function LocationClient({
   venue,
+  linkedOrganizers = [],
+  linkedOrganizerAcquisitions = [],
   shows,
   acquisition = [],
   acquisitionActivities = [],
@@ -190,6 +231,8 @@ export default function LocationClient({
   importedFromDiscover = false,
 }: {
   venue: Venue;
+  linkedOrganizers?: LinkedOrganizer[];
+  linkedOrganizerAcquisitions?: LinkedOrganizerAcquisition[];
   shows: LocationShow[];
   acquisition?: AcquisitionRecord[];
   acquisitionActivities?: AcquisitionActivity[];
@@ -208,10 +251,42 @@ export default function LocationClient({
   isNew?: boolean;
   importedFromDiscover?: boolean;
 }) {
+  const [crmEmails, setCrmEmails] = useState<CrmEmail[]>([]);
+  const [mailLoading, setMailLoading] = useState(false);
+  const [mailError, setMailError] = useState<string | null>(null);
+  const acquisitionIds = acquisition.map((item) => item.id).join(",");
+
+  useEffect(() => {
+    const ids = acquisitionIds.split(",").filter(Boolean);
+    if (isNew || ids.length === 0) {
+      setCrmEmails([]);
+      setMailError(null);
+      return;
+    }
+    let cancelled = false;
+    setMailLoading(true);
+    setMailError(null);
+    Promise.allSettled(ids.map(async (id) => {
+      const response = await fetch(`/api/booking-mail/acquisition/${encodeURIComponent(id)}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(`E-Mail-Verlauf für Akquise ${id} nicht verfügbar`);
+      const data = await response.json() as { emails?: Omit<CrmEmail, "acquisition_id">[] };
+      return (data.emails ?? []).map((mail) => ({ ...mail, acquisition_id: id }));
+    })).then((results) => {
+      if (cancelled) return;
+      const successful = results.filter((result): result is PromiseFulfilledResult<CrmEmail[]> => result.status === "fulfilled");
+      setCrmEmails(successful.flatMap((result) => result.value));
+      if (successful.length !== results.length) setMailError("Ein Teil der E-Mails konnte nicht geladen werden.");
+    }).finally(() => { if (!cancelled) setMailLoading(false); });
+    return () => { cancelled = true; };
+  }, [acquisitionIds, isNew]);
+
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [showActivityForm, setShowActivityForm] = useState(false);
+  const [editingLocationContacts, setEditingLocationContacts] = useState<Record<number, boolean>>({1: false, 2: false});
   const [showNewAcquisitionForm, setShowNewAcquisitionForm] = useState(false);
   const [showNewRoundForm, setShowNewRoundForm] = useState(false);
   const [showManageRounds, setShowManageRounds] = useState(false);
@@ -270,7 +345,8 @@ export default function LocationClient({
 
   const locationStatus = getLocationStatus(
     shows,
-    acquisition
+    acquisition,
+    linkedOrganizerAcquisitions
   );
 
   const suppressedEmailMap = new Map(
@@ -303,18 +379,55 @@ export default function LocationClient({
     );
   });
 
-  const acquisitionsWithoutActivities = acquisition.filter(
-    (item) =>
-      !acquisitionActivities.some(
-        (activity) => activity.acquisition_id === item.id
-      )
-  );
-
+  // Ein neuer Akquise-Vorgang ist noch kein tatsächlicher Kontakt.
+  // Historische Kontaktfelder werden nur gezeigt, wenn es noch keine Activities gibt.
+  const legacyActivities = acquisition
+    .filter((item) =>
+      !acquisitionActivities.some((activity) => activity.acquisition_id === item.id) &&
+      Boolean(item.last_contact_at || item.contact_note?.trim() || item.response?.trim())
+    )
+    .map((item) => ({
+      id: `legacy-${item.id}`,
+      acquisition_id: item.id,
+      activity_date: item.last_contact_at || "",
+      activity_type: "Bisheriger Kontaktstand",
+      channel: item.contact_channel,
+      note: item.contact_note,
+      response: item.response,
+      next_step: item.next_step,
+      follow_up_at: item.next_follow_up_at,
+      status_after: null,
+      interest_after: null,
+      created_at: null,
+    } as AcquisitionActivity));
+  const displayedActivities = [...acquisitionActivities, ...legacyActivities];
+  const contactTypes = new Set([
+    "Kontakt", "Kontaktversuch", "Rückmeldung", "Telefonat", "Persönlicher Kontakt",
+    "Absage", "Buchung", "Weiterleitung", "Bisheriger Kontaktstand",
+  ]);
   const contactTimeline = [
+    ...crmEmails.filter((mail) => mail.status === "sent" || mail.direction === "incoming").map((mail) => ({ key: `crm-email-${mail.id}`, kind: "email" as const, date: mail.sent_at || mail.created_at || "", mail, parent: acquisition.find((item) => item.id === mail.acquisition_id) })),
     ...mailingHistory.map((mailing) => ({ key: `mailing-${mailing.id}`, kind: "mailing" as const, date: mailing.sent_at || mailing.scheduled_at || mailing.created_at || "", mailing })),
-    ...acquisitionActivities.map((activity) => ({ key: `activity-${activity.id}`, kind: "activity" as const, date: activity.activity_date || activity.created_at || "", activity, parent: acquisition.find((item) => item.id === activity.acquisition_id) })),
-    ...acquisitionsWithoutActivities.map((item) => ({ key: `acquisition-${item.id}`, kind: "acquisition" as const, date: item.created_at || "", acquisition: item })),
-  ].sort((a, b) => (b.date ? new Date(b.date).getTime() : 0) - (a.date ? new Date(a.date).getTime() : 0));
+    ...displayedActivities.filter((activity) => contactTypes.has(activity.activity_type || "")).map((activity) => ({ key: `activity-${activity.id}`, kind: "activity" as const, date: activity.activity_date || activity.created_at || "", activity, parent: acquisition.find((item) => item.id === activity.acquisition_id) })),
+  ].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  // Nur echte persönliche Kontakte schließen eine Kontakt-WVL automatisch ab.
+  // Newsletter, interne Notizen und bloße Statusänderungen zählen nicht dazu.
+  const actualContactTypes = new Set(["Kontakt", "Kontaktversuch", "Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Absage", "Buchung", "Weiterleitung"]);
+  const contactEvents: ContactEvent[] = [
+    ...acquisitionActivities.filter((a) => actualContactTypes.has(a.activity_type || "")).map((a) => ({
+      acquisitionId: a.acquisition_id,
+      date: a.activity_date,
+      timestamp: a.created_at || `${a.activity_date}T00:00:00`,
+    })),
+    ...crmEmails.filter((m) => m.status === "sent" || m.direction === "incoming").map((m) => ({
+      acquisitionId: m.acquisition_id,
+      date: (m.sent_at || m.received_at || m.created_at || "").slice(0, 10),
+      timestamp: m.sent_at || m.received_at || m.created_at || "",
+    })),
+  ].filter((event) => event.date);
+  const acquisitionOverview = [...acquisition].sort((a, b) =>
+    String(b.last_contact_at || b.created_at || "").localeCompare(String(a.last_contact_at || a.created_at || ""))
+  );
 
   const nextAction = acquisition.filter((item) => {
     if (item.archived_at || !item.next_follow_up_at) return false;
@@ -348,17 +461,21 @@ export default function LocationClient({
             </h1>
 
             <p className="mt-2 text-zinc-500">
-              {isNew
-                ? "Neue Spielstätte anlegen."
-                : locationSubtitle}
+              {isNew ? "Neue Spielstätte anlegen." : locationSubtitle}
             </p>
+            {!isNew && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-zinc-700 ring-1 ring-black/10">{locationStatus.label}</span>
+                {locationStatus.detail && <span className="text-xs font-semibold text-zinc-400">{locationStatus.detail}</span>}
+              </div>
+            )}
           </div>
 
           {!isNew && (
             <div className="flex flex-wrap gap-2">
               {venue.website && (
                 <a
-                  href={venue.website}
+                  href={normalizeLocationUrl(venue.website)}
                   target="_blank"
                   rel="noreferrer"
                   className="rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-black transition hover:bg-zinc-50"
@@ -448,24 +565,24 @@ export default function LocationClient({
     />
 
     <Field
-      label="Straße"
+      label="Straße / Hausnummer"
       name="street"
       defaultValue={venue.street}
-      className="md:col-span-6"
+      className="md:col-span-8"
     />
 
     <Field
       label="PLZ"
       name="postal_code"
       defaultValue={venue.postal_code}
-      className="md:col-span-2"
+      className="md:col-span-3"
     />
 
     <Field
       label="Ort"
       name="city"
       defaultValue={venue.city}
-      className="md:col-span-4"
+      className="md:col-span-5"
     />
 
     <SelectField
@@ -480,211 +597,82 @@ export default function LocationClient({
       label="Land"
       name="country"
       defaultValue={venue.country || "DE"}
-      className="md:col-span-2"
+      className="md:col-span-4"
     />
 
     <Field
       label="Website"
       name="website"
       defaultValue={venue.website}
-      className="md:col-span-6"
+      className="md:col-span-4"
     />
 
   </div>
 </Card>
 
-          {/* KONTAKTE */}
-
-          <div className="grid gap-5 xl:grid-cols-2">
-
-            <Card
-              title="Ansprechpartner 1"
-              icon="👤"
-            >
-              <div className="grid gap-4 md:grid-cols-2">
-
-                <Field
-                  label="Name"
-                  name="contact_name"
-                  defaultValue={
-                    venue.contact_name
-                  }
-                  className="md:col-span-2"
-                />
-
-                <Field
-                  label="Funktion"
-                  name="contact_role"
-                  defaultValue={
-                    venue.contact_role
-                  }
-                  className="md:col-span-2"
-                />
-
-                <Field
-                  label="E-Mail"
-                  name="contact_email"
-                  type="email"
-                  defaultValue={
-                    venue.contact_email
-                  }
-                />
-
-                <Field
-                  label="Telefon"
-                  name="contact_phone"
-                  defaultValue={
-                    venue.contact_phone
-                  }
-                />
-              </div>
-            </Card>
-
-            <Card
-              title="Ansprechpartner 2"
-              icon="👥"
-            >
-              <div className="grid gap-4 md:grid-cols-2">
-
-                <Field
-                  label="Name"
-                  name="contact_name_2"
-                  defaultValue={
-                    venue.contact_name_2
-                  }
-                  className="md:col-span-2"
-                />
-
-                <Field
-                  label="Funktion"
-                  name="contact_role_2"
-                  defaultValue={
-                    venue.contact_role_2
-                  }
-                  className="md:col-span-2"
-                />
-
-                <Field
-                  label="E-Mail"
-                  name="contact_email_2"
-                  type="email"
-                  defaultValue={
-                    venue.contact_email_2
-                  }
-                />
-
-                <Field
-                  label="Telefon"
-                  name="contact_phone_2"
-                  defaultValue={
-                    venue.contact_phone_2
-                  }
-                />
-              </div>
-            </Card>
-
+          {/* ANSPRECHPARTNER – kompakte Karten wie in der Organizer-Akte.
+              Die Felder bleiben auch eingeklappt im DOM und werden beim
+              Speichern der Stammdaten weiterhin übermittelt. */}
+          <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+            {([1, 2] as const).map((slot) => {
+              const second = slot === 2;
+              const name = second ? venue.contact_name_2 : venue.contact_name;
+              const role = second ? venue.contact_role_2 : venue.contact_role;
+              const email = second ? venue.contact_email_2 : venue.contact_email;
+              const phone = second ? venue.contact_phone_2 : venue.contact_phone;
+              const editing = isNew || editingLocationContacts[slot];
+              const suffix = second ? "_2" : "";
+              if (second && !isNew && !name && !role && !email && !phone && !editing) {
+                return (
+                  <div key={slot} className="relative min-h-[180px]">
+                    <button
+                      type="button"
+                      onClick={() => setEditingLocationContacts((current) => ({ ...current, [slot]: true }))}
+                      className="flex min-h-[180px] w-full items-center justify-center rounded-[1.7rem] border border-dashed border-black/10 bg-white/50 p-6 text-sm font-black text-zinc-500 transition hover:bg-white hover:text-zinc-950"
+                    >
+                      + Ansprechpartner hinzufügen
+                    </button>
+                    <div className="hidden" aria-hidden="true">
+                      <input name="contact_name_2" defaultValue="" />
+                      <input name="contact_role_2" defaultValue="" />
+                      <input name="contact_email_2" defaultValue="" />
+                      <input name="contact_phone_2" defaultValue="" />
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <Card
+                  key={slot}
+                  title={name || (second ? "Weiterer Ansprechpartner" : "Hauptansprechpartner")}
+                  icon="👤"
+                  action={!isNew ? (
+                    <button type="button"
+                      onClick={() => setEditingLocationContacts((current) => ({...current, [slot]: !current[slot]}))}
+                      aria-expanded={Boolean(editing)}
+                      className="rounded-full bg-[#fbf7ef] px-3 py-2 text-xs font-black text-zinc-700 transition hover:bg-lime-100"
+                    >{editing ? "Schließen" : "✏️ Bearbeiten"}</button>
+                  ) : undefined}
+                >
+                  {!editing && (
+                    <div className="space-y-2 text-sm">
+                      {role && <p className="font-semibold text-zinc-500">{role}</p>}
+                      {email && <a className="block break-all font-semibold text-zinc-700 hover:text-blue-700" href={`mailto:${email}`}>✉️ {email}</a>}
+                      {phone && <a className="block font-semibold text-zinc-700 hover:text-blue-700" href={`tel:${phone}`}>📞 {phone}</a>}
+                      {!name && !role && !email && !phone && <p className="text-zinc-400">Noch kein Ansprechpartner hinterlegt.</p>}
+                    </div>
+                  )}
+                  <div className={editing ? "grid gap-4 md:grid-cols-2" : "hidden"}>
+                    <Field label="Name" name={`contact_name${suffix}`} defaultValue={name} className="md:col-span-2" />
+                    <Field label="Funktion" name={`contact_role${suffix}`} defaultValue={role} className="md:col-span-2" />
+                    <Field label="E-Mail" name={`contact_email${suffix}`} type="email" defaultValue={email} />
+                    <Field label="Telefon" name={`contact_phone${suffix}`} defaultValue={phone} />
+                    {!isNew && <p className="md:col-span-2 text-xs font-semibold text-zinc-400">Änderungen unten über „Änderungen speichern“ übernehmen.</p>}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
-
-          {/* BOOKING */}
-
-<Card
-  title="Booking & Bühne"
-  icon="🎭"
->
-  <div className="grid gap-4 md:grid-cols-12">
-
-    <Field
-      label="Booking-E-Mail"
-      name="booking_email"
-      type="email"
-      defaultValue={venue.booking_email}
-      className="md:col-span-6"
-    />
-
-    {venue.booking_email &&
-      suppressedEmailMap.has(String(venue.booking_email).trim().toLowerCase()) && (() => {
-        const suppression = suppressedEmailMap.get(
-          String(venue.booking_email).trim().toLowerCase()
-        );
-
-        return (
-          <div className="md:col-span-6 -mt-2 flex items-center gap-2 px-1 text-xs font-bold text-red-600">
-            <span>🚫 Newsletter abgemeldet</span>
-            {suppression?.unsubscribed_at && (
-              <span className="font-semibold text-zinc-400">
-                · {formatDateTime(suppression.unsubscribed_at)}
-              </span>
-            )}
-          </div>
-        );
-      })()}
-
-    <Field
-      label="Kapazität"
-      name="capacity"
-      type="number"
-      defaultValue={venue.capacity}
-      className="md:col-span-3"
-    />
-
-    <Field
-      label="Location-Typ"
-      name="venue_type"
-      defaultValue={venue.venue_type}
-      className="md:col-span-3"
-    />
-
-    <Field
-      label="Programmfokus"
-      name="program_focus"
-      defaultValue={venue.program_focus?.join(", ") || ""}
-      placeholder="Comedy, Kabarett, Musik"
-      className="md:col-span-6"
-    />
-
-    <Field
-      label="Spielzeit / Saison"
-      name="season_notes"
-      defaultValue={venue.season_notes}
-      className="md:col-span-6"
-    />
-
-
-    <Textarea
-      label="Publikum / Zielgruppe"
-      name="audience_notes"
-      defaultValue={venue.audience_notes}
-      className="md:col-span-6"
-    />
-
-    <div className="md:col-span-6 flex flex-col">
-      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
-        Status
-      </span>
-
-      {venue.played_before === true && (
-        <input type="hidden" name="played_before" value="on" />
-      )}
-
-      <div className="flex flex-1 items-center rounded-xl bg-[#fbf7ef] px-5">
-        <div className="flex items-center gap-3">
-          <div>
-            <span className="text-sm font-bold">
-              {locationStatus.label}
-            </span>
-
-            {locationStatus.detail && (
-              <p className="mt-1 text-xs font-semibold text-zinc-400">
-                {locationStatus.detail}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</Card>
 
           {/* AKQUISE */}
 
@@ -693,7 +681,7 @@ export default function LocationClient({
             <Card
               title="Kontakt & Akquise"
               icon="🎯"
-              description="Mailings, Kontakte und Akquise-Vorgänge dieser Location."
+              description="Direkte Kontakte und Akquise-Vorgänge dieser Spielstätte. Vorgänge externer Veranstalter werden in deren Akten gepflegt."
               action={
                 activeAcquisition ? (
                   <button
@@ -1157,106 +1145,30 @@ export default function LocationClient({
                       </div>
                     )}
 
-                  {nextAction && (
-                    <div>
-                      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">Nächste Aktion</p>
-                      <div className="rounded-2xl bg-lime-50 p-5 ring-1 ring-lime-200">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded-full bg-lime-200 px-2.5 py-1 text-xs font-black text-lime-900">📌 WVL</span>
-                              <span className="text-lg font-black">{formatAcquisitionDate(nextAction.next_follow_up_at)}</span>
-                            </div>
-                            <p className="mt-2 font-black text-zinc-800">{nextAction.next_step || "Nachfassen"}</p>
-                            <p className="mt-1 text-sm font-semibold text-zinc-500">{nextAction.program || "Programm offen"}</p>
+                  <div className="min-w-0">
+                    <div className="mt-5 max-h-[560px] min-h-[180px] overflow-y-auto bg-white pr-1">
+                      {mailLoading && <p className="py-3 text-xs font-semibold text-zinc-500">E-Mails werden geladen …</p>}
+                      {mailError && <p className="py-3 text-xs font-semibold text-amber-700">{mailError}</p>}
+                      {contactTimeline.length === 0 && !mailLoading && <p className="py-6 text-sm font-semibold text-zinc-500">Noch keine Kontakte, E-Mails oder Newsletter dokumentiert.</p>}
+                      {contactTimeline.map((entry, index) => (
+                        <div key={entry.key} className="grid grid-cols-[18px_minmax(0,1fr)] gap-3">
+                          <div className="flex flex-col items-center pt-[19px]">
+                            <span className={`h-3 w-3 shrink-0 rounded-full ring-2 ring-white ${entry.kind === "mailing" ? "bg-violet-500" : entry.kind === "email" ? "bg-lime-400" : ["bg-lime-400", "bg-blue-700", "bg-red-500", "bg-zinc-400"][index % 4]}`} />
+                            {index < contactTimeline.length - 1 && <span className="mt-2 min-h-5 w-px flex-1 border-l border-dashed border-zinc-300" />}
                           </div>
-                          <Link href={`/admin/acquisition/${nextAction.id}`} className="text-sm font-black text-zinc-500 hover:text-zinc-950">Vorgang öffnen →</Link>
+                          <div className="min-w-0 border-b border-zinc-200">
+                            {entry.kind === "email" ? (
+                              <LocationEmailRow mail={entry.mail} parent={entry.parent} contactEvents={contactEvents} />
+                            ) : entry.kind === "mailing" ? (
+                              <LocationMailingRow mailing={entry.mailing} />
+                            ) : (
+                              <LocationActivityRow activity={entry.activity} parent={entry.parent} contactEvents={contactEvents} deleteActivity={deleteActivity} setActionMessage={setActionMessage} />
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  )}
-
-                  <div>
-                    <div className="mb-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">Kontaktverlauf</p>
-                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-black text-zinc-500">
-                          {contactTimeline.length} {contactTimeline.length === 1 ? "Kontakt" : "Kontakte"}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-xs font-semibold text-zinc-500">Alle Kontakte und Mailings – neueste zuerst.</p>
-                    </div>
-                    {contactTimeline.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-7 text-center text-sm font-semibold text-zinc-400">Noch keine Kontakte im Verlauf.</div>
-                    ) : (
-                      <div className="relative max-h-[350px] space-y-2 overflow-y-auto pr-2 md:pl-9">
-                        <div className="absolute bottom-4 left-[11px] top-4 hidden border-l border-dashed border-zinc-300 md:block" />
-                        {contactTimeline.map((entry) => entry.kind === "mailing" ? (
-                          <section key={entry.key} className="relative rounded-xl border border-black/10 bg-white px-4 py-3">
-                            <div className="absolute -left-[35px] top-4 hidden h-3 w-3 rounded-full bg-blue-400 ring-4 ring-white md:block" />
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                              <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-sm font-black text-zinc-400">{formatAcquisitionDate(entry.date ? entry.date.slice(0,10) : null)}</span>
-                                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">📨 Newsletter</span>
-                                  <span className="font-black">{entry.mailing.round_name || "Newsletter"}</span>
-                                  {entry.mailing.opened_at && <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">👁 geöffnet</span>}
-                                  {entry.mailing.clicked_at && <span className="rounded-full bg-lime-100 px-2.5 py-1 text-xs font-black text-lime-800">🔗 geklickt</span>}
-                                  {entry.mailing.unsubscribed_at && <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-black text-red-700">🚫 abgemeldet</span>}
-                                </div>
-                                {entry.mailing.email && <p className="mt-1 text-xs font-semibold text-zinc-400">{entry.mailing.email}</p>}
-                                {entry.mailing.reaction && <p className="mt-2 text-sm font-black text-zinc-700">Reaktion: {entry.mailing.reaction}</p>}
-                                {entry.mailing.notes && <p className="mt-1 whitespace-pre-line text-sm font-semibold text-zinc-600">{entry.mailing.notes}</p>}
-                              </div>
-                              {entry.mailing.acquisition_id && <Link href={`/admin/acquisition/${entry.mailing.acquisition_id}`} className="text-sm font-black text-zinc-500 hover:text-zinc-950">Vorgang öffnen →</Link>}
-                            </div>
-                          </section>
-                        ) : entry.kind === "acquisition" ? (
-                          <section key={entry.key} className="relative rounded-xl border border-black/10 bg-white px-4 py-3">
-                            <div className="absolute -left-[35px] top-4 hidden h-3 w-3 rounded-full bg-zinc-300 ring-4 ring-white md:block" />
-                            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                              <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-sm font-black text-zinc-400">{entry.acquisition.created_at ? formatAcquisitionDate(entry.acquisition.created_at.slice(0, 10)) : "—"}</span>
-                                  <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-black text-zinc-600">🗂 Akquise</span>
-                                  <span className="font-black">{entry.acquisition.program || "Programm offen"}</span>
-                                  {entry.acquisition.archived_at ? (
-                                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-black text-zinc-500">Archiv</span>
-                                  ) : (
-                                    <AcquisitionStatus status={entry.acquisition.status} />
-                                  )}
-                                </div>
-                                <p className="mt-1 text-xs font-semibold text-zinc-500">Akquise-Vorgang angelegt · noch keine Kontakte dokumentiert</p>
-                              </div>
-                              <Link href={`/admin/acquisition/${entry.acquisition.id}`} className="text-sm font-black text-zinc-500 hover:text-zinc-950">Vorgang öffnen →</Link>
-                            </div>
-                          </section>
-                        ) : (
-                          <section key={entry.key} className="relative rounded-xl border border-black/10 bg-white px-4 py-3">
-                            <div className="absolute -left-[35px] top-4 hidden h-3 w-3 rounded-full bg-lime-400 ring-4 ring-white md:block" />
-                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                              <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-sm font-black text-zinc-400">{formatAcquisitionDate(entry.activity.activity_date)}</span>
-                                  <span className="rounded-full bg-[#fbf7ef] px-2.5 py-1 text-xs font-black text-zinc-700">{activityIcon(entry.activity.activity_type, entry.activity.channel)} {entry.activity.channel || entry.activity.activity_type || "Kontakt"}</span>
-                                  {entry.parent?.program && <span className="font-black">{entry.parent.program}</span>}
-                                  {entry.activity.status_after && <AcquisitionStatus status={entry.activity.status_after} />}
-                                </div>
-                                {entry.activity.note && <p className="mt-2 whitespace-pre-line text-sm font-semibold leading-5 text-zinc-700">{entry.activity.note}</p>}
-                                {entry.activity.response && <p className="mt-1 whitespace-pre-line text-sm font-semibold leading-6 text-zinc-500">{entry.activity.response}</p>}
-                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-black">
-                                  {entry.activity.next_step && <span className="text-zinc-600">→ {entry.activity.next_step}</span>}
-                                  {entry.activity.follow_up_at && <span className="text-amber-700">📅 WVL {formatAcquisitionDate(entry.activity.follow_up_at)}</span>}
-                                </div>
-                              </div>
-                              {entry.parent && <Link href={`/admin/acquisition/${entry.parent.id}`} className="text-sm font-black text-zinc-500 hover:text-zinc-950">Vorgang öffnen →</Link>}
-                            </div>
-                          </section>
-                        ))}
-                      </div>
-                    )}
                   </div>
-
                 </div>
               )}
             </Card>
@@ -1348,6 +1260,163 @@ export default function LocationClient({
               )}
             </Card>
           )}
+
+          {/* BOOKING */}
+
+<Card
+  title="Booking & Bühne"
+  icon="🎭"
+>
+  <div className="grid gap-4 md:grid-cols-12">
+
+    <Field
+      label="Booking-E-Mail"
+      name="booking_email"
+      type="email"
+      defaultValue={venue.booking_email}
+      className="md:col-span-6"
+    />
+
+    {venue.booking_email &&
+      suppressedEmailMap.has(String(venue.booking_email).trim().toLowerCase()) && (() => {
+        const suppression = suppressedEmailMap.get(
+          String(venue.booking_email).trim().toLowerCase()
+        );
+
+        return (
+          <div className="md:col-span-6 -mt-2 flex items-center gap-2 px-1 text-xs font-bold text-red-600">
+            <span>🚫 Newsletter abgemeldet</span>
+            {suppression?.unsubscribed_at && (
+              <span className="font-semibold text-zinc-400">
+                · {formatDateTime(suppression.unsubscribed_at)}
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
+    <Field
+      label="Kapazität"
+      name="capacity"
+      type="number"
+      defaultValue={venue.capacity}
+      className="md:col-span-3"
+    />
+
+    <Field
+      label="Location-Typ"
+      name="venue_type"
+      defaultValue={venue.venue_type}
+      className="md:col-span-3"
+    />
+
+    <Field
+      label="Programmfokus"
+      name="program_focus"
+      defaultValue={venue.program_focus?.join(", ") || ""}
+      placeholder="Comedy, Kabarett, Musik"
+      className="md:col-span-6"
+    />
+
+    <Field
+      label="Spielzeit / Saison"
+      name="season_notes"
+      defaultValue={venue.season_notes}
+      className="md:col-span-6"
+    />
+
+
+    <Textarea
+      label="Publikum / Zielgruppe"
+      name="audience_notes"
+      defaultValue={venue.audience_notes}
+      className="md:col-span-6"
+    />
+
+    <div className="md:col-span-6 flex flex-col">
+      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
+        Status
+      </span>
+
+      {venue.played_before === true && (
+        <input type="hidden" name="played_before" value="on" />
+      )}
+
+      <div className="flex flex-1 items-center rounded-xl bg-[#fbf7ef] px-5">
+        <div className="flex items-center gap-3">
+          <div>
+            <span className="text-sm font-bold">
+              {locationStatus.label}
+            </span>
+
+            {locationStatus.detail && (
+              <p className="mt-1 text-xs font-semibold text-zinc-400">
+                {locationStatus.detail}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</Card>
+
+          {/* VERANSTALTER-VERKNÜPFUNGEN: keine doppelten Kontaktdaten */}
+          {!isNew && (
+            <Card
+              title="Zuständige Veranstalter"
+              icon="🤝"
+              description="Diese Veranstalter sind mit der Spielstätte verknüpft. Ihre Kontakte werden ausschließlich in den jeweiligen Veranstalter- und Akquise-Akten gepflegt."
+            >
+              {linkedOrganizers.length === 0 ? (
+                <p className="rounded-xl bg-[#fbf7ef] px-4 py-4 text-sm font-semibold text-zinc-500">
+                  Kein separater Veranstalter verknüpft. Wenn die Location selbst bucht, kannst du unten direkt eine Location-Akquise führen.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {linkedOrganizers.map((organizer) => {
+                    const related = linkedOrganizerAcquisitions.filter(
+                      (item) => item.organizer_id === organizer.id
+                    );
+                    return (
+                      <div key={organizer.id} className="rounded-2xl border border-black/10 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-black">{organizer.name} {organizer.is_primary ? "· Hauptveranstalter" : ""}</p>
+                            {organizer.city && <p className="text-sm text-zinc-500">{organizer.city}</p>}
+                            {organizer.link_notes && <p className="mt-1 text-sm text-zinc-600">{organizer.link_notes}</p>}
+                          </div>
+                          <Link href={`/admin/organizers/${organizer.id}`} className="text-sm font-black underline underline-offset-4">
+                            Veranstalter öffnen →
+                          </Link>
+                        </div>
+                        {related.length > 0 && (
+                          <div className="mt-3 space-y-2 border-t border-black/5 pt-3">
+                            {related.map((item) => (
+                              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                                <div>
+                                  <span className="font-bold">{item.program || "Akquise"}</span>
+                                  <span className="ml-2 text-zinc-500">{item.status || "Ohne Status"}</span>
+                                  {!item.venue_id && (
+                                    <span className="ml-2 text-xs text-amber-700">Spielstätte nicht fest zugeordnet</span>
+                                  )}
+                                </div>
+                                <Link href={`/admin/acquisition/${item.id}`} className="font-bold underline underline-offset-4">
+                                  Vorgang öffnen →
+                                </Link>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          )}
+
 
           {/* KOORDINATEN */}
 
@@ -1551,6 +1620,141 @@ export default function LocationClient({
 // ============================================================
 // CARD
 // ============================================================
+
+type ContactEvent = { acquisitionId: string; date: string; timestamp: string };
+
+function followUpState(
+  dueDate: string | null | undefined,
+  override: string | null | undefined,
+  acquisitionId: string,
+  originDate: string,
+  originTimestamp: string,
+  contactEvents: ContactEvent[]
+) {
+  if (!dueDate) return null;
+  const next = contactEvents
+    .filter((event) => event.acquisitionId === acquisitionId &&
+      (event.date > originDate || (event.date === originDate && event.timestamp > originTimestamp)))
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))[0];
+  const done = override === "done" || (override !== "open" && Boolean(next));
+  return { dueDate, done, completedDate: next?.date || null };
+}
+
+function FollowUpLabel({ state }: { state: ReturnType<typeof followUpState> }) {
+  if (!state) return null;
+  return (
+    <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-black ${state.done ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+      {state.done ? `✓ Erledigt${state.completedDate ? ` am ${formatAcquisitionDate(state.completedDate)}` : ""}` : `WVL ${formatAcquisitionDate(state.dueDate)}`}
+    </span>
+  );
+}
+
+function formatTimelineTime(value: string | null | undefined) {
+  if (!value || !value.includes("T")) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(parsed);
+}
+
+function TimelineLine({ date, timestamp, icon, title, label, status, children }: {
+  date: string | null; timestamp?: string | null; icon: string; title: string; label?: string;
+  status?: ReactNode; children?: ReactNode;
+}) {
+  return (
+    <details className="group min-w-0 py-4">
+      <summary className="flex w-full min-w-0 cursor-pointer list-none items-center gap-3 rounded-lg py-1 text-left hover:bg-zinc-50 [&::-webkit-details-marker]:hidden">
+        <span className="w-[82px] shrink-0 text-xs font-bold text-zinc-700">
+          {formatAcquisitionDate(date)}
+          {formatTimelineTime(timestamp) && <span className="mt-1 block font-medium text-zinc-400">{formatTimelineTime(timestamp)}</span>}
+        </span>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-800">
+          <span className="text-lg leading-none">{icon}</span>
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-bold text-zinc-900" title={title}>{title}</span>
+        {status && <span className="hidden shrink-0 items-center gap-1 sm:flex">{status}</span>}
+        <span className="shrink-0 text-zinc-500 group-open:hidden">⌄</span>
+        <span className="hidden shrink-0 text-zinc-500 group-open:inline">⌃</span>
+      </summary>
+      <div className="mt-3 space-y-2 rounded-xl bg-[#fffdf8] p-4 text-sm text-zinc-700">
+        {label && <p className="text-xs font-semibold text-zinc-500">{label}</p>}
+        {children}
+        {status && <div className="flex flex-wrap gap-1 sm:hidden">{status}</div>}
+      </div>
+    </details>
+  );
+}
+
+function LocationEmailRow({ mail, parent, contactEvents }: { mail: CrmEmail; parent?: AcquisitionRecord; contactEvents: ContactEvent[] }) {
+  const stamp = mail.sent_at || mail.received_at || mail.created_at || "";
+  const date = stamp.slice(0, 10);
+  const outgoing = mail.direction !== "incoming";
+  const followUp = followUpState(mail.follow_up_at, mail.follow_up_status_override, mail.acquisition_id, date, stamp, contactEvents);
+  return (
+    <TimelineLine date={date} timestamp={stamp} icon={outgoing ? "✉️" : "📩"} title={mail.subject || "Ohne Betreff"}
+      label={`${outgoing ? "E-Mail gesendet" : "E-Mail empfangen"}${parent?.program ? ` · ${parent.program}` : ""}`}
+      status={<FollowUpLabel state={followUp} />}>
+      <p className="break-all text-xs font-semibold text-zinc-500">{outgoing ? "An" : "Von"}: {outgoing ? (mail.to_emails ?? []).join(", ") || "—" : mail.from_email || "—"}</p>
+      <p className="mt-2 whitespace-pre-wrap break-words leading-6">{mail.body_text || "Kein Nachrichtentext vorhanden."}</p>
+      {parent && <Link href={`/admin/acquisition/${parent.id}`} className="mt-3 inline-block text-xs font-black text-blue-700">Akquise öffnen →</Link>}
+    </TimelineLine>
+  );
+}
+
+function LocationMailingRow({ mailing }: { mailing: MailingHistoryItem }) {
+  const date = (mailing.sent_at || mailing.scheduled_at || mailing.created_at || "").slice(0, 10);
+  return (
+    <TimelineLine date={date} timestamp={mailing.sent_at || mailing.scheduled_at || mailing.created_at} icon="📨" title={mailing.round_name || "Newsletter"} label="Newsletter"
+      status={<span className="flex flex-wrap gap-1">
+        {mailing.opened_at && <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">👁 Geöffnet</span>}
+        {mailing.clicked_at && <span className="rounded-md bg-lime-50 px-2 py-1 text-[10px] font-black text-lime-800">🔗 Geklickt</span>}
+        {mailing.unsubscribed_at && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-black text-red-700">🚫 Abgemeldet</span>}
+        {mailing.bounced_at && <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">⚠️ Unzustellbar</span>}
+      </span>}>
+      {mailing.email && <p className="break-all text-xs font-semibold text-zinc-500">An: {mailing.email}</p>}
+      {mailing.sent_at && <p className="mt-2">Versendet: {formatDateTime(mailing.sent_at)}</p>}
+      {mailing.opened_at && <p>Geöffnet: {formatDateTime(mailing.opened_at)}</p>}
+      {mailing.clicked_at && <p>Geklickt: {formatDateTime(mailing.clicked_at)}</p>}
+      {mailing.last_clicked_url && <p className="break-all">Link: <a className="text-blue-700 underline" href={normalizeLocationUrl(mailing.last_clicked_url)} target="_blank" rel="noreferrer">{mailing.last_clicked_url}</a></p>}
+      {mailing.unsubscribed_at && <p>Abgemeldet: {formatDateTime(mailing.unsubscribed_at)}</p>}
+      {mailing.bounced_at && <p>Unzustellbar: {formatDateTime(mailing.bounced_at)}</p>}
+      {mailing.reaction && <p className="mt-2">Reaktion: {mailing.reaction}</p>}
+      {mailing.notes && <p className="mt-2 whitespace-pre-wrap">{mailing.notes}</p>}
+      {mailing.acquisition_id && <Link href={`/admin/acquisition/${mailing.acquisition_id}`} className="mt-3 inline-block text-xs font-black text-blue-700">Akquise öffnen →</Link>}
+    </TimelineLine>
+  );
+}
+
+function LocationActivityRow({ activity, parent, contactEvents, deleteActivity, setActionMessage }: {
+  activity: AcquisitionActivity; parent?: AcquisitionRecord; contactEvents: ContactEvent[];
+  deleteActivity?: (formData: FormData) => Promise<ActionResult>;
+  setActionMessage: (message: string | null) => void;
+}) {
+  const legacy = activity.id.startsWith("legacy-");
+  const stamp = activity.created_at || `${activity.activity_date}T23:59:59`;
+  const followUp = followUpState(activity.follow_up_at, activity.follow_up_status_override, activity.acquisition_id, activity.activity_date, stamp, contactEvents);
+  return (
+    <TimelineLine date={activity.activity_date} timestamp={activity.created_at} icon={activityIcon(activity.activity_type, activity.channel)}
+      title={activity.note?.split("\n")[0] || activity.activity_type || "Kontakt"}
+      label={[activity.activity_type, activity.channel && `via ${activity.channel}`, parent?.program].filter(Boolean).join(" · ")}
+      status={<FollowUpLabel state={followUp} />}>
+      {activity.note && <p className="whitespace-pre-wrap break-words">{activity.note}</p>}
+      {activity.response && <p className="mt-2 whitespace-pre-wrap break-words"><strong>Rückmeldung:</strong> {activity.response}</p>}
+      {activity.next_step && <p className="mt-2"><strong>Nächster Schritt:</strong> {activity.next_step}</p>}
+      {activity.status_after && <p className="mt-2">Status: {activity.status_after}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {parent && <Link href={`/admin/acquisition/${parent.id}`} className="text-xs font-black text-blue-700">Akquise öffnen →</Link>}
+        {!legacy && deleteActivity && parent && <button type="button" className="text-xs font-black text-red-600" onClick={async () => {
+          if (!window.confirm("Diesen Kontakteintrag wirklich löschen?")) return;
+          const formData = new FormData();
+          formData.set("activity_id", activity.id);
+          formData.set("acquisition_id", parent.id);
+          const result = await deleteActivity(formData);
+          setActionMessage(result.message);
+        }}>🗑️ Eintrag löschen</button>}
+      </div>
+    </TimelineLine>
+  );
+}
 
 function Card({
   title,
@@ -1763,7 +1967,8 @@ function activityIcon(
 
 function getLocationStatus(
   shows: LocationShow[],
-  acquisition: AcquisitionRecord[]
+  acquisition: AcquisitionRecord[],
+  linkedOrganizerAcquisitions: LinkedOrganizerAcquisition[] = []
 ) {
   const bookedShows = shows.filter((show) => {
     const status = String(
@@ -1817,72 +2022,80 @@ function getLocationStatus(
     };
   }
 
-  const activeAcquisition = acquisition.filter(
-    (item) => {
-      if (item.archived_at) return false;
+  // Standortstatus berücksichtigt auch die Akquisen verknüpfter Veranstalter.
+  // Diese werden hier nur ausgewertet – nicht als Location-Akquise dupliziert.
+  const allAcquisition = [
+    ...acquisition,
+    ...linkedOrganizerAcquisitions.filter(
+      (item) => !acquisition.some((existing) => existing.id === item.id)
+    ),
+  ];
 
-      const status = String(
-        item.status || ""
-      ).toLowerCase();
+  const normalize = (value: string | null | undefined) =>
+    String(value || "").trim().toLocaleLowerCase("de-DE");
 
-      return (
-        !status.includes("gebucht") &&
-        !status.includes("abgesagt")
-      );
-    }
-  );
+  const isBooked = (status: string) =>
+    status.includes("gebucht") || status.includes("buchung");
+  const isRejected = (status: string) =>
+    status.includes("abgesagt") || status.includes("absage") ||
+    status.includes("abgelehnt") || status.includes("kein interesse");
+  const isInterested = (status: string) =>
+    (status.includes("interesse") && !status.includes("kein interesse")) ||
+    status.includes("interessiert") || status.includes("verhandlung") ||
+    status.includes("angebot");
+  const isWaiting = (status: string) =>
+    status.includes("rückmeldung") || status.includes("kontaktiert") ||
+    status.includes("angeschrieben") || status.includes("nachgefasst") ||
+    status.includes("warte") || status.includes("offen");
 
-  const interestAcquisition =
-    activeAcquisition.find((item) => {
-      const status = String(
-        item.status || ""
-      ).toLowerCase();
+  // Mehrere Vorgänge dürfen nicht zu einem einzigen vermeintlichen
+  // Veranstalterstatus verschmolzen werden. Hier nur die Chancen aggregieren.
+  const current = allAcquisition.filter((item) => !item.archived_at);
+  const evaluated = current.length > 0 ? current : allAcquisition;
+  const counts = { booked: 0, interested: 0, waiting: 0, rejected: 0, other: 0 };
 
-      return (
-        status.includes("interesse") ||
-        status.includes("verhandlung")
-      );
-    });
-
-  if (interestAcquisition) {
-    const status = String(
-      interestAcquisition.status || ""
-    ).toLowerCase();
-
-    return {
-      label: status.includes("verhandlung")
-        ? "🟡 In Verhandlung"
-        : "🟡 Interesse",
-      detail:
-        interestAcquisition.program ||
-        null,
-      dotClass: "bg-amber-400",
-    };
+  for (const item of evaluated) {
+    const status = normalize(item.status);
+    if (isBooked(status)) counts.booked++;
+    else if (isRejected(status)) counts.rejected++;
+    else if (isInterested(status)) counts.interested++;
+    else if (isWaiting(status)) counts.waiting++;
+    else counts.other++;
   }
 
-  if (activeAcquisition.length > 0) {
+  const total = evaluated.length;
+  const plural = (count: number) => `${count} ${count === 1 ? "Vorgang" : "Vorgänge"}`;
+  const parts = [
+    counts.booked && `${counts.booked} gebucht`,
+    counts.interested && `${counts.interested} mit Interesse`,
+    counts.waiting && `${counts.waiting} Rückmeldung offen`,
+    counts.rejected && `${counts.rejected} abgesagt`,
+    counts.other && `${counts.other} weiterer Status`,
+  ].filter(Boolean).join(" · ");
+
+  if (counts.booked > 0) {
+    return { label: "🟢 Buchung vorhanden", detail: parts, dotClass: "bg-lime-400" };
+  }
+  if (counts.interested > 0) {
+    return { label: "🟡 Interesse vorhanden", detail: parts, dotClass: "bg-amber-400" };
+  }
+  if (counts.waiting > 0) {
+    return { label: "🟠 Rückmeldung offen", detail: parts, dotClass: "bg-orange-400" };
+  }
+  if (counts.other > 0) {
+    return { label: "🟠 In Akquise", detail: parts, dotClass: "bg-orange-400" };
+  }
+  if (total > 0 && counts.rejected === total) {
     return {
-      label: "🟠 In Akquise",
-      detail:
-        activeAcquisition[0]?.program ||
-        null,
-      dotClass: "bg-orange-400",
+      label: `🔴 ${total === 1 ? "Akquise abgesagt" : "Alle Akquisen abgesagt"}`,
+      detail: `${plural(total)} · alle abgesagt`,
+      dotClass: "bg-red-400",
     };
   }
-
-  if (acquisition.length > 0) {
-    return {
-      label: "⚪ Keine offene Akquise",
-      detail: "Frühere Vorgänge vorhanden",
-      dotClass: "bg-zinc-300",
-    };
+  if (allAcquisition.length > 0) {
+    return { label: "⚪ Keine offene Akquise", detail: parts || `${plural(allAcquisition.length)} vorhanden`, dotClass: "bg-zinc-300" };
   }
-
-  return {
-    label: "⚪ Noch keine Akquise",
-    detail: null,
-    dotClass: "bg-zinc-300",
-  };
+  return { label: "⚪ Noch keine Akquise", detail: null, dotClass: "bg-zinc-300" };
 }
 
 
@@ -2055,4 +2268,7 @@ function ShowStatus({
       {label.replaceAll("_", " ")}
     </span>
   );
+}
+function normalizeLocationUrl(value: string) {
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
 }

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import {
   useMemo,
+  useEffect,
   useState,
   useTransition,
   type FormEvent,
   type ReactNode,
 } from "react";
-
 
 // ============================================================
 // TYPES
@@ -29,7 +29,6 @@ type Organizer = {
   notes: string | null;
 };
 
-
 type Contact = {
   id: string;
   name: string;
@@ -39,7 +38,6 @@ type Contact = {
   notes: string | null;
   is_primary: boolean;
 };
-
 
 type Venue = {
   id: string;
@@ -52,13 +50,11 @@ type Venue = {
   acquisition_relevant: boolean | null;
 };
 
-
 type LinkedVenue =
   Venue & {
     is_primary: boolean;
     link_notes: string | null;
   };
-
 
 type OrganizerShow = {
   id: string;
@@ -69,7 +65,6 @@ type OrganizerShow = {
   venue: string | null;
   city: string | null;
 };
-
 
 type AcquisitionRecord = {
   id: string;
@@ -88,7 +83,6 @@ type AcquisitionRecord = {
   created_at: string | null;
 };
 
-
 type AcquisitionActivity = {
   id: string;
   acquisition_id: string;
@@ -100,11 +94,46 @@ type AcquisitionActivity = {
   subject: string | null;
   next_step: string | null;
   follow_up_at: string | null;
+  follow_up_status_override?: string | null;
   status_after: string | null;
   interest_after: string | null;
   created_at: string | null;
 };
 
+type CrmEmail = {
+  id: string;
+  acquisition_id: string;
+  direction: string;
+  status: string;
+  from_email: string | null;
+  to_emails: string[] | null;
+  subject: string | null;
+  body_text: string | null;
+  sent_at: string | null;
+  follow_up_at?: string | null;
+  follow_up_status_override?: string | null;
+  received_at: string | null;
+  created_at: string | null;
+};
+
+type MailingHistoryItem = {
+  id: string;
+  round_id: string | null;
+  venue_id: string | null;
+  email: string | null;
+  sent_at: string | null;
+  scheduled_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  unsubscribed_at: string | null;
+  bounced_at: string | null;
+  last_clicked_url: string | null;
+  reaction: string | null;
+  notes: string | null;
+  acquisition_id: string | null;
+  created_at: string | null;
+  round_name: string;
+};
 
 type AcquisitionRound = {
   id: string;
@@ -115,18 +144,15 @@ type AcquisitionRound = {
   created_at: string | null;
 };
 
-
 type ActionResult = {
   success: boolean;
   message: string;
   roundName?: string;
 };
 
-
 type ServerAction = (
   formData: FormData
 ) => Promise<ActionResult>;
-
 
 const RELATIONSHIP_OPTIONS = [
   "",
@@ -136,7 +162,6 @@ const RELATIONSHIP_OPTIONS = [
   "🟢 Bestandskontakt",
   "🔴 Nicht relevant",
 ];
-
 
 const ORGANIZER_TYPES = [
   "",
@@ -149,7 +174,6 @@ const ORGANIZER_TYPES = [
   "Netzwerk / Initiative",
   "Sonstiges",
 ];
-
 
 // ============================================================
 // COMPONENT
@@ -164,6 +188,7 @@ export default function OrganizerClient({
   acquisition,
   acquisitionActivities,
   acquisitionRounds,
+  mailingHistory = [],
 
   saveOrganizer,
   createShow,
@@ -200,6 +225,7 @@ export default function OrganizerClient({
   acquisitionActivities: AcquisitionActivity[];
 
   acquisitionRounds: AcquisitionRound[];
+  mailingHistory?: MailingHistoryItem[];
 
   saveOrganizer: ServerAction;
 
@@ -334,6 +360,38 @@ export default function OrganizerClient({
   ] =
     useState(false);
 
+  const [crmEmails, setCrmEmails] = useState<CrmEmail[]>([]);
+  const [mailLoading, setMailLoading] = useState(false);
+  const [mailError, setMailError] = useState<string | null>(null);
+  const acquisitionIds = acquisition.map((item) => item.id).join(",");
+
+  useEffect(() => {
+    const ids = acquisitionIds.split(",").filter(Boolean);
+    if (ids.length === 0) {
+      setCrmEmails([]);
+      setMailError(null);
+      return;
+    }
+    let cancelled = false;
+    setMailLoading(true);
+    setMailError(null);
+    Promise.allSettled(ids.map(async (id) => {
+      const response = await fetch(`/api/booking-mail/acquisition/${encodeURIComponent(id)}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(`E-Mail-Verlauf für Akquise ${id} nicht verfügbar`);
+      const data = await response.json() as { emails?: Omit<CrmEmail, "acquisition_id">[] };
+      return (data.emails ?? []).map((mail) => ({ ...mail, acquisition_id: id }));
+    })).then((results) => {
+      if (cancelled) return;
+      const successful = results.filter((result): result is PromiseFulfilledResult<CrmEmail[]> => result.status === "fulfilled");
+      setCrmEmails(successful.flatMap((result) => result.value));
+      if (successful.length !== results.length) setMailError("Ein Teil der E-Mails konnte nicht geladen werden.");
+    }).finally(() => { if (!cancelled) setMailLoading(false); });
+    return () => { cancelled = true; };
+  }, [acquisitionIds]);
+
+
   // ============================================================
   // DATA
   // ============================================================
@@ -453,6 +511,62 @@ export default function OrganizerClient({
       }
     );
 
+  // Historische Kontaktdaten können noch direkt im Akquise-Datensatz liegen.
+  // Nur übernehmen, wenn es tatsächlich Kontaktinformationen gibt; created_at
+  // allein belegt keinen Kontakt. Diese Einträge sind zunächst schreibgeschützt.
+  const legacyActivities: AcquisitionActivity[] = acquisition
+    .filter((item) =>
+      !acquisitionActivities.some((activity) => activity.acquisition_id === item.id) &&
+      Boolean(item.last_contact_at || item.contact_note?.trim() || item.response?.trim())
+    )
+    .map((item) => ({
+      id: `legacy-${item.id}`,
+      acquisition_id: item.id,
+      activity_date: item.last_contact_at || "",
+      activity_type: "Bisheriger Kontaktstand",
+      channel: item.contact_channel,
+      subject: null,
+      note: item.contact_note,
+      response: item.response,
+      next_step: item.next_step,
+      follow_up_at: item.next_follow_up_at,
+      status_after: null,
+      interest_after: null,
+      created_at: null,
+    }));
+
+  const displayedActivities = [...acquisitionActivities, ...legacyActivities];
+  const contactTypes = new Set([
+    "Kontakt", "Kontaktversuch", "Rückmeldung", "Telefonat",
+    "Persönlicher Kontakt", "Absage", "Buchung", "Weiterleitung",
+    "Bisheriger Kontaktstand",
+  ]);
+  const contactTimeline = [
+    ...crmEmails.filter((mail) => mail.status === "sent" || mail.direction === "incoming").map((mail) => ({ key: `crm-email-${mail.id}`, kind: "email" as const, date: mail.sent_at || mail.created_at || "", mail, parent: acquisition.find((item) => item.id === mail.acquisition_id) })),
+    ...mailingHistory.map((mailing) => ({ key: `mailing-${mailing.id}`, kind: "mailing" as const, date: mailing.sent_at || mailing.scheduled_at || mailing.created_at || "", mailing })),
+    ...displayedActivities.filter((activity) => contactTypes.has(activity.activity_type || "")).map((activity) => ({ key: `activity-${activity.id}`, kind: "activity" as const, date: activity.activity_date || activity.created_at || "", activity, parent: acquisition.find((item) => item.id === activity.acquisition_id) })),
+  ].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  // Nur echte persönliche Kontakte schließen eine Kontakt-WVL automatisch ab.
+  // Newsletter, interne Notizen und bloße Statusänderungen zählen nicht dazu.
+  const actualContactTypes = new Set(["Kontakt", "Kontaktversuch", "Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Absage", "Buchung", "Weiterleitung"]);
+  const contactEvents: ContactEvent[] = [
+    ...acquisitionActivities.filter((a) => actualContactTypes.has(a.activity_type || "")).map((a) => ({
+      acquisitionId: a.acquisition_id,
+      date: a.activity_date,
+      timestamp: a.created_at || `${a.activity_date}T00:00:00`,
+    })),
+    ...crmEmails.filter((m) => m.status === "sent" || m.direction === "incoming").map((m) => ({
+      acquisitionId: m.acquisition_id,
+      date: (m.sent_at || m.received_at || m.created_at || "").slice(0, 10),
+      timestamp: m.sent_at || m.received_at || m.created_at || "",
+    })),
+  ].filter((event) => event.date);
+  const acquisitionOverview = [...acquisition].sort((a, b) =>
+    String(b.last_contact_at || b.created_at || "").localeCompare(
+      String(a.last_contact_at || a.created_at || "")
+    )
+  );
+
   // ============================================================
   // SAVE
   // ============================================================
@@ -517,13 +631,9 @@ export default function OrganizerClient({
             </h1>
 
             <p className="mt-2 text-zinc-500">
-              {[
-                organizer.city,
-                organizer.country,
-              ]
+              {[organizer.postal_code, organizer.city]
                 .filter(Boolean)
-                .join(" · ") ||
-                "Veranstalter"}
+                .join(" ") || "Veranstalter"}
             </p>
 
           </div>
@@ -840,148 +950,649 @@ export default function OrganizerClient({
 
           </Card>
 
-          {/* ================================================= */}
-          {/* ANSPRECHPARTNER */}
-          {/* ================================================= */}
+          {/* KONTAKTE – wie Locations: direkt bearbeitbare Karten */}
 
-          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-
-            {sortedContacts.map(
-              (
-                contact,
-                index
-              ) => (
-                <Card
-                  key={
-                    contact.id
-                  }
-                  title={`Ansprechpartner ${
-                    index + 1
-                  }`}
-                  icon={
-                    index === 0
-                      ? "👤"
-                      : "👥"
-                  }
-                  action={
-                    <div className="flex items-center gap-2">
-
-                      {contact.is_primary && (
-                        <span className="rounded-full bg-lime-200 px-2.5 py-1 text-[10px] font-black text-lime-900">
-                          Hauptkontakt
-                        </span>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setEditingContactId(
-                            editingContactId ===
-                              contact.id
-                              ? null
-                              : contact.id
-                          )
-                        }
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#fbf7ef] text-sm ring-1 ring-black/5 transition hover:bg-white"
-                        title="Kontakt bearbeiten"
-                      >
-                        ✏️
-                      </button>
-
-                    </div>
-                  }
-                >
-
-                  {editingContactId ===
-                  contact.id ? (
-
-                    <ContactEditForm
-                      contact={
-                        contact
-                      }
-                      updateContact={
-                        updateContact
-                      }
-                      deleteContact={
-                        deleteContact
-                      }
-                      close={() =>
-                        setEditingContactId(
-                          null
-                        )
-                      }
-                      setActionMessage={
-                        setActionMessage
-                      }
-                    />
-
-                  ) : (
-
-                    <ContactView
-                      contact={
-                        contact
-                      }
-                    />
-
-                  )}
-
-                </Card>
-              )
-            )}
+          <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+            {sortedContacts.map((contact) => (
+              <ContactCompactCard
+                key={contact.id}
+                contact={contact}
+                updateContact={updateContact}
+                deleteContact={deleteContact}
+                setActionMessage={setActionMessage}
+              />
+            ))}
 
             {showNewContact ? (
-
               <Card
                 title="Neuer Ansprechpartner"
                 icon="➕"
                 action={
                   <button
                     type="button"
-                    onClick={() =>
-                      setShowNewContact(
-                        false
-                      )
-                    }
+                    onClick={() => setShowNewContact(false)}
                     className="text-xs font-black text-zinc-400 hover:text-zinc-950"
                   >
                     Schließen
                   </button>
                 }
               >
-
                 <ContactNewForm
-                  addContact={
-                    addContact
-                  }
-                  setActionMessage={
-                    setActionMessage
-                  }
-                  close={() =>
-                    setShowNewContact(
-                      false
-                    )
-                  }
+                  addContact={addContact}
+                  setActionMessage={setActionMessage}
+                  close={() => setShowNewContact(false)}
                 />
-
               </Card>
-
             ) : (
-
               <button
                 type="button"
-                onClick={() =>
-                  setShowNewContact(
-                    true
-                  )
-                }
+                onClick={() => setShowNewContact(true)}
                 className="flex min-h-[180px] items-center justify-center rounded-[1.7rem] border border-dashed border-black/10 bg-white/50 p-6 text-sm font-black text-zinc-500 transition hover:bg-white hover:text-zinc-950"
               >
                 + Ansprechpartner hinzufügen
               </button>
+            )}
+          </div>
+
+          {/* ================================================= */}
+          {/* AKQUISE */}
+          {/* ================================================= */}
+
+          <Card
+            title="Kontakt & Akquise"
+            icon="🎯"
+            description="Kontakte und Akquise-Vorgänge dieses Veranstalters."
+            action={
+              activeAcquisition ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowActivityForm((value) => !value);
+                    setShowNewAcquisitionForm(false);
+                    setActionMessage(null);
+                  }}
+                  className="inline-flex items-center justify-center rounded-full bg-lime-300 px-4 py-2.5 text-sm font-black text-zinc-950 transition hover:-translate-y-0.5"
+                >
+                  {showActivityForm ? "Schließen" : "+ Eintrag"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewAcquisitionForm((value) => !value);
+                    setShowActivityForm(false);
+                    setActionMessage(null);
+                    setSelectedRoundId("");
+                    setNewRoundName("");
+                  }}
+                  className="inline-flex items-center justify-center rounded-full bg-lime-300 px-4 py-2.5 text-sm font-black text-zinc-950 transition hover:-translate-y-0.5"
+                >
+                  {showNewAcquisitionForm ? "Schließen" : "+ Neue Akquise"}
+                </button>
+              )
+            }
+          >
+
+            {actionMessage && (
+              <div className="mb-4 rounded-xl bg-zinc-950 px-4 py-3 text-sm font-bold text-white">
+                {actionMessage}
+              </div>
+            )}
+
+            {showNewAcquisitionForm && (
+              <div className="mb-6 overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-sm">
+                <div className="flex flex-col gap-2 border-b border-black/5 bg-[#fbf7ef] px-6 py-5 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
+                      Neue Akquise
+                    </p>
+                    <h3 className="mt-1 text-lg font-black text-zinc-950">
+                      Akquise-Runde auswählen
+                    </h3>
+                    <p className="mt-1 text-sm font-semibold text-zinc-500">
+                      Bestehende Runde auswählen oder eine neue Runde anlegen.
+                    </p>
+                  </div>
+                  <div className="rounded-full bg-white px-3 py-2 text-xs font-bold text-zinc-500 ring-1 ring-black/5">
+                    Neuen Vorgang starten
+                  </div>
+                </div>
+
+                <div
+                  id="organizer-new-acquisition-form"
+                  className="grid gap-6 p-6"
+                >
+                  <section className="grid gap-4 rounded-2xl bg-[#fbf7ef] p-5 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
+                        1 · Akquise-Runde
+                      </p>
+                    </div>
+
+                    <label className="block min-w-0 md:col-span-2">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
+                        Akquise-Runde
+                      </span>
+                      <select
+                        name="round_id"
+                        value={selectedRoundId}
+                        onChange={(event) => {
+                          setSelectedRoundId(event.target.value);
+                          if (event.target.value !== "__new") {
+                            setNewRoundName("");
+                          }
+                        }}
+                        className="h-12 w-full rounded-xl bg-white px-4 text-sm font-bold text-zinc-800 outline-none ring-1 ring-black/10 transition focus:ring-2 focus:ring-zinc-300"
+                      >
+                        <option value="">Bitte auswählen</option>
+                        {rounds.map((round) => (
+                          <option key={round.id} value={round.id}>
+                            {round.name}
+                          </option>
+                        ))}
+                        <option value="__new">＋ Neue Akquise-Runde anlegen</option>
+                      </select>
+                    </label>
+
+                    {selectedRoundId === "__new" && (
+                      <label className="block min-w-0 md:col-span-2">
+                        <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
+                          Name der neuen Runde
+                        </span>
+                        <input
+                          name="new_round_name"
+                          value={newRoundName}
+                          onChange={(event) => setNewRoundName(event.target.value)}
+                          placeholder="z. B. TV-Shows"
+                          className="h-12 w-full rounded-xl bg-white px-4 text-sm font-semibold text-zinc-800 outline-none ring-1 ring-black/10 transition focus:ring-2 focus:ring-zinc-300"
+                        />
+                        <span className="mt-2 block text-xs font-semibold leading-5 text-zinc-400">
+                          Gibt es eine archivierte Akquise-Runde mit genau diesem Namen,
+                          wird sie wieder aktiviert. Alte Vorgänge bleiben archiviert.
+                        </span>
+                      </label>
+                    )}
+                  </section>
+
+                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="md:col-span-2 xl:col-span-4">
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
+                        Kontakt kann danach über „+ Eintrag“ dokumentiert werden
+                      </p>
+                    </div>
+
+                    <SelectField
+                      label="Typ"
+                      name="activity_type"
+                      defaultValue="Kontaktversuch"
+                      options={["Kontaktversuch", "Automatische Antwort", "Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Notiz", "Absage", "Buchung"]}
+                    />
+
+                    <Field
+                      label="Datum"
+                      name="activity_date"
+                      type="date"
+                      defaultValue={todayDate()}
+                    />
+
+                    <SelectField
+                      label="Kanal"
+                      name="channel"
+                      options={["", "E-Mail", "Telefon", "Instagram", "LinkedIn", "Persönlich"]}
+                    />
+
+                    <Field
+                      label="Wiedervorlage"
+                      name="follow_up_at"
+                      type="date"
+                    />
+
+                    <Field
+                      label="Betreff"
+                      name="subject"
+                      placeholder="z. B. Quatsch Comedy Club – Bewerbung Jan.–März 2027"
+                      className="md:col-span-2 xl:col-span-4"
+                    />
+
+                    <Textarea
+                      label="Notiz / Rückmeldung"
+                      name="note"
+                      className="md:col-span-2 xl:col-span-4"
+                    />
+                  </section>
+
+                  <section className="grid gap-4 rounded-2xl bg-[#fbf7ef] p-5 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
+                        3 · Wie geht es weiter?
+                      </p>
+                    </div>
+
+                    <Field
+                      label="Nächster Schritt"
+                      name="next_step"
+                    />
+
+                    <SelectField
+                      label="Status danach"
+                      name="status_after"
+                      options={["", "Neu", "Vorqualifiziert", "Insta", "Kontaktiert", "Follow-up 1", "Follow-up 2", "Interesse", "Verhandlung", "Gebucht 🎉", "Abgesagt"]}
+                    />
+                  </section>
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 border-t border-black/5 bg-[#fbf7ef] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewAcquisitionForm(false);
+                      setSelectedRoundId("");
+                      setNewRoundName("");
+                      setActionMessage(null);
+                    }}
+                    className="rounded-full bg-white px-5 py-2.5 text-sm font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50"
+                  >
+                    Abbrechen
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={
+                      isPending ||
+                      !selectedRoundId ||
+                      (selectedRoundId === "__new" && !newRoundName.trim())
+                    }
+                    onClick={() => {
+                      const container = document.getElementById(
+                        "organizer-new-acquisition-form"
+                      );
+                      if (!container) return;
+
+                      const formData = new FormData();
+                      container
+                        .querySelectorAll<
+                          HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+                        >("input[name], select[name], textarea[name]")
+                        .forEach((field) =>
+                          formData.set(field.name, field.value)
+                        );
+
+                      if (selectedRoundId === "__new") {
+                        formData.delete("round_id");
+                        formData.set("new_round_name", newRoundName.trim());
+                      } else {
+                        formData.set("round_id", selectedRoundId);
+                        formData.delete("new_round_name");
+                      }
+
+                      startTransition(async () => {
+                        const result = await createAcquisition(formData);
+                        setActionMessage(result.message);
+
+                        if (result.success) {
+                          setShowNewAcquisitionForm(false);
+                          setSelectedRoundId("");
+                          setNewRoundName("");
+                        }
+                      });
+                    }}
+                    className="rounded-full bg-lime-300 px-6 py-3 text-sm font-black text-zinc-950 transition hover:-translate-y-0.5 hover:bg-lime-200 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500 disabled:opacity-100"
+                  >
+                    {isPending ? "Speichert …" : "Akquise speichern →"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeAcquisition &&
+              showActivityForm && (
+
+              <div className="mb-5 rounded-2xl bg-[#fbf7ef] p-5 ring-1 ring-black/5 [&_input]:!bg-white [&_select]:!bg-white [&_textarea]:!bg-white">
+
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
+                  Neuer Eintrag
+                </p>
+
+                <p className="mt-1 font-black">
+                  {activeAcquisition.program ||
+                    "Aktuelle Akquise"}
+                </p>
+
+                <div
+                  id="organizer-activity-form"
+                  className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+                >
+
+                  <input
+                    type="hidden"
+                    name="acquisition_id"
+                    value={
+                      activeAcquisition.id
+                    }
+                  />
+
+                  <SelectField
+                    label="Typ"
+                    name="activity_type"
+                    defaultValue="Kontakt"
+                    options={["Kontakt", "Rückmeldung", "WVL", "Absage", "Buchung", "Notiz"]}
+                  />
+
+                  <Field
+                    label="Datum"
+                    name="activity_date"
+                    type="date"
+                    defaultValue={
+                      todayDate()
+                    }
+                  />
+
+                  <SelectField
+                    label="Kanal"
+                    name="channel"
+                    options={[
+                      "",
+                      "E-Mail",
+                      "Telefon",
+                      "Instagram",
+                      "LinkedIn",
+                      "Persönlich",
+                    ]}
+                  />
+
+                  <Field
+                    label="Wiedervorlage"
+                    name="follow_up_at"
+                    type="date"
+                  />
+
+                  <Textarea
+                    label="Was ist passiert?"
+                    name="note"
+                    className="md:col-span-2"
+                  />
+
+                  <Textarea
+                    label="Rückmeldung / Ergebnis"
+                    name="response"
+                    className="md:col-span-2"
+                  />
+
+                  <Field
+                    label="Nächster Schritt"
+                    name="next_step"
+                    className="md:col-span-2"
+                  />
+
+                  <SelectField
+                    label="Status danach"
+                    name="status_after"
+                    options={[
+                      "",
+                      "Neu",
+                      "Vorqualifiziert",
+                      "Insta",
+                      "Kontaktiert",
+                      "Follow-up 1",
+                      "Follow-up 2",
+                      "Interesse",
+                      "Verhandlung",
+                      "Gebucht 🎉",
+                      "Abgesagt",
+                    ]}
+                    className="md:col-span-2"
+                  />
+
+                </div>
+
+                <div className="mt-4 flex justify-end">
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const container =
+                        document.getElementById(
+                          "organizer-activity-form"
+                        );
+
+                      if (
+                        !container
+                      ) {
+                        return;
+                      }
+
+                      const formData =
+                        new FormData();
+
+                      container
+                        .querySelectorAll<
+                          | HTMLInputElement
+                          | HTMLSelectElement
+                          | HTMLTextAreaElement
+                        >(
+                          "input[name], select[name], textarea[name]"
+                        )
+                        .forEach(
+                          (
+                            field
+                          ) => {
+                            formData.set(
+                              field.name,
+                              field.value
+                            );
+                          }
+                        );
+
+                      startTransition(
+                        async () => {
+                          const result =
+                            await addActivity(
+                              formData
+                            );
+
+                          setActionMessage(
+                            result.message
+                          );
+
+                          if (
+                            result.success
+                          ) {
+                            setShowActivityForm(
+                              false
+                            );
+                          }
+                        }
+                      );
+                    }}
+                    className="rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-black text-white transition hover:-translate-y-0.5"
+                  >
+                    Eintrag speichern
+                  </button>
+
+                </div>
+
+              </div>
 
             )}
 
-          </div>
+            {acquisition.length === 0 && contactTimeline.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center">
+                <p className="text-sm font-black text-zinc-700">Noch kein Akquise-Vorgang vorhanden.</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-400">Starte den ersten Vorgang über „+ Neue Akquise“.</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div>
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">Akquise-Vorgänge</p>
+                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-black text-zinc-500">
+                      {acquisitionOverview.length} {acquisitionOverview.length === 1 ? "Vorgang" : "Vorgänge"}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {acquisitionOverview.map((item) => {
+                      const itemActivities = displayedActivities
+                        .filter((activity) => activity.acquisition_id === item.id && contactTypes.has(activity.activity_type || ""))
+                        .sort((a, b) => String(b.activity_date || b.created_at || "").localeCompare(String(a.activity_date || a.created_at || "")));
+                      const roundName = acquisitionRounds.find((round) => round.id === item.round_id)?.name;
+                      return (
+                        <div key={item.id} className="rounded-2xl border border-black/10 bg-white p-4 sm:p-5">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-black text-zinc-900">{roundName || item.program || "Allgemein"}</span>
+                                <AcquisitionStatus status={item.status} />
+                                {item.archived_at && <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-bold text-zinc-500">Archiv</span>}
+                              </div>
+                              {roundName && item.program && item.program !== roundName && <p className="mt-1 text-xs font-semibold text-zinc-500">{item.program}</p>}
+                            </div>
+                            <Link href={`/admin/acquisition/${item.id}`} className="shrink-0 text-sm font-black text-zinc-600 hover:text-zinc-950">Vorgang öffnen →</Link>
+                          </div>
+                          <div className="mt-3 grid gap-x-5 gap-y-2 border-t border-zinc-100 pt-3 text-xs sm:grid-cols-3">
+                            <p><span className="font-semibold text-zinc-400">Letzter Kontakt</span><span className="mt-1 block font-bold text-zinc-700">{itemActivities.length ? (itemActivities[0].activity_date ? formatDate(itemActivities[0].activity_date) : "Datum nicht erfasst") : "Noch kein Kontakt"}</span></p>
+                            <p><span className="font-semibold text-zinc-400">Wiedervorlage</span><span className="mt-1 block font-bold text-amber-700">{item.next_follow_up_at ? formatDate(item.next_follow_up_at) : "—"}</span></p>
+                            <p><span className="font-semibold text-zinc-400">Nächste Aktion</span><span className="mt-1 block font-bold text-zinc-700">{item.next_step || "—"}</span></p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-5 max-h-[560px] min-h-[180px] overflow-y-auto bg-white pr-1">
+                  {mailLoading && <p className="py-3 text-xs font-semibold text-zinc-500">E-Mails werden geladen …</p>}
+                  {mailError && <p className="py-3 text-xs font-semibold text-amber-700">{mailError}</p>}
+                  {contactTimeline.length === 0 && !mailLoading && <p className="py-6 text-sm font-semibold text-zinc-500">Noch keine Kontakte, E-Mails oder Newsletter dokumentiert.</p>}
+                  {contactTimeline.map((entry, index) => (
+                    <div key={entry.key} className="grid grid-cols-[18px_minmax(0,1fr)] gap-3">
+                      <div className="flex flex-col items-center pt-[19px]">
+                        <span className={`h-3 w-3 shrink-0 rounded-full ring-2 ring-white ${entry.kind === "mailing" ? "bg-violet-500" : entry.kind === "email" ? "bg-lime-400" : ["bg-lime-400", "bg-blue-700", "bg-red-500", "bg-zinc-400"][index % 4]}`} />
+                        {index < contactTimeline.length - 1 && <span className="mt-2 min-h-5 w-px flex-1 border-l border-dashed border-zinc-300" />}
+                      </div>
+                      <div className="min-w-0 border-b border-zinc-200">
+                        {entry.kind === "email" ? (
+                          <LocationEmailRow mail={entry.mail} parent={entry.parent} contactEvents={contactEvents} />
+                        ) : entry.kind === "mailing" ? (
+                          <LocationMailingRow mailing={entry.mailing} />
+                        ) : (
+                          <LocationActivityRow activity={entry.activity} parent={entry.parent} contactEvents={contactEvents} deleteActivity={deleteActivity} setActionMessage={setActionMessage} />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          </Card>
+
+          {/* ================================================= */}
+          {/* SHOWS */}
+          {/* ================================================= */}
+
+          <Card
+            title="Shows dieses Veranstalters"
+            icon="🎟️"
+            description={
+              shows.length === 0
+                ? "Noch keine Show mit diesem Veranstalter verknüpft."
+                : `${shows.length} ${
+                    shows.length === 1
+                      ? "Show"
+                      : "Shows"
+                  } mit diesem Veranstalter verknüpft.`
+            }
+          >
+
+            {shows.length === 0 ? (
+
+              <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center text-sm font-semibold text-zinc-400">
+                Für diesen Veranstalter gibt es aktuell keine verknüpfte Show.
+              </div>
+
+            ) : (
+
+              <div className="overflow-hidden rounded-2xl border border-black/10">
+
+                <div className="divide-y divide-black/5">
+
+                  {shows.map(
+                    (
+                      show
+                    ) => (
+
+                      <Link
+                        key={
+                          show.id
+                        }
+                        href={`/admin/shows/${show.id}`}
+                        className="group flex flex-col gap-3 bg-white px-5 py-4 transition hover:bg-zinc-50 md:flex-row md:items-center md:justify-between"
+                      >
+
+                        <div className="min-w-0">
+
+                          <div className="flex flex-wrap items-center gap-2">
+
+                            <span className="font-black text-zinc-950">
+                              {formatShowDate(
+                                show.show_date
+                              )}
+                            </span>
+
+                            {show.start_time && (
+                              <span className="text-sm font-semibold text-zinc-400">
+                                ·{" "}
+                                {formatShowTime(
+                                  show.start_time
+                                )}
+                              </span>
+                            )}
+
+                            <ShowStatus
+                              status={
+                                show.internal_status
+                              }
+                            />
+
+                          </div>
+
+                          {show.program && (
+                            <div className="mt-1 truncate text-sm font-semibold text-zinc-600">
+                              {show.program}
+                            </div>
+                          )}
+
+                          {(show.venue ||
+                            show.city) && (
+                            <div className="mt-1 truncate text-xs font-semibold text-zinc-400">
+                              📍{" "}
+                              {[
+                                show.venue,
+                                show.city,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
+                          )}
+
+                        </div>
+
+                        <span className="shrink-0 text-sm font-black text-zinc-400 transition group-hover:text-zinc-950">
+                          Show öffnen →
+                        </span>
+
+                      </Link>
+
+                    )
+                  )}
+
+                </div>
+
+              </div>
+
+            )}
+
+          </Card>
 
           {/* ================================================= */}
           {/* SPIELORTE */}
@@ -1195,627 +1806,6 @@ export default function OrganizerClient({
           </Card>
 
           {/* ================================================= */}
-          {/* AKQUISE */}
-          {/* ================================================= */}
-
-          <Card
-            title="Akquise"
-            icon="🎯"
-            description="Aktueller Stand und bisherige Akquise-Vorgänge dieses Veranstalters."
-            action={
-              <div className="flex flex-wrap items-center gap-2">
-                {activeAcquisition && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowActivityForm(!showActivityForm);
-                      setShowNewAcquisitionForm(false);
-                      setActionMessage(null);
-                    }}
-                    className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2.5 text-sm font-black text-zinc-800 ring-1 ring-black/10 transition hover:-translate-y-0.5"
-                  >
-                    {showActivityForm ? "Schließen" : "+ Eintrag"}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewAcquisitionForm(!showNewAcquisitionForm);
-                    setShowActivityForm(false);
-                    setActionMessage(null);
-                  }}
-                  className="inline-flex items-center justify-center rounded-full bg-lime-300 px-4 py-2.5 text-sm font-black text-zinc-950 transition hover:-translate-y-0.5"
-                >
-                  {showNewAcquisitionForm ? "Schließen" : "+ Neue Akquise"}
-                </button>
-              </div>
-            }
-          >
-
-            {actionMessage && (
-              <div className="mb-4 rounded-xl bg-zinc-950 px-4 py-3 text-sm font-bold text-white">
-                {actionMessage}
-              </div>
-            )}
-
-            {showNewAcquisitionForm && (
-              <div className="mb-6 overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-sm">
-                <div className="flex flex-col gap-2 border-b border-black/5 bg-[#fbf7ef] px-6 py-5 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
-                      Neue Akquise
-                    </p>
-                    <h3 className="mt-1 text-lg font-black text-zinc-950">
-                      Runde und ersten Kontakt zusammen erfassen
-                    </h3>
-                    <p className="mt-1 text-sm font-semibold text-zinc-500">
-                      Eine bestehende Runde wählen oder direkt hier eine neue anlegen.
-                    </p>
-                  </div>
-                  <div className="rounded-full bg-white px-3 py-2 text-xs font-bold text-zinc-500 ring-1 ring-black/5">
-                    1× speichern · alles erledigt
-                  </div>
-                </div>
-
-                <div
-                  id="organizer-new-acquisition-form"
-                  className="grid gap-6 p-6"
-                >
-                  <section className="grid gap-4 rounded-2xl bg-[#fbf7ef] p-5 md:grid-cols-2">
-                    <div className="md:col-span-2">
-                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
-                        1 · Akquise-Runde
-                      </p>
-                    </div>
-
-                    <label className="block min-w-0 md:col-span-2">
-                      <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
-                        Akquise-Runde
-                      </span>
-                      <select
-                        name="round_id"
-                        value={selectedRoundId}
-                        onChange={(event) => {
-                          setSelectedRoundId(event.target.value);
-                          if (event.target.value !== "__new") {
-                            setNewRoundName("");
-                          }
-                        }}
-                        className="h-12 w-full rounded-xl bg-white px-4 text-sm font-bold text-zinc-800 outline-none ring-1 ring-black/10 transition focus:ring-2 focus:ring-zinc-300"
-                      >
-                        <option value="">Bitte auswählen</option>
-                        {rounds.map((round) => (
-                          <option key={round.id} value={round.id}>
-                            {round.name}
-                          </option>
-                        ))}
-                        <option value="__new">＋ Neue Akquise-Runde anlegen</option>
-                      </select>
-                    </label>
-
-                    {selectedRoundId === "__new" && (
-                      <label className="block min-w-0 md:col-span-2">
-                        <span className="mb-2 block text-xs font-black uppercase tracking-wider text-zinc-400">
-                          Name der neuen Runde
-                        </span>
-                        <input
-                          name="new_round_name"
-                          value={newRoundName}
-                          onChange={(event) => setNewRoundName(event.target.value)}
-                          placeholder="z. B. TV-Shows"
-                          className="h-12 w-full rounded-xl bg-white px-4 text-sm font-semibold text-zinc-800 outline-none ring-1 ring-black/10 transition focus:ring-2 focus:ring-zinc-300"
-                        />
-                        <span className="mt-2 block text-xs font-semibold leading-5 text-zinc-400">
-                          Gibt es eine archivierte Akquise-Runde mit genau diesem Namen,
-                          wird sie wieder aktiviert. Alte Vorgänge bleiben archiviert.
-                        </span>
-                      </label>
-                    )}
-                  </section>
-
-                  <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="md:col-span-2 xl:col-span-4">
-                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
-                        2 · Kontakt
-                      </p>
-                    </div>
-
-                    <SelectField
-                      label="Typ"
-                      name="activity_type"
-                      defaultValue="Kontaktversuch"
-                      options={["Kontaktversuch", "Automatische Antwort", "Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Notiz", "Absage", "Buchung"]}
-                    />
-
-                    <Field
-                      label="Datum"
-                      name="activity_date"
-                      type="date"
-                      defaultValue={todayDate()}
-                    />
-
-                    <SelectField
-                      label="Kanal"
-                      name="channel"
-                      options={["", "E-Mail", "Telefon", "Instagram", "LinkedIn", "Persönlich"]}
-                    />
-
-                    <Field
-                      label="Wiedervorlage"
-                      name="follow_up_at"
-                      type="date"
-                    />
-
-                    <Field
-                      label="Betreff"
-                      name="subject"
-                      placeholder="z. B. Quatsch Comedy Club – Bewerbung Jan.–März 2027"
-                      className="md:col-span-2 xl:col-span-4"
-                    />
-
-                    <Textarea
-                      label="Notiz / Rückmeldung"
-                      name="note"
-                      className="md:col-span-2 xl:col-span-4"
-                    />
-                  </section>
-
-                  <section className="grid gap-4 rounded-2xl bg-[#fbf7ef] p-5 md:grid-cols-2">
-                    <div className="md:col-span-2">
-                      <p className="text-xs font-black uppercase tracking-[0.14em] text-zinc-400">
-                        3 · Wie geht es weiter?
-                      </p>
-                    </div>
-
-                    <Field
-                      label="Nächster Schritt"
-                      name="next_step"
-                    />
-
-                    <SelectField
-                      label="Status danach"
-                      name="status_after"
-                      options={["", "Neu", "Vorqualifiziert", "Insta", "Kontaktiert", "Follow-up 1", "Follow-up 2", "Interesse", "Verhandlung", "Gebucht 🎉", "Abgesagt"]}
-                    />
-                  </section>
-                </div>
-
-                <div className="flex flex-col-reverse gap-3 border-t border-black/5 bg-[#fbf7ef] px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowNewAcquisitionForm(false);
-                      setSelectedRoundId("");
-                      setNewRoundName("");
-                      setActionMessage(null);
-                    }}
-                    className="rounded-full bg-white px-5 py-2.5 text-sm font-black text-zinc-600 ring-1 ring-black/10 transition hover:bg-zinc-50"
-                  >
-                    Abbrechen
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={
-                      isPending ||
-                      !selectedRoundId ||
-                      (selectedRoundId === "__new" && !newRoundName.trim())
-                    }
-                    onClick={() => {
-                      const container = document.getElementById(
-                        "organizer-new-acquisition-form"
-                      );
-                      if (!container) return;
-
-                      const formData = new FormData();
-                      container
-                        .querySelectorAll<
-                          HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-                        >("input[name], select[name], textarea[name]")
-                        .forEach((field) =>
-                          formData.set(field.name, field.value)
-                        );
-
-                      if (selectedRoundId === "__new") {
-                        formData.delete("round_id");
-                        formData.set("new_round_name", newRoundName.trim());
-                      } else {
-                        formData.set("round_id", selectedRoundId);
-                        formData.delete("new_round_name");
-                      }
-
-                      startTransition(async () => {
-                        const result = await createAcquisition(formData);
-                        setActionMessage(result.message);
-
-                        if (result.success) {
-                          setShowNewAcquisitionForm(false);
-                          setSelectedRoundId("");
-                          setNewRoundName("");
-                        }
-                      });
-                    }}
-                    className="rounded-full bg-lime-300 px-6 py-3 text-sm font-black text-zinc-950 transition hover:-translate-y-0.5 hover:bg-lime-200 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500 disabled:opacity-100"
-                  >
-                    {isPending ? "Speichert …" : "Akquise speichern →"}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeAcquisition &&
-              showActivityForm && (
-
-              <div className="mb-5 rounded-2xl bg-[#fbf7ef] p-5 ring-1 ring-black/5">
-
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-zinc-400">
-                  Neuer Eintrag
-                </p>
-
-                <p className="mt-1 font-black">
-                  {activeAcquisition.program ||
-                    "Aktuelle Akquise"}
-                </p>
-
-                <div
-                  id="organizer-activity-form"
-                  className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4"
-                >
-
-                  <input
-                    type="hidden"
-                    name="acquisition_id"
-                    value={
-                      activeAcquisition.id
-                    }
-                  />
-
-                  <SelectField
-                    label="Typ"
-                    name="activity_type"
-                    defaultValue="Kontaktversuch"
-                    options={[
-                      "Kontaktversuch",
-                      "Automatische Antwort",
-                      "Rückmeldung",
-                      "Telefonat",
-                      "Persönlicher Kontakt",
-                      "Notiz",
-                      "Absage",
-                      "Buchung",
-                    ]}
-                  />
-
-                  <Field
-                    label="Datum"
-                    name="activity_date"
-                    type="date"
-                    defaultValue={
-                      todayDate()
-                    }
-                  />
-
-                  <SelectField
-                    label="Kanal"
-                    name="channel"
-                    options={[
-                      "",
-                      "E-Mail",
-                      "Telefon",
-                      "Instagram",
-                      "LinkedIn",
-                      "Persönlich",
-                    ]}
-                  />
-
-                  <Field
-                    label="Wiedervorlage"
-                    name="follow_up_at"
-                    type="date"
-                  />
-
-                  <Field
-                    label="Betreff"
-                    name="subject"
-                    placeholder="Kurze Überschrift für den Verlauf"
-                    className="md:col-span-2"
-                  />
-
-                  <Textarea
-                    label="Notiz / Rückmeldung"
-                    name="note"
-                    className="md:col-span-2"
-                  />
-
-                  <Field
-                    label="Nächster Schritt"
-                    name="next_step"
-                    className="md:col-span-2"
-                  />
-
-                  <SelectField
-                    label="Status danach"
-                    name="status_after"
-                    options={[
-                      "",
-                      "Neu",
-                      "Vorqualifiziert",
-                      "Insta",
-                      "Kontaktiert",
-                      "Follow-up 1",
-                      "Follow-up 2",
-                      "Interesse",
-                      "Verhandlung",
-                      "Gebucht 🎉",
-                      "Abgesagt",
-                    ]}
-                    className="md:col-span-2"
-                  />
-
-                </div>
-
-                <div className="mt-4 flex justify-end">
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const container =
-                        document.getElementById(
-                          "organizer-activity-form"
-                        );
-
-                      if (
-                        !container
-                      ) {
-                        return;
-                      }
-
-                      const formData =
-                        new FormData();
-
-                      container
-                        .querySelectorAll<
-                          | HTMLInputElement
-                          | HTMLSelectElement
-                          | HTMLTextAreaElement
-                        >(
-                          "input[name], select[name], textarea[name]"
-                        )
-                        .forEach(
-                          (
-                            field
-                          ) => {
-                            formData.set(
-                              field.name,
-                              field.value
-                            );
-                          }
-                        );
-
-                      startTransition(
-                        async () => {
-                          const result =
-                            await addActivity(
-                              formData
-                            );
-
-                          setActionMessage(
-                            result.message
-                          );
-
-                          if (
-                            result.success
-                          ) {
-                            setShowActivityForm(
-                              false
-                            );
-                          }
-                        }
-                      );
-                    }}
-                    className="rounded-full bg-zinc-950 px-5 py-2.5 text-sm font-black text-white transition hover:-translate-y-0.5"
-                  >
-                    Eintrag speichern
-                  </button>
-
-                </div>
-
-              </div>
-
-            )}
-
-            {acquisition.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center">
-                <p className="text-sm font-black text-zinc-700">
-                  Noch keine Akquise für diesen Veranstalter.
-                </p>
-                <p className="mt-1 text-sm font-semibold text-zinc-400">
-                  Starte den ersten Vorgang über „+ Neue Akquise“.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-5">
-                {activeAcquisition && (
-                  <div>
-                    <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-                      Aktuell
-                    </p>
-                    <div className="rounded-2xl bg-[#fbf7ef] p-5 ring-1 ring-black/5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-lg font-black text-zinc-950">
-                              {activeAcquisition.program || "Programm offen"}
-                            </span>
-                            <AcquisitionStatus status={activeAcquisition.status} />
-                          </div>
-                          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold text-zinc-600">
-                            <span>
-                              📅 WVL{" "}
-                              <strong className="font-black">
-                                {formatDate(activeAcquisition.next_follow_up_at)}
-                              </strong>
-                            </span>
-                            <span>
-                              Letzter Kontakt{" "}
-                              <strong className="font-black">
-                                {formatDate(activeAcquisition.last_contact_at)}
-                              </strong>
-                            </span>
-                          </div>
-                          {activeAcquisition.next_step && (
-                            <p className="mt-3 text-sm font-semibold text-zinc-700">
-                              → {activeAcquisition.next_step}
-                            </p>
-                          )}
-                        </div>
-                        <Link
-                          href={`/admin/acquisition/${activeAcquisition.id}`}
-                          className="shrink-0 text-sm font-black text-zinc-500 transition hover:text-zinc-950"
-                        >
-                          Vorgang öffnen →
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">
-                    {activeAcquisition ? "Vorgänge" : "Bisherige Vorgänge"}
-                  </p>
-                  <div className="space-y-2">
-                    {acquisition.map((item) => (
-                      <AcquisitionCard
-                        key={item.id}
-                        item={item}
-                        activities={acquisitionActivities.filter(
-                          (activity) => activity.acquisition_id === item.id
-                        )}
-                        isCurrent={activeAcquisition?.id === item.id}
-                        updateActivity={updateActivity}
-                        deleteActivity={deleteActivity}
-                        deleteAcquisition={deleteAcquisition}
-                        setActionMessage={setActionMessage}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-          </Card>
-
-          {/* ================================================= */}
-          {/* SHOWS */}
-          {/* ================================================= */}
-
-          <Card
-            title="Shows dieses Veranstalters"
-            icon="🎟️"
-            description={
-              shows.length === 0
-                ? "Noch keine Show mit diesem Veranstalter verknüpft."
-                : `${shows.length} ${
-                    shows.length === 1
-                      ? "Show"
-                      : "Shows"
-                  } mit diesem Veranstalter verknüpft.`
-            }
-          >
-
-            {shows.length === 0 ? (
-
-              <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center text-sm font-semibold text-zinc-400">
-                Für diesen Veranstalter gibt es aktuell keine verknüpfte Show.
-              </div>
-
-            ) : (
-
-              <div className="overflow-hidden rounded-2xl border border-black/10">
-
-                <div className="divide-y divide-black/5">
-
-                  {shows.map(
-                    (
-                      show
-                    ) => (
-
-                      <Link
-                        key={
-                          show.id
-                        }
-                        href={`/admin/shows/${show.id}`}
-                        className="group flex flex-col gap-3 bg-white px-5 py-4 transition hover:bg-zinc-50 md:flex-row md:items-center md:justify-between"
-                      >
-
-                        <div className="min-w-0">
-
-                          <div className="flex flex-wrap items-center gap-2">
-
-                            <span className="font-black text-zinc-950">
-                              {formatShowDate(
-                                show.show_date
-                              )}
-                            </span>
-
-                            {show.start_time && (
-                              <span className="text-sm font-semibold text-zinc-400">
-                                ·{" "}
-                                {formatShowTime(
-                                  show.start_time
-                                )}
-                              </span>
-                            )}
-
-                            <ShowStatus
-                              status={
-                                show.internal_status
-                              }
-                            />
-
-                          </div>
-
-                          {show.program && (
-                            <div className="mt-1 truncate text-sm font-semibold text-zinc-600">
-                              {show.program}
-                            </div>
-                          )}
-
-                          {(show.venue ||
-                            show.city) && (
-                            <div className="mt-1 truncate text-xs font-semibold text-zinc-400">
-                              📍{" "}
-                              {[
-                                show.venue,
-                                show.city,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </div>
-                          )}
-
-                        </div>
-
-                        <span className="shrink-0 text-sm font-black text-zinc-400 transition group-hover:text-zinc-950">
-                          Show öffnen →
-                        </span>
-
-                      </Link>
-
-                    )
-                  )}
-
-                </div>
-
-              </div>
-
-            )}
-
-          </Card>
-
-          {/* ================================================= */}
           {/* NOTIZEN */}
           {/* ================================================= */}
 
@@ -1923,6 +1913,113 @@ export default function OrganizerClient({
   );
 }
 
+function ExpandableActivityText({
+  note,
+  response,
+}: {
+  note: string | null;
+  response: string | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const combinedLength = (note || "").length + (response || "").length;
+  const canExpand = combinedLength > 150 || (note || "").includes("\n") || (response || "").includes("\n");
+
+  return (
+    <div className="mt-2 min-w-0">
+      {note && (
+        <p className={`${expanded ? "whitespace-pre-line" : "line-clamp-2"} break-words text-sm font-semibold leading-5 text-zinc-700`}>
+          {note}
+        </p>
+      )}
+      {response && (
+        <p className={`${expanded ? "whitespace-pre-line" : "line-clamp-2"} ${note ? "mt-1" : ""} break-words text-sm font-semibold leading-5 text-zinc-500`}>
+          {response}
+        </p>
+      )}
+      {canExpand && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          className="mt-1 text-xs font-black text-blue-700 hover:text-blue-900"
+        >
+          {expanded ? "Weniger anzeigen ↑" : "Mehr anzeigen ↓"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Compact overview; existing contact editor and server actions are reused.
+function ContactCompactCard({
+  contact,
+  updateContact,
+  deleteContact,
+  setActionMessage,
+}: {
+  contact: Contact;
+  updateContact: ServerAction;
+  deleteContact: ServerAction;
+  setActionMessage: (value: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <Card
+      title={contact.name}
+      icon="👤"
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          {contact.is_primary && (
+            <span className="rounded-full bg-lime-200 px-2.5 py-1 text-[10px] font-black text-lime-900">
+              Hauptkontakt
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setEditing((value) => !value)}
+            className="rounded-full bg-[#fbf7ef] px-3 py-2 text-xs font-black text-zinc-700 transition hover:bg-lime-100"
+            aria-expanded={editing}
+          >
+            {editing ? "Schließen" : "✏️ Bearbeiten"}
+          </button>
+        </div>
+      }
+    >
+      {editing ? (
+        <ContactEditForm
+          contact={contact}
+          updateContact={updateContact}
+          deleteContact={deleteContact}
+          close={() => setEditing(false)}
+          setActionMessage={setActionMessage}
+        />
+      ) : (
+        <div className="space-y-2 text-sm">
+          {contact.role && <p className="font-semibold text-zinc-500">{contact.role}</p>}
+          {contact.email && (
+            <a href={`mailto:${contact.email}`} className="block break-all font-semibold text-zinc-700 hover:text-blue-700">
+              ✉️ {contact.email}
+            </a>
+          )}
+          {contact.phone && (
+            <a href={`tel:${contact.phone}`} className="block font-semibold text-zinc-700 hover:text-blue-700">
+              📞 {contact.phone}
+            </a>
+          )}
+          {contact.notes && (
+            <p className="line-clamp-2 whitespace-pre-line text-xs font-medium text-zinc-500" title={contact.notes}>
+              {contact.notes}
+            </p>
+          )}
+          {!contact.role && !contact.email && !contact.phone && !contact.notes && (
+            <p className="text-zinc-400">Noch keine weiteren Kontaktdaten.</p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 // ============================================================
 // CONTACT VIEW
@@ -1980,7 +2077,6 @@ function ContactView({
   );
 }
 
-
 // ============================================================
 // CONTACT EDIT
 // ============================================================
@@ -1991,6 +2087,7 @@ function ContactEditForm({
   deleteContact,
   close,
   setActionMessage,
+  alwaysOpen = false,
 }: {
   contact: Contact;
   updateContact: ServerAction;
@@ -2002,6 +2099,7 @@ function ContactEditForm({
         | string
         | null
     ) => void;
+  alwaysOpen?: boolean;
 }) {
   return (
     <div
@@ -2210,7 +2308,6 @@ function ContactEditForm({
   );
 }
 
-
 // ============================================================
 // NEW CONTACT
 // ============================================================
@@ -2361,7 +2458,6 @@ function ContactNewForm({
     </div>
   );
 }
-
 
 // ============================================================
 // VENUE ROW
@@ -2586,7 +2682,6 @@ function VenueRow({
   );
 }
 
-
 // ============================================================
 // VENUE SEARCH RESULT
 // ============================================================
@@ -2697,7 +2792,6 @@ function VenueSearchResult({
     </div>
   );
 }
-
 
 // ============================================================
 // NEW VENUE
@@ -2862,7 +2956,6 @@ function NewVenueForm({
   );
 }
 
-
 // ============================================================
 // ACQUISITION CARD
 // ============================================================
@@ -2978,7 +3071,7 @@ function AcquisitionCard({
                             👁️
                           </button>
                         )}
-                        <button
+                        {!activity.id.startsWith("legacy-") && <button
                           type="button"
                           onClick={() =>
                             setEditingActivityId(
@@ -2989,8 +3082,8 @@ function AcquisitionCard({
                           title="Kontakteintrag bearbeiten"
                         >
                           ✏️
-                        </button>
-                        <button
+                        </button>}
+                        {!activity.id.startsWith("legacy-") && <button
                           type="button"
                           title="Kontakteintrag löschen"
                           onClick={() => {
@@ -3005,7 +3098,7 @@ function AcquisitionCard({
                           className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm shadow-sm ring-1 ring-black/5 transition hover:bg-red-50"
                         >
                           🗑️
-                        </button>
+                        </button>}
                       </div>
                     </div>
                   </div>
@@ -3102,7 +3195,6 @@ function AcquisitionCard({
   );
 }
 
-
 // ============================================================
 // CARD
 // ============================================================
@@ -3163,7 +3255,6 @@ function Card({
   );
 }
 
-
 // ============================================================
 // FIELD
 // ============================================================
@@ -3223,7 +3314,6 @@ function Field({
   );
 }
 
-
 // ============================================================
 // READ FIELD
 // ============================================================
@@ -3265,7 +3355,6 @@ function ReadField({
     </div>
   );
 }
-
 
 // ============================================================
 // SELECT
@@ -3330,7 +3419,6 @@ function SelectField({
   );
 }
 
-
 // ============================================================
 // TEXTAREA
 // ============================================================
@@ -3371,7 +3459,6 @@ function Textarea({
     </label>
   );
 }
-
 
 // ============================================================
 // STATUS
@@ -3444,7 +3531,6 @@ function AcquisitionStatus({
   );
 }
 
-
 // ============================================================
 // SHOW DATUM
 // ============================================================
@@ -3470,7 +3556,6 @@ function formatShowDate(
   );
 }
 
-
 // ============================================================
 // SHOW UHRZEIT
 // ============================================================
@@ -3487,7 +3572,6 @@ function formatShowTime(
     5
   )} Uhr`;
 }
-
 
 // ============================================================
 // SHOW STATUS
@@ -3557,7 +3641,6 @@ function ShowStatus({
   );
 }
 
-
 // ============================================================
 // HELPERS
 // ============================================================
@@ -3577,7 +3660,6 @@ function todayDate() {
     .toISOString()
     .slice(0, 10);
 }
-
 
 function activityIcon(activityType?: string | null, channel?: string | null) {
   const type = String(activityType || "").toLowerCase();
@@ -3629,7 +3711,6 @@ function formatDate(
   );
 }
 
-
 function normalizeUrl(
   value: string
 ) {
@@ -3646,3 +3727,170 @@ function normalizeUrl(
 
   return `https://${value}`;
 }
+
+type ContactEvent = { acquisitionId: string; date: string; timestamp: string };
+
+function followUpState(
+  dueDate: string | null | undefined,
+  override: string | null | undefined,
+  acquisitionId: string,
+  originDate: string,
+  originTimestamp: string,
+  contactEvents: ContactEvent[]
+) {
+  if (!dueDate) return null;
+  const next = contactEvents
+    .filter((event) => event.acquisitionId === acquisitionId &&
+      (event.date > originDate || (event.date === originDate && event.timestamp > originTimestamp)))
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))[0];
+  const done = override === "done" || (override !== "open" && Boolean(next));
+  return { dueDate, done, completedDate: next?.date || null };
+}
+
+function FollowUpLabel({ state }: { state: ReturnType<typeof followUpState> }) {
+  if (!state) return null;
+  return (
+    <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-black ${state.done ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+      {state.done ? `✓ Erledigt${state.completedDate ? ` am ${formatAcquisitionDate(state.completedDate)}` : ""}` : `WVL ${formatAcquisitionDate(state.dueDate)}`}
+    </span>
+  );
+}
+
+function formatTimelineTime(value: string | null | undefined) {
+  if (!value || !value.includes("T")) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(parsed);
+}
+
+function TimelineLine({ date, timestamp, icon, title, label, status, children }: {
+  date: string | null; timestamp?: string | null; icon: string; title: string; label?: string;
+  status?: ReactNode; children?: ReactNode;
+}) {
+  return (
+    <details className="group min-w-0 py-4">
+      <summary className="flex w-full min-w-0 cursor-pointer list-none items-center gap-3 rounded-lg py-1 text-left hover:bg-zinc-50 [&::-webkit-details-marker]:hidden">
+        <span className="w-[82px] shrink-0 text-xs font-bold text-zinc-700">
+          {formatAcquisitionDate(date)}
+          {formatTimelineTime(timestamp) && <span className="mt-1 block font-medium text-zinc-400">{formatTimelineTime(timestamp)}</span>}
+        </span>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-50 text-amber-800">
+          <span className="text-lg leading-none">{icon}</span>
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-bold text-zinc-900" title={title}>{title}</span>
+        {status && <span className="hidden shrink-0 items-center gap-1 sm:flex">{status}</span>}
+        <span className="shrink-0 text-zinc-500 group-open:hidden">⌄</span>
+        <span className="hidden shrink-0 text-zinc-500 group-open:inline">⌃</span>
+      </summary>
+      <div className="mt-3 space-y-2 rounded-xl bg-[#fffdf8] p-4 text-sm text-zinc-700">
+        {label && <p className="text-xs font-semibold text-zinc-500">{label}</p>}
+        {children}
+        {status && <div className="flex flex-wrap gap-1 sm:hidden">{status}</div>}
+      </div>
+    </details>
+  );
+}
+
+function LocationEmailRow({ mail, parent, contactEvents }: { mail: CrmEmail; parent?: AcquisitionRecord; contactEvents: ContactEvent[] }) {
+  const stamp = mail.sent_at || mail.received_at || mail.created_at || "";
+  const date = stamp.slice(0, 10);
+  const outgoing = mail.direction !== "incoming";
+  const followUp = followUpState(mail.follow_up_at, mail.follow_up_status_override, mail.acquisition_id, date, stamp, contactEvents);
+  return (
+    <TimelineLine date={date} timestamp={stamp} icon={outgoing ? "✉️" : "📩"} title={mail.subject || "Ohne Betreff"}
+      label={`${outgoing ? "E-Mail gesendet" : "E-Mail empfangen"}${parent?.program ? ` · ${parent.program}` : ""}`}
+      status={<FollowUpLabel state={followUp} />}>
+      <p className="break-all text-xs font-semibold text-zinc-500">{outgoing ? "An" : "Von"}: {outgoing ? (mail.to_emails ?? []).join(", ") || "—" : mail.from_email || "—"}</p>
+      <p className="mt-2 whitespace-pre-wrap break-words leading-6">{mail.body_text || "Kein Nachrichtentext vorhanden."}</p>
+      {parent && <Link href={`/admin/acquisition/${parent.id}`} className="mt-3 inline-block text-xs font-black text-blue-700">Akquise öffnen →</Link>}
+    </TimelineLine>
+  );
+}
+
+function LocationMailingRow({ mailing }: { mailing: MailingHistoryItem }) {
+  const date = (mailing.sent_at || mailing.scheduled_at || mailing.created_at || "").slice(0, 10);
+  return (
+    <TimelineLine date={date} timestamp={mailing.sent_at || mailing.scheduled_at || mailing.created_at} icon="📨" title={mailing.round_name || "Newsletter"} label="Newsletter"
+      status={<span className="flex flex-wrap gap-1">
+        {mailing.opened_at && <span className="rounded-md bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">👁 Geöffnet</span>}
+        {mailing.clicked_at && <span className="rounded-md bg-lime-50 px-2 py-1 text-[10px] font-black text-lime-800">🔗 Geklickt</span>}
+        {mailing.unsubscribed_at && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-black text-red-700">🚫 Abgemeldet</span>}
+        {mailing.bounced_at && <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-700">⚠️ Unzustellbar</span>}
+      </span>}>
+      {mailing.email && <p className="break-all text-xs font-semibold text-zinc-500">An: {mailing.email}</p>}
+      {mailing.sent_at && <p className="mt-2">Versendet: {formatDateTime(mailing.sent_at)}</p>}
+      {mailing.opened_at && <p>Geöffnet: {formatDateTime(mailing.opened_at)}</p>}
+      {mailing.clicked_at && <p>Geklickt: {formatDateTime(mailing.clicked_at)}</p>}
+      {mailing.last_clicked_url && <p className="break-all">Link: <a className="text-blue-700 underline" href={normalizeUrl(mailing.last_clicked_url)} target="_blank" rel="noreferrer">{mailing.last_clicked_url}</a></p>}
+      {mailing.unsubscribed_at && <p>Abgemeldet: {formatDateTime(mailing.unsubscribed_at)}</p>}
+      {mailing.bounced_at && <p>Unzustellbar: {formatDateTime(mailing.bounced_at)}</p>}
+      {mailing.reaction && <p className="mt-2">Reaktion: {mailing.reaction}</p>}
+      {mailing.notes && <p className="mt-2 whitespace-pre-wrap">{mailing.notes}</p>}
+      {mailing.acquisition_id && <Link href={`/admin/acquisition/${mailing.acquisition_id}`} className="mt-3 inline-block text-xs font-black text-blue-700">Akquise öffnen →</Link>}
+    </TimelineLine>
+  );
+}
+
+function LocationActivityRow({ activity, parent, contactEvents, deleteActivity, setActionMessage }: {
+  activity: AcquisitionActivity; parent?: AcquisitionRecord; contactEvents: ContactEvent[];
+  deleteActivity?: (formData: FormData) => Promise<ActionResult>;
+  setActionMessage: (message: string | null) => void;
+}) {
+  const legacy = activity.id.startsWith("legacy-");
+  const stamp = activity.created_at || `${activity.activity_date}T23:59:59`;
+  const followUp = followUpState(activity.follow_up_at, activity.follow_up_status_override, activity.acquisition_id, activity.activity_date, stamp, contactEvents);
+  return (
+    <TimelineLine date={activity.activity_date} timestamp={activity.created_at} icon={activityIcon(activity.activity_type, activity.channel)}
+      title={activity.note?.split("\n")[0] || activity.activity_type || "Kontakt"}
+      label={[activity.activity_type, activity.channel && `via ${activity.channel}`, parent?.program].filter(Boolean).join(" · ")}
+      status={<FollowUpLabel state={followUp} />}>
+      {activity.note && <p className="whitespace-pre-wrap break-words">{activity.note}</p>}
+      {activity.response && <p className="mt-2 whitespace-pre-wrap break-words"><strong>Rückmeldung:</strong> {activity.response}</p>}
+      {activity.next_step && <p className="mt-2"><strong>Nächster Schritt:</strong> {activity.next_step}</p>}
+      {activity.status_after && <p className="mt-2">Status: {activity.status_after}</p>}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        {parent && <Link href={`/admin/acquisition/${parent.id}`} className="text-xs font-black text-blue-700">Akquise öffnen →</Link>}
+        {!legacy && deleteActivity && parent && <button type="button" className="text-xs font-black text-red-600" onClick={async () => {
+          if (!window.confirm("Diesen Kontakteintrag wirklich löschen?")) return;
+          const formData = new FormData();
+          formData.set("activity_id", activity.id);
+          formData.set("acquisition_id", parent.id);
+          const result = await deleteActivity(formData);
+          setActionMessage(result.message);
+        }}>🗑️ Eintrag löschen</button>}
+      </div>
+    </TimelineLine>
+  );
+}
+
+function formatDateTime(date: string | null) {
+  if (!date) return "—";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return date;
+
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+
+function formatAcquisitionDate(date: string | null) {
+  if (!date) return "—";
+
+  const parsed = new Date(date);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return date;
+  }
+
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(parsed);
+}
+

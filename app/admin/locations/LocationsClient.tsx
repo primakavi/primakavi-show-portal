@@ -1,7 +1,5 @@
 "use client";
 
-
-
 import Link from "next/link";
 
 import {
@@ -18,15 +16,11 @@ import {
 
 import { useRouter, useSearchParams } from "next/navigation";
 
-
-
 type Venue = {
 
   id: string;
 
   legacy_id: string | null;
-
-
 
   name: string;
 
@@ -40,17 +34,11 @@ type Venue = {
 
   country: string | null;
 
-
-
   website: string | null;
-
-
 
   capacity: number | null;
 
   venue_type: string | null;
-
-
 
   contact_name: string | null;
 
@@ -58,45 +46,29 @@ type Venue = {
 
   contact_phone: string | null;
 
-
-
   contact_name_2: string | null;
 
   contact_email_2: string | null;
 
   contact_phone_2: string | null;
 
-
-
   booking_email: string | null;
 
-
-
   relationship_status: string | null;
-
-
 
   internal_notes: string | null;
 
   special_notes: string | null;
 
-
-
   lat: number | string | null;
 
   lng: number | string | null;
 
-
-
   played_before: boolean | null;
-
-
 
   season_notes: string | null;
 
   program_focus: string[] | null;
-
-
 
   instagram_url: string | null;
 
@@ -104,20 +76,24 @@ type Venue = {
 
   logo_url: string | null;
 
-
-
   created_at: string | null;
 
   updated_at: string | null;
 
   // serverseitig abgeleiteter Akquise-/Kontaktstatus
+
   has_open_follow_up?: boolean;
+
   next_follow_up_at?: string | null;
+
   received_latest_newsletter?: boolean;
+
   received_package?: boolean;
+  acquisition_status?: string;
+  linked_organizer_names?: string[];
+  has_overdue_follow_up?: boolean;
+
 };
-
-
 
 type SortKey =
 
@@ -131,22 +107,22 @@ type SortKey =
 
   | "capacity";
 
-
-
 type SortDirection = "asc" | "desc";
 
 type ContactFilter =
+
   | "alle"
+
   | "anschreibbar"
+
   | "wvl"
+
   | "newsletter"
-  | "paeckchen";
 
-
+  | "paeckchen"
+  | "ueberfaellig";
 
 const PAGE_SIZE = 20;
-
-
 
 export default function LocationsClient({
 
@@ -162,13 +138,9 @@ export default function LocationsClient({
 
   const searchParams = useSearchParams();
 
-
-
   const [search, setSearch] =
 
     useState(() => searchParams.get("q") || "");
-
-
 
   const [
 
@@ -178,38 +150,33 @@ export default function LocationsClient({
 
   ] = useState(() => searchParams.get("relationship") || "alle");
 
-
-
   const [stateFilter, setStateFilter] =
 
     useState(() => searchParams.get("state") || "alle");
 
   const [contactFilter, setContactFilter] = useState<ContactFilter>(() => {
+
     const value = searchParams.get("contact");
-    return ["anschreibbar", "wvl", "newsletter", "paeckchen"].includes(value || "")
+
+    return ["anschreibbar", "wvl", "newsletter", "paeckchen", "ueberfaellig", "ohne_akquise", "interesse", "rueckmeldung", "abgesagt", "gebucht"].includes(value || "")
+
       ? (value as ContactFilter)
+
       : "alle";
+
   });
-
-
 
   const [missingCoordinatesOnly, setMissingCoordinatesOnly] =
 
     useState(() => searchParams.get("missingCoordinates") === "1");
 
-
-
   const [isGeocoding, setIsGeocoding] =
 
     useState(false);
 
-
-
   const [geocodeMessage, setGeocodeMessage] =
 
     useState<string | null>(null);
-
-
 
   const [page, setPage] =
 
@@ -220,8 +187,6 @@ export default function LocationsClient({
       return Number.isFinite(value) && value > 0 ? value : 1;
 
     });
-
-
 
   const [sortKey, setSortKey] =
 
@@ -241,8 +206,6 @@ export default function LocationsClient({
 
     });
 
-
-
   const [
 
     sortDirection,
@@ -255,8 +218,6 @@ export default function LocationsClient({
 
   );
 
-
-
   // Aktuelle Listenansicht in der URL halten.
 
   // Dadurch bleiben Filter, Sortierung und Seite beim Zurückkehren erhalten.
@@ -264,8 +225,6 @@ export default function LocationsClient({
   useEffect(() => {
 
     const params = new URLSearchParams();
-
-
 
     if (search.trim()) params.set("q", search.trim());
 
@@ -276,6 +235,7 @@ export default function LocationsClient({
     }
 
     if (stateFilter !== "alle") params.set("state", stateFilter);
+
     if (contactFilter !== "alle") params.set("contact", contactFilter);
 
     if (missingCoordinatesOnly) params.set("missingCoordinates", "1");
@@ -285,8 +245,6 @@ export default function LocationsClient({
     if (sortKey !== "name") params.set("sort", sortKey);
 
     if (sortDirection !== "asc") params.set("direction", sortDirection);
-
-
 
     const query = params.toString();
 
@@ -318,13 +276,9 @@ export default function LocationsClient({
 
   ]);
 
-
-
   function currentLocationsUrl() {
 
     const params = new URLSearchParams();
-
-
 
     if (search.trim()) params.set("q", search.trim());
 
@@ -335,6 +289,7 @@ export default function LocationsClient({
     }
 
     if (stateFilter !== "alle") params.set("state", stateFilter);
+
     if (contactFilter !== "alle") params.set("contact", contactFilter);
 
     if (missingCoordinatesOnly) params.set("missingCoordinates", "1");
@@ -345,21 +300,15 @@ export default function LocationsClient({
 
     if (sortDirection !== "asc") params.set("direction", sortDirection);
 
-
-
     const query = params.toString();
 
     return query ? `/admin/locations?${query}` : "/admin/locations";
 
   }
 
-
-
   function openLocation(venueId: string) {
 
     const returnTo = currentLocationsUrl();
-
-
 
     router.push(
 
@@ -369,15 +318,11 @@ export default function LocationsClient({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // FILTEROPTIONEN
 
   // ------------------------------------------------------------
-
-
 
   const relationshipStatuses =
 
@@ -415,8 +360,6 @@ export default function LocationsClient({
 
     }, [venues]);
 
-
-
   const states = useMemo(() => {
 
     return Array.from(
@@ -445,15 +388,11 @@ export default function LocationsClient({
 
   }, [venues]);
 
-
-
   // ------------------------------------------------------------
 
   // FILTERN
 
   // ------------------------------------------------------------
-
-
 
   const filteredVenues =
 
@@ -464,8 +403,6 @@ export default function LocationsClient({
         .trim()
 
         .toLowerCase();
-
-
 
       return venues.filter(
 
@@ -487,8 +424,6 @@ export default function LocationsClient({
 
           }
 
-
-
           if (
 
             stateFilter !== "alle" &&
@@ -500,8 +435,6 @@ export default function LocationsClient({
             return false;
 
           }
-
-
 
           if (
 
@@ -518,41 +451,65 @@ export default function LocationsClient({
           }
 
           // Akquise-/Kontaktfilter
+
           if (contactFilter === "wvl" && !venue.has_open_follow_up) {
+
             return false;
+
           }
 
           if (
+
             contactFilter === "newsletter" &&
+
             !venue.received_latest_newsletter
+
           ) {
+
             return false;
+
           }
 
           if (
+
             contactFilter === "paeckchen" &&
+
             !venue.received_package
+
           ) {
+
             return false;
+
           }
 
-          if (contactFilter === "anschreibbar") {
+          if (contactFilter === "ueberfaellig" && !venue.has_overdue_follow_up) return false;
+        if (contactFilter === "anschreibbar") {
+
             // Eine offene WVL sperrt bis zu ihrem Datum.
+
             // Empfänger des letzten Veranstalter-Newsletters sollen ebenfalls
+
             // nicht direkt erneut angeschrieben werden.
+
             // Ein früheres Päckchen allein sperrt nicht dauerhaft; maßgeblich
+
             // ist dafür die offene WVL.
+
             if (
+
               venue.has_open_follow_up ||
+
               venue.received_latest_newsletter
+
             ) {
+
               return false;
+
             }
+
           }
 
           if (!needle) return true;
-
-
 
           const haystack = [
 
@@ -579,6 +536,7 @@ export default function LocationsClient({
             venue.special_notes,
 
             venue.season_notes,
+          ...(venue.linked_organizer_names || []),
 
           ]
 
@@ -587,8 +545,6 @@ export default function LocationsClient({
             .join(" ")
 
             .toLowerCase();
-
-
 
           return haystack.includes(
 
@@ -616,15 +572,11 @@ export default function LocationsClient({
 
     ]);
 
-
-
   // ------------------------------------------------------------
 
   // SORTIEREN
 
   // ------------------------------------------------------------
-
-
 
   const sortedVenues =
 
@@ -636,8 +588,6 @@ export default function LocationsClient({
 
       ];
 
-
-
       result.sort((a, b) => {
 
         let valueA:
@@ -648,8 +598,6 @@ export default function LocationsClient({
 
           | null = null;
 
-
-
         let valueB:
 
           | string
@@ -657,8 +605,6 @@ export default function LocationsClient({
           | number
 
           | null = null;
-
-
 
         if (sortKey === "name") {
 
@@ -668,8 +614,6 @@ export default function LocationsClient({
 
         }
 
-
-
         if (sortKey === "city") {
 
           valueA = a.city;
@@ -677,8 +621,6 @@ export default function LocationsClient({
           valueB = b.city;
 
         }
-
-
 
         if (sortKey === "contact") {
 
@@ -690,8 +632,6 @@ export default function LocationsClient({
 
             "";
 
-
-
           valueB =
 
             b.contact_name ||
@@ -701,8 +641,6 @@ export default function LocationsClient({
             "";
 
         }
-
-
 
         if (
 
@@ -718,8 +656,6 @@ export default function LocationsClient({
 
             "";
 
-
-
           valueB =
 
             b.relationship_status ||
@@ -727,8 +663,6 @@ export default function LocationsClient({
             "";
 
         }
-
-
 
         if (
 
@@ -742,8 +676,6 @@ export default function LocationsClient({
 
         }
 
-
-
         const emptyA =
 
           valueA === null ||
@@ -751,8 +683,6 @@ export default function LocationsClient({
           valueA === undefined ||
 
           valueA === "";
-
-
 
         const emptyB =
 
@@ -762,15 +692,11 @@ export default function LocationsClient({
 
           valueB === "";
 
-
-
         if (emptyA && !emptyB) {
 
           return 1;
 
         }
-
-
 
         if (!emptyA && emptyB) {
 
@@ -778,19 +704,13 @@ export default function LocationsClient({
 
         }
 
-
-
         if (emptyA && emptyB) {
 
           return 0;
 
         }
 
-
-
         let comparison = 0;
-
-
 
         if (
 
@@ -834,8 +754,6 @@ export default function LocationsClient({
 
         }
 
-
-
         return sortDirection ===
 
           "asc"
@@ -845,8 +763,6 @@ export default function LocationsClient({
           : -comparison;
 
       });
-
-
 
       return result;
 
@@ -860,15 +776,11 @@ export default function LocationsClient({
 
     ]);
 
-
-
   // ------------------------------------------------------------
 
   // PAGINATION
 
   // ------------------------------------------------------------
-
-
 
   const totalPages = Math.max(
 
@@ -884,8 +796,6 @@ export default function LocationsClient({
 
   );
 
-
-
   const currentPage = Math.min(
 
     page,
@@ -893,8 +803,6 @@ export default function LocationsClient({
     totalPages
 
   );
-
-
 
   const paginatedVenues =
 
@@ -905,8 +813,6 @@ export default function LocationsClient({
         (currentPage - 1) *
 
         PAGE_SIZE;
-
-
 
       return sortedVenues.slice(
 
@@ -924,15 +830,11 @@ export default function LocationsClient({
 
     ]);
 
-
-
   // ------------------------------------------------------------
 
   // STATS
 
   // ------------------------------------------------------------
-
-
 
   const withContact =
 
@@ -948,8 +850,6 @@ export default function LocationsClient({
 
     ).length;
 
-
-
   const playedBefore =
 
     venues.filter(
@@ -959,8 +859,6 @@ export default function LocationsClient({
         venue.played_before === true
 
     ).length;
-
-
 
   const missingCoordinates =
 
@@ -974,15 +872,11 @@ export default function LocationsClient({
 
     ).length;
 
-
-
   // ------------------------------------------------------------
 
   // ACTIONS
 
   // ------------------------------------------------------------
-
-
 
   function resetFilters() {
 
@@ -991,6 +885,7 @@ export default function LocationsClient({
     setRelationshipFilter("alle");
 
     setStateFilter("alle");
+
     setContactFilter("alle");
 
     setMissingCoordinatesOnly(false);
@@ -998,8 +893,6 @@ export default function LocationsClient({
     setPage(1);
 
   }
-
-
 
   function updateSearch(
 
@@ -1013,8 +906,6 @@ export default function LocationsClient({
 
   }
 
-
-
   function updateRelationship(
 
     value: string
@@ -1026,8 +917,6 @@ export default function LocationsClient({
     setPage(1);
 
   }
-
-
 
   function updateState(
 
@@ -1041,11 +930,12 @@ export default function LocationsClient({
 
   }
 
-
-
   function updateContactFilter(value: string) {
+
     setContactFilter(value as ContactFilter);
+
     setPage(1);
+
   }
 
   function changeSort(
@@ -1076,21 +966,15 @@ export default function LocationsClient({
 
     }
 
-
-
     setPage(1);
 
   }
-
-
 
   function showAllLocations() {
 
     resetFilters();
 
   }
-
-
 
   function showMissingCoordinates() {
 
@@ -1100,19 +984,13 @@ export default function LocationsClient({
 
   }
 
-
-
   async function geocodeMissingVenues() {
 
     if (isGeocoding) return;
 
-
-
     setIsGeocoding(true);
 
     setGeocodeMessage(null);
-
-
 
     try {
 
@@ -1122,19 +1000,13 @@ export default function LocationsClient({
 
       });
 
-
-
       const data = await response.json();
-
-
 
       if (!response.ok) {
 
         throw new Error(data?.error || "Geocoding fehlgeschlagen.");
 
       }
-
-
 
       setGeocodeMessage(
 
@@ -1143,8 +1015,6 @@ export default function LocationsClient({
           (data.failed ? ` · ${data.failed} nicht gefunden` : "")
 
       );
-
-
 
       router.refresh();
 
@@ -1168,15 +1038,11 @@ export default function LocationsClient({
 
   }
 
-
-
   function exportPdf() {
 
     window.print();
 
   }
-
-
 
   // ------------------------------------------------------------
 
@@ -1184,15 +1050,11 @@ export default function LocationsClient({
 
   // ------------------------------------------------------------
 
-
-
   const activeFilterText =
 
     useMemo(() => {
 
       const parts: string[] = [];
-
-
 
       if (search.trim()) {
 
@@ -1203,8 +1065,6 @@ export default function LocationsClient({
         );
 
       }
-
-
 
       if (
 
@@ -1222,8 +1082,6 @@ export default function LocationsClient({
 
       }
 
-
-
       if (
 
         stateFilter !== "alle"
@@ -1238,17 +1096,26 @@ export default function LocationsClient({
 
       }
 
-
-
       if (contactFilter !== "alle") {
+
       const labels: Record<ContactFilter, string> = {
+
         alle: "Alle",
+
         anschreibbar: "Jetzt anschreibbar",
+
         wvl: "WVL offen",
+
         newsletter: "Letzten Newsletter erhalten",
+
         paeckchen: "Päckchen erhalten",
+      ueberfaellig: "WVL überfällig",
+
+
       };
-      parts.push(`Akquise: ${labels[contactFilter]}`);
+
+      parts.push(`Kontakt & Mailings: ${labels[contactFilter]}`);
+
     }
 
     if (missingCoordinatesOnly) {
@@ -1260,8 +1127,6 @@ export default function LocationsClient({
         );
 
       }
-
-
 
       return parts.length
 
@@ -1281,15 +1146,11 @@ export default function LocationsClient({
 
     ]);
 
-
-
   // ------------------------------------------------------------
 
   // RENDER
 
   // ------------------------------------------------------------
-
-
 
   return (
 
@@ -1299,17 +1160,11 @@ export default function LocationsClient({
 
           NORMALE CRM-ANSICHT
 
-      \====================================================== */}
-
-
+      \\====================================================== */}
 
       <div className="space-y-5 text-zinc-950 sm:space-y-6 print:hidden">
 
-
-
         {/* HEADER */}
-
-
 
         <header className="flex flex-col gap-5 px-1 py-3 md:flex-row md:items-end md:justify-between">
 
@@ -1321,15 +1176,11 @@ export default function LocationsClient({
 
             </p>
 
-
-
             <h1 className="mt-2 text-5xl font-black tracking-tight">
 
               Locations
 
             </h1>
-
-
 
             <p className="mt-2 text-zinc-500">
 
@@ -1342,8 +1193,6 @@ export default function LocationsClient({
             </p>
 
           </div>
-
-
 
           <div className="flex flex-wrap items-center gap-2">
 
@@ -1379,8 +1228,6 @@ export default function LocationsClient({
 
             </button>
 
-
-
             <Link
 
               href="/admin/locations/new"
@@ -1389,25 +1236,17 @@ export default function LocationsClient({
 
             >
 
-              + Neue Location
+              \+ Neue Location
 
             </Link>
-
-
 
           </div>
 
         </header>
 
-
-
         {/* STATS */}
 
-
-
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-
-
 
           <StatCard
 
@@ -1421,8 +1260,6 @@ export default function LocationsClient({
 
           />
 
-
-
           <StatCard
 
             icon="👤"
@@ -1433,8 +1270,6 @@ export default function LocationsClient({
 
           />
 
-
-
           <StatCard
 
             icon="🎤"
@@ -1444,8 +1279,6 @@ export default function LocationsClient({
             label="schon gespielt"
 
           />
-
-
 
           <StatCard
 
@@ -1465,11 +1298,7 @@ export default function LocationsClient({
 
           />
 
-
-
         </section>
-
-
 
         {missingCoordinatesOnly && missingCoordinates > 0 && (
 
@@ -1501,8 +1330,6 @@ export default function LocationsClient({
 
             </div>
 
-
-
             <button
 
               type="button"
@@ -1527,31 +1354,19 @@ export default function LocationsClient({
 
         )}
 
-
-
         {/* FILTER */}
-
-
 
         <section className="rounded-[1.7rem] bg-white p-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
 
-
-
           <div className="grid gap-3 xl:grid-cols-[1fr_210px_210px_230px_auto]">
 
-
-
             <div className="relative">
-
-
 
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">
 
                 🔎
 
               </span>
-
-
 
               <input
 
@@ -1575,11 +1390,7 @@ export default function LocationsClient({
 
               />
 
-
-
             </div>
-
-
 
             <select
 
@@ -1603,15 +1414,11 @@ export default function LocationsClient({
 
             >
 
-
-
               <option value="alle">
 
                 Alle Beziehungen
 
               </option>
-
-
 
               {relationshipStatuses.map(
 
@@ -1633,11 +1440,7 @@ export default function LocationsClient({
 
               )}
 
-
-
             </select>
-
-
 
             <select
 
@@ -1657,15 +1460,11 @@ export default function LocationsClient({
 
             >
 
-
-
               <option value="alle">
 
                 Alle Bundesländer
 
               </option>
-
-
 
               {states.map(
 
@@ -1687,22 +1486,30 @@ export default function LocationsClient({
 
               )}
 
-
-
             </select>
 
-
-
             <select
+
               value={contactFilter}
+
               onChange={(e) => updateContactFilter(e.target.value)}
+
               className="h-12 rounded-xl bg-[#fbf7ef] px-4 text-sm font-bold outline-none"
+
             >
-              <option value="alle">Alle Akquise-Status</option>
+
+              <option value="alle">Kontakt & Mailings</option>
+
               <option value="anschreibbar">🟢 Jetzt anschreibbar</option>
+
               <option value="wvl">⏳ WVL offen</option>
+
               <option value="newsletter">📰 Letzten Newsletter erhalten</option>
+
               <option value="paeckchen">📦 Päckchen erhalten</option>
+            <option value="ueberfaellig">🔴 WVL überfällig</option>
+
+
             </select>
 
             <button
@@ -1719,15 +1526,9 @@ export default function LocationsClient({
 
             </button>
 
-
-
           </div>
 
-
-
           {/* FILTERERGEBNIS */}
-
-
 
           {(search.trim() ||
 
@@ -1738,13 +1539,12 @@ export default function LocationsClient({
             stateFilter !==
 
               "alle" ||
+
             contactFilter !== "alle" ||
 
             missingCoordinatesOnly) && (
 
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/5 px-1 pt-3">
-
-
 
               <span className="text-xs font-black text-zinc-600">
 
@@ -1760,15 +1560,11 @@ export default function LocationsClient({
 
               </span>
 
-
-
               <span className="text-zinc-300">
 
                 ·
 
               </span>
-
-
 
               <span className="text-xs font-semibold text-zinc-400">
 
@@ -1776,57 +1572,40 @@ export default function LocationsClient({
 
               </span>
 
-
-
             </div>
 
           )}
 
-
-
         </section>
-
-
 
         {/* TABLE */}
 
-
-
         <section className="overflow-hidden rounded-[1.7rem] bg-white shadow-xl shadow-black/[0.04] ring-1 ring-black/5">
-
-
 
           <div className="overflow-x-auto">
 
-
-
             <table className="w-full table-fixed border-collapse">
-
-
 
               <colgroup>
 
                 <col className="w-[25%]" />
 
-                <col className="w-[17%]" />
+                <col className="w-[15%]" />
 
                 <col className="w-[22%]" />
 
-                <col className="w-[15%]" />
+                <col className="w-[14%]" />
 
                 <col className="w-[8%]" />
 
-                <col className="w-[13%]" />
+                <col className="w-[16%]" />
+
 
               </colgroup>
-
-
 
               <thead>
 
                 <tr className="border-b border-black/5 bg-zinc-50/70 text-left">
-
-
 
                   <SortableHead
 
@@ -1850,8 +1629,6 @@ export default function LocationsClient({
 
                   />
 
-
-
                   <SortableHead
 
                     label="Ort"
@@ -1873,8 +1650,6 @@ export default function LocationsClient({
                     }
 
                   />
-
-
 
                   <SortableHead
 
@@ -1898,8 +1673,6 @@ export default function LocationsClient({
 
                   />
 
-
-
                   <SortableHead
 
                     label="Beziehung"
@@ -1921,8 +1694,6 @@ export default function LocationsClient({
                     }
 
                   />
-
-
 
                   <SortableHead
 
@@ -1946,31 +1717,21 @@ export default function LocationsClient({
 
                   />
 
-
-
                   <TableHead>
 
                     Notiz
 
                   </TableHead>
 
-
-
                 </tr>
 
               </thead>
 
-
-
               <tbody>
-
-
 
                 {paginatedVenues.map(
 
                   (venue) => {
-
-
 
                     const email =
 
@@ -1980,15 +1741,11 @@ export default function LocationsClient({
 
                       venue.contact_email_2;
 
-
-
                     const contact =
 
                       venue.contact_name ||
 
                       venue.contact_name_2;
-
-
 
                     const note =
 
@@ -1997,8 +1754,6 @@ export default function LocationsClient({
                       venue.special_notes ||
 
                       venue.season_notes;
-
-
 
                     return (
 
@@ -2016,11 +1771,7 @@ export default function LocationsClient({
 
                       >
 
-
-
                         {/* LOCATION */}
-
-
 
                         <td className="px-5 py-3">
 
@@ -2032,15 +1783,9 @@ export default function LocationsClient({
 
                         </td>
 
-
-
                         {/* ORT */}
 
-
-
                         <td className="px-5 py-3">
-
-
 
                           <p className="truncate text-sm font-bold">
 
@@ -2068,8 +1813,6 @@ export default function LocationsClient({
 
                           </p>
 
-
-
                           <p className="mt-0.5 truncate text-xs text-zinc-400">
 
                             {venue.state ||
@@ -2078,19 +1821,11 @@ export default function LocationsClient({
 
                           </p>
 
-
-
                         </td>
-
-
 
                         {/* KONTAKT */}
 
-
-
                         <td className="px-5 py-3">
-
-
 
                           <p className="truncate text-sm font-bold">
 
@@ -2100,8 +1835,6 @@ export default function LocationsClient({
 
                           </p>
 
-
-
                           <p className="mt-0.5 truncate text-xs text-zinc-500">
 
                             {email ||
@@ -2110,19 +1843,11 @@ export default function LocationsClient({
 
                           </p>
 
-
-
                         </td>
-
-
 
                         {/* BEZIEHUNG */}
 
-
-
                         <td className="px-5 py-3">
-
-
 
                           {venue.relationship_status ? (
 
@@ -2146,15 +1871,9 @@ export default function LocationsClient({
 
                           )}
 
-
-
                         </td>
 
-
-
                         {/* PLÄTZE */}
-
-
 
                         <td className="px-5 py-3 text-sm font-bold">
 
@@ -2163,16 +1882,9 @@ export default function LocationsClient({
                             "—"}
 
                         </td>
-
-
-
-                        {/* NOTIZ */}
-
-
+                      {/* NOTIZ */}
 
                         <td className="px-5 py-3">
-
-
 
                           <p
 
@@ -2194,11 +1906,7 @@ export default function LocationsClient({
 
                           </p>
 
-
-
                         </td>
-
-
 
                       </tr>
 
@@ -2208,23 +1916,13 @@ export default function LocationsClient({
 
                 )}
 
-
-
               </tbody>
-
-
 
             </table>
 
-
-
           </div>
 
-
-
           {/* EMPTY */}
-
-
 
           {paginatedVenues.length ===
 
@@ -2232,23 +1930,17 @@ export default function LocationsClient({
 
             <div className="px-6 py-14 text-center">
 
-
-
               <div className="text-4xl">
 
                 🔎
 
               </div>
 
-
-
               <h2 className="mt-3 text-lg font-black">
 
                 Keine Location gefunden
 
               </h2>
-
-
 
               <p className="mt-1 text-sm text-zinc-500">
 
@@ -2258,17 +1950,11 @@ export default function LocationsClient({
 
               </p>
 
-
-
             </div>
 
           )}
 
-
-
           {/* PAGINATION */}
-
-
 
           {sortedVenues.length >
 
@@ -2276,11 +1962,7 @@ export default function LocationsClient({
 
             <div className="flex flex-col gap-3 border-t border-black/5 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 
-
-
               <p className="text-xs font-semibold text-zinc-400">
-
-
 
                 {Math.min(
 
@@ -2312,15 +1994,9 @@ export default function LocationsClient({
 
                 Locations
 
-
-
               </p>
 
-
-
               <div className="flex items-center gap-2">
-
-
 
                 <button
 
@@ -2355,8 +2031,6 @@ export default function LocationsClient({
                   ←
 
                 </button>
-
-
 
                 {getVisiblePages(
 
@@ -2416,8 +2090,6 @@ export default function LocationsClient({
 
                 )}
 
-
-
                 <button
 
                   type="button"
@@ -2454,45 +2126,27 @@ export default function LocationsClient({
 
                 </button>
 
-
-
               </div>
-
-
 
             </div>
 
           )}
 
-
-
         </section>
 
-
-
       </div>
-
-
 
       {/* ======================================================
 
           PDF / DRUCKANSICHT
 
-      \====================================================== */}
-
-
+      \\====================================================== */}
 
       <section className="hidden print:block">
 
-
-
         {/* PDF HEADER */}
 
-
-
         <div className="mb-6 border-b border-zinc-300 pb-4">
-
-
 
           <p className="text-[9pt] font-bold uppercase tracking-widest text-zinc-500">
 
@@ -2500,15 +2154,9 @@ export default function LocationsClient({
 
           </p>
 
-
-
           <div className="mt-2 flex items-end justify-between gap-6">
 
-
-
             <div>
-
-
 
               <h1 className="text-[24pt] font-black leading-none text-black">
 
@@ -2516,31 +2164,21 @@ export default function LocationsClient({
 
               </h1>
 
-
-
               <p className="mt-2 text-[9pt] text-zinc-500">
 
                 Booking-Übersicht
 
               </p>
 
-
-
             </div>
 
-
-
             <div className="text-right">
-
-
 
               <p className="text-[13pt] font-black text-black">
 
                 {sortedVenues.length}
 
               </p>
-
-
 
               <p className="text-[8pt] font-bold text-zinc-500">
 
@@ -2554,19 +2192,11 @@ export default function LocationsClient({
 
               </p>
 
-
-
             </div>
-
-
 
           </div>
 
-
-
           <div className="mt-4 rounded-md bg-zinc-100 px-3 py-2">
-
-
 
             <p className="text-[8pt] font-bold text-zinc-600">
 
@@ -2574,29 +2204,17 @@ export default function LocationsClient({
 
             </p>
 
-
-
           </div>
-
-
 
         </div>
 
-
-
         {/* PDF TABLE */}
 
-
-
         <table className="w-full border-collapse text-[7.5pt]">
-
-
 
           <thead>
 
             <tr className="border-b-2 border-black text-left">
-
-
 
               <PrintHead>
 
@@ -2604,15 +2222,11 @@ export default function LocationsClient({
 
               </PrintHead>
 
-
-
               <PrintHead>
 
                 Ort
 
               </PrintHead>
-
-
 
               <PrintHead>
 
@@ -2620,15 +2234,11 @@ export default function LocationsClient({
 
               </PrintHead>
 
-
-
               <PrintHead>
 
                 Kontakt
 
               </PrintHead>
-
-
 
               <PrintHead>
 
@@ -2636,15 +2246,11 @@ export default function LocationsClient({
 
               </PrintHead>
 
-
-
               <PrintHead>
 
                 Beziehung
 
               </PrintHead>
-
-
 
               <PrintHead>
 
@@ -2652,23 +2258,15 @@ export default function LocationsClient({
 
               </PrintHead>
 
-
-
             </tr>
 
           </thead>
 
-
-
           <tbody>
-
-
 
             {sortedVenues.map(
 
               (venue) => {
-
-
 
                 const contact =
 
@@ -2677,8 +2275,6 @@ export default function LocationsClient({
                   venue.contact_name_2 ||
 
                   "—";
-
-
 
                 const email =
 
@@ -2690,8 +2286,6 @@ export default function LocationsClient({
 
                   null;
 
-
-
                 const phone =
 
                   venue.contact_phone ||
@@ -2699,8 +2293,6 @@ export default function LocationsClient({
                   venue.contact_phone_2 ||
 
                   null;
-
-
 
                 const note =
 
@@ -2711,8 +2303,6 @@ export default function LocationsClient({
                   venue.season_notes ||
 
                   "—";
-
-
 
                 return (
 
@@ -2728,8 +2318,6 @@ export default function LocationsClient({
 
                   >
 
-
-
                     <PrintCell>
 
                       <span className="font-black">
@@ -2740,11 +2328,7 @@ export default function LocationsClient({
 
                     </PrintCell>
 
-
-
                     <PrintCell>
-
-
 
                       <span className="font-bold">
 
@@ -2772,8 +2356,6 @@ export default function LocationsClient({
 
                       </span>
 
-
-
                       {venue.state && (
 
                         <div className="mt-0.5 text-[6.5pt] text-zinc-500">
@@ -2784,11 +2366,7 @@ export default function LocationsClient({
 
                       )}
 
-
-
                     </PrintCell>
-
-
 
                     <PrintCell>
 
@@ -2798,27 +2376,19 @@ export default function LocationsClient({
 
                     </PrintCell>
 
-
-
                     <PrintCell>
 
                       {contact}
 
                     </PrintCell>
 
-
-
                     <PrintCell>
-
-
 
                       <div>
 
                         {email || "—"}
 
                       </div>
-
-
 
                       {phone && (
 
@@ -2830,11 +2400,7 @@ export default function LocationsClient({
 
                       )}
 
-
-
                     </PrintCell>
-
-
 
                     <PrintCell>
 
@@ -2844,15 +2410,11 @@ export default function LocationsClient({
 
                     </PrintCell>
 
-
-
                     <PrintCell>
 
                       {note}
 
                     </PrintCell>
-
-
 
                   </tr>
 
@@ -2862,19 +2424,11 @@ export default function LocationsClient({
 
             )}
 
-
-
           </tbody>
-
-
 
         </table>
 
-
-
         {/* FOOTER */}
-
-
 
         <div className="mt-5 border-t border-zinc-300 pt-2 text-[7pt] text-zinc-400">
 
@@ -2888,19 +2442,13 @@ export default function LocationsClient({
 
         </div>
 
-
-
       </section>
-
-
 
       {/* ======================================================
 
           DRUCKEINSTELLUNGEN
 
-      \====================================================== */}
-
-
+      \\====================================================== */}
 
       <style jsx global>{`
 
@@ -2914,8 +2462,6 @@ export default function LocationsClient({
 
           }
 
-
-
           html,
 
           body {
@@ -2924,8 +2470,6 @@ export default function LocationsClient({
 
           }
 
-
-
           body {
 
             -webkit-print-color-adjust: exact;
@@ -2933,8 +2477,6 @@ export default function LocationsClient({
             print-color-adjust: exact;
 
           }
-
-
 
           aside,
 
@@ -2954,15 +2496,11 @@ export default function LocationsClient({
 
 }
 
-
-
 // ============================================================
 
 // SORTIERBARER TABELLENKOPF
 
 // ============================================================
-
-
 
 function SortableHead({
 
@@ -2998,13 +2536,9 @@ function SortableHead({
 
     activeKey === sortKey;
 
-
-
   return (
 
     <th className="px-5 py-3">
-
-
 
       <button
 
@@ -3030,11 +2564,7 @@ function SortableHead({
 
       >
 
-
-
         {label}
-
-
 
         <span
 
@@ -3062,11 +2592,7 @@ function SortableHead({
 
         </span>
 
-
-
       </button>
-
-
 
     </th>
 
@@ -3074,15 +2600,11 @@ function SortableHead({
 
 }
 
-
-
 // ============================================================
 
 // NORMALER TABELLENKOPF
 
 // ============================================================
-
-
 
 function TableHead({
 
@@ -3106,15 +2628,11 @@ function TableHead({
 
 }
 
-
-
 // ============================================================
 
 // STAT
 
 // ============================================================
-
-
 
 function StatCard({
 
@@ -3160,13 +2678,9 @@ function StatCard({
 
   ].join(" ");
 
-
-
   const content = (
 
     <div className="flex items-center gap-4">
-
-
 
       <div className="text-3xl">
 
@@ -3174,11 +2688,7 @@ function StatCard({
 
       </div>
 
-
-
       <div>
-
-
 
         <p className="text-2xl font-black leading-none">
 
@@ -3186,25 +2696,17 @@ function StatCard({
 
         </p>
 
-
-
         <p className="mt-1 text-xs font-semibold text-zinc-400">
 
           {label}
 
         </p>
 
-
-
       </div>
-
-
 
     </div>
 
   );
-
-
 
   if (onClick) {
 
@@ -3228,8 +2730,6 @@ function StatCard({
 
   }
 
-
-
   return (
 
     <div className={className}>
@@ -3242,15 +2742,11 @@ function StatCard({
 
 }
 
-
-
 // ============================================================
 
 // BEZIEHUNGSSTATUS
 
 // ============================================================
-
-
 
 function RelationshipBadge({
 
@@ -3266,13 +2762,9 @@ function RelationshipBadge({
 
     status.toLowerCase();
 
-
-
   let className =
 
     "bg-zinc-100 text-zinc-600";
-
-
 
   if (
 
@@ -3308,8 +2800,6 @@ function RelationshipBadge({
 
   }
 
-
-
   if (
 
     normalized.includes(
@@ -3337,8 +2827,6 @@ function RelationshipBadge({
       "bg-orange-100 text-orange-700";
 
   }
-
-
 
   if (
 
@@ -3368,8 +2856,6 @@ function RelationshipBadge({
 
   }
 
-
-
   return (
 
     <span
@@ -3392,15 +2878,11 @@ function RelationshipBadge({
 
 }
 
-
-
 // ============================================================
 
 // PDF TABLE HELPERS
 
 // ============================================================
-
-
 
 function PrintHead({
 
@@ -3424,8 +2906,6 @@ function PrintHead({
 
 }
 
-
-
 function PrintCell({
 
   children,
@@ -3448,15 +2928,11 @@ function PrintCell({
 
 }
 
-
-
 // ============================================================
 
 // PAGINATION
 
 // ============================================================
-
-
 
 function getVisiblePages(
 
@@ -3482,8 +2958,6 @@ function getVisiblePages(
 
   }
 
-
-
   let start = Math.max(
 
     1,
@@ -3492,8 +2966,6 @@ function getVisiblePages(
 
   );
 
-
-
   const end = Math.min(
 
     totalPages,
@@ -3501,8 +2973,6 @@ function getVisiblePages(
     start + 4
 
   );
-
-
 
   if (end - start < 4) {
 
@@ -3515,8 +2985,6 @@ function getVisiblePages(
     );
 
   }
-
-
 
   return Array.from(
 

@@ -5,6 +5,7 @@ import {
   Fragment,
   useMemo,
   useState,
+  useEffect,
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -111,6 +112,7 @@ type MailingOrganizer = {
   city: string | null;
   email: string | null;
   organizer_type: string | null;
+  organizer_contacts?: { email: string | null }[] | null;
 };
 
 type MailingRecipient = {
@@ -258,6 +260,38 @@ export default function AcquisitionClient({
 
   const router = useRouter();
 
+  // Die Auswahl beim Öffnen einer Akquise-Akte erhalten.
+  const saveListPosition = () => {
+    try {
+      sessionStorage.setItem("primakavi-acquisition-list", JSON.stringify({
+        selectedRound, search, statusFilter, programFilter, workFilter,
+        page, sortKey, sortDirection, scrollY: window.scrollY,
+      }));
+    } catch { /* Speicher kann im privaten Modus gesperrt sein. */ }
+  };
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("primakavi-acquisition-list");
+      if (!saved) return;
+      sessionStorage.removeItem("primakavi-acquisition-list");
+      const state = JSON.parse(saved);
+      if (typeof state.selectedRound === "string" &&
+          (state.selectedRound === "all" || state.selectedRound === "legacy" || rounds.some(r => r.id === state.selectedRound))) setSelectedRound(state.selectedRound);
+      if (typeof state.search === "string") setSearch(state.search);
+      if (typeof state.statusFilter === "string") setStatusFilter(state.statusFilter);
+      if (typeof state.programFilter === "string") setProgramFilter(state.programFilter);
+      if (typeof state.workFilter === "string") setWorkFilter(state.workFilter);
+      if (typeof state.page === "number") setPage(state.page);
+      if (typeof state.sortKey === "string") setSortKey(state.sortKey);
+      if (state.sortDirection === "asc" || state.sortDirection === "desc") setSortDirection(state.sortDirection);
+      if (typeof state.scrollY === "number") {
+        requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, state.scrollY)));
+      }
+    } catch { /* Ungültigen Speicherstand ignorieren. */ }
+  }, []);
+
+
   const activeRounds = useMemo(
     () => rounds.filter((round) => round.active),
     [rounds]
@@ -271,7 +305,7 @@ export default function AcquisitionClient({
   const [selectedRound, setSelectedRound] = useState<RoundSelection>(
     initialRoundId && rounds.some((round) => round.id === initialRoundId)
       ? initialRoundId
-      : activeRounds[0]?.id || "all"
+      : "all"
   );
   const [showNewRound, setShowNewRound] = useState(false);
 
@@ -738,7 +772,9 @@ export default function AcquisitionClient({
 
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/admin/acquisition/new"
+            href={selectedRoundData?.active && selectedRoundData.type === "acquisition"
+              ? `/admin/acquisition/new?round=${selectedRoundData.id}`
+              : "/admin/acquisition/new"}
             className="inline-flex items-center justify-center rounded-full bg-zinc-950 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-zinc-800"
           >
             + Neue Akquise
@@ -769,9 +805,13 @@ export default function AcquisitionClient({
                   setSelectedRound(event.target.value);
                   setView(event.target.value === "legacy" ? "archive" : "active");
                   setPage(1);
+                  setWorkFilter("alle");
+                  setStatusFilter("alle");
+                  setProgramFilter("alle");
                 }}
                 className="h-11 min-w-0 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-bold text-zinc-800 outline-none transition focus:border-zinc-400 sm:min-w-[310px]"
               >
+                <option value="all">🎯 Alle Akquise-Vorgänge</option>
                 {activeRounds.map((round) => (
                   <option key={round.id} value={round.id}>
                     {round.type === "mailing" ? "📨 " : "🎯 "}
@@ -807,8 +847,8 @@ export default function AcquisitionClient({
                   : `${roundScopedAcquisition.length} Vorgänge in „${selectedRoundData.name}“.`
                 : selectedRound === "legacy"
                 ? `${roundScopedAcquisition.length} ältere Vorgänge ohne Rundenzuordnung.`
-                : activeRounds.length
-                ? "Bitte Akquise-Runde auswählen."
+                : selectedRound === "all"
+                ? `${activeAcquisition.length} offene Vorgänge aus allen Runden.`
                 : "Keine aktive Akquise-Runde vorhanden."}
             </p>
           </div>
@@ -919,6 +959,7 @@ export default function AcquisitionClient({
       {isMailingRound && selectedRoundData && (
         <MailingPanel
           round={selectedRoundData}
+          saveListPosition={saveListPosition}
           recipients={selectedMailingRecipients}
           venues={mailingVenues}
           organizers={mailingOrganizers}
@@ -1229,11 +1270,10 @@ export default function AcquisitionClient({
                  return (
   <Fragment key={item.id}>
     <tr
-      onClick={() =>
-        router.push(
-          `/admin/acquisition/${item.id}`
-        )
-      }
+      onClick={() => {
+        saveListPosition();
+        router.push(`/admin/acquisition/${item.id}`);
+      }}
       className="cursor-pointer border-b border-black/5 transition last:border-0 hover:bg-[#f8f3e9]"
     >
       {/* ZIEL */}
@@ -1262,6 +1302,11 @@ export default function AcquisitionClient({
                                 }
                               </p>
 
+                              {selectedRound === "all" && (
+                                <p className="mt-0.5 truncate text-[10px] font-semibold text-zinc-500" title={rounds.find((round) => round.id === item.round_id)?.name || "Ohne Runde"}>
+                                  {rounds.find((round) => round.id === item.round_id)?.name || "Ohne Runde"}
+                                </p>
+                              )}
                               {target.type ===
                                 "organizer" &&
                                 target.subtitle && (
@@ -1719,6 +1764,7 @@ export default function AcquisitionClient({
 
 function MailingPanel({
   round,
+  saveListPosition,
   recipients,
   venues,
   organizers,
@@ -1734,6 +1780,7 @@ function MailingPanel({
   deleteMailingRecipient,
 }: {
   round: AcquisitionRound;
+  saveListPosition: () => void;
   recipients: MailingRecipient[];
   venues: MailingVenue[];
   organizers: MailingOrganizer[];
@@ -1765,15 +1812,39 @@ function MailingPanel({
   const [scheduleValue, setScheduleValue] = useState("");
   const [sentValue, setSentValue] = useState("");
   const [editingSentAt, setEditingSentAt] = useState(false);
-  const [recipientSort, setRecipientSort] = useState<
-    "name" | "opened" | "clicked" | "unsubscribed" | "bounced"
-  >("name");
+  type RecipientFilter = "all" | "sent" | "opened" | "clicked" | "unsubscribed" | "bounced" | "acquisition";
+  type RecipientSort = "name" | "opened" | "clicked" | "unsubscribed" | "bounced";
+  const mailingViewKey = `primakavi-mailing-view-${round.id}`;
+  const [recipientFilter, setRecipientFilter] = useState<RecipientFilter>("all");
+  const [recipientSort, setRecipientSort] = useState<RecipientSort>("name");
+  const [mailingStateReady, setMailingStateReady] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(mailingViewKey) || "{}");
+      if (["all", "sent", "opened", "clicked", "unsubscribed", "bounced", "acquisition"].includes(saved.filter)) setRecipientFilter(saved.filter);
+      if (["name", "opened", "clicked", "unsubscribed", "bounced"].includes(saved.sort)) setRecipientSort(saved.sort);
+    } catch { /* Kein gültiger Speicherstand. */ }
+    setMailingStateReady(true);
+  }, [mailingViewKey]);
+  useEffect(() => {
+    if (!mailingStateReady) return;
+    try {
+      sessionStorage.setItem(mailingViewKey, JSON.stringify({ filter: recipientFilter, sort: recipientSort }));
+    } catch { /* Browser-Speicher nicht verfügbar. */ }
+  }, [mailingViewKey, recipientFilter, recipientSort, mailingStateReady]);
+  const saveMailingListPosition = () => {
+    try {
+      sessionStorage.setItem(mailingViewKey, JSON.stringify({ filter: recipientFilter, sort: recipientSort }));
+    } catch { /* Browser-Speicher nicht verfügbar. */ }
+    saveListPosition();
+  };
 
   const sentCount = recipients.filter((item) => item.sent_at).length;
   const openedCount = recipients.filter((item) => item.opened_at).length;
   const clickedCount = recipients.filter((item) => item.clicked_at).length;
   const unsubscribedCount = recipients.filter((item) => item.unsubscribed_at).length;
   const bouncedCount = recipients.filter((item) => item.bounced_at).length;
+  const acquisitionCount = recipients.filter((item) => item.acquisition_id).length;
   const mailingSentAt =
     recipients.find((item) => item.sent_at)?.sent_at || null;
   const isSent = Boolean(mailingSentAt);
@@ -1787,12 +1858,36 @@ function MailingPanel({
   const plannedCount = plannedRecipients.length;
   const plannedAt = plannedRecipients[0]?.scheduled_at || null;
 
+  // E-Mail-Fallback nur bei eindeutigem Stammdaten-Treffer.
+  const organizerByEmail = useMemo(() => {
+    const matches = new Map<string, MailingOrganizer | null>();
+    for (const organizer of organizers) {
+      const emails = [organizer.email, ...(organizer.organizer_contacts ?? []).map((c) => c.email)];
+      for (const raw of emails) {
+        const email = raw?.trim().toLowerCase();
+        if (!email) continue;
+        if (matches.has(email) && matches.get(email)?.id !== organizer.id) {
+          matches.set(email, null); // Mehrdeutige Treffer nicht automatisch verlinken
+        } else if (!matches.has(email)) {
+          matches.set(email, organizer);
+        }
+      }
+    }
+    return matches;
+  }, [organizers]);
+
+  const resolveRecipientOrganizer = (recipient: MailingRecipient) => {
+    if (recipient.organizer_id || recipient.organizer) return null;
+    const email = recipient.email?.trim().toLowerCase();
+    return email ? organizerByEmail.get(email) ?? null : null;
+  };
+
   const sortedRecipients = useMemo(() => {
     const getName = (recipient: MailingRecipient) =>
       (recipient.venue?.name || recipient.organizer?.name || recipient.email || "")
         .toLocaleLowerCase("de");
 
-    return [...recipients].sort((a, b) => {
+    return recipients.filter((r) => recipientFilter === "all" || (recipientFilter === "acquisition" ? Boolean(r.acquisition_id) : Boolean(r[({sent:"sent_at",opened:"opened_at",clicked:"clicked_at",unsubscribed:"unsubscribed_at",bounced:"bounced_at"} as const)[recipientFilter]]))).sort((a, b) => {
       if (recipientSort === "name") {
         return getName(a).localeCompare(getName(b), "de");
       }
@@ -1811,7 +1906,7 @@ function MailingPanel({
       if (aActive !== bActive) return aActive ? -1 : 1;
       return getName(a).localeCompare(getName(b), "de");
     });
-  }, [recipients, recipientSort]);
+  }, [recipients, recipientSort, recipientFilter]);
 
   const existingKeys = useMemo(
     () =>
@@ -2084,13 +2179,14 @@ function MailingPanel({
 
   return (
     <div className="space-y-4">
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <MailingStat value={recipients.length} label="Empfänger" icon="👥" />
-        <MailingStat value={sentCount} label="Versendet" icon="📨" />
-        <MailingStat value={openedCount} label="Geöffnet" icon="👁️" />
-        <MailingStat value={clickedCount} label="Geklickt" icon="🔗" />
-        <MailingStat value={unsubscribedCount} label="Abgemeldet" icon="🚫" />
-        <MailingStat value={bouncedCount} label="Bounce" icon="⚠️" />
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+        <MailingStat value={recipients.length} label="Empfänger" icon="👥" active={recipientFilter === "all"} onClick={() => setRecipientFilter(recipientFilter === "all" ? "all" : "all")} />
+        <MailingStat value={sentCount} label="Versendet" icon="📨" active={recipientFilter === "sent"} onClick={() => setRecipientFilter(recipientFilter === "sent" ? "all" : "sent")} />
+        <MailingStat value={openedCount} label="Geöffnet" icon="👁️" active={recipientFilter === "opened"} onClick={() => setRecipientFilter(recipientFilter === "opened" ? "all" : "opened")} />
+        <MailingStat value={clickedCount} label="Geklickt" icon="🔗" active={recipientFilter === "clicked"} onClick={() => setRecipientFilter(recipientFilter === "clicked" ? "all" : "clicked")} />
+        <MailingStat value={unsubscribedCount} label="Abgemeldet" icon="🚫" active={recipientFilter === "unsubscribed"} onClick={() => setRecipientFilter(recipientFilter === "unsubscribed" ? "all" : "unsubscribed")} />
+        <MailingStat value={bouncedCount} label="Bounce" icon="⚠️" active={recipientFilter === "bounced"} onClick={() => setRecipientFilter(recipientFilter === "bounced" ? "all" : "bounced")} />
+        <MailingStat value={acquisitionCount} label="In Akquise" icon="🎯" active={recipientFilter === "acquisition"} onClick={() => setRecipientFilter(recipientFilter === "acquisition" ? "all" : "acquisition")} />
       </section>
 
       <section className="overflow-hidden rounded-[1.7rem] bg-white shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
@@ -2549,6 +2645,7 @@ function MailingPanel({
                 </select>
               </label>
             </div>
+            {recipientFilter !== "all" && <div className="flex items-center justify-between px-5 py-3 text-sm"><span>{sortedRecipients.length} von {recipients.length} Empfängern</span><button type="button" onClick={() => setRecipientFilter("all")} className="font-bold text-[#17385F]">Filter zurücksetzen ×</button></div>}
             <div className="overflow-x-auto">
             <table className="min-w-full text-left">
               <thead className="border-b border-black/5 bg-white text-[12px] font-semibold text-zinc-500">
@@ -2556,22 +2653,36 @@ function MailingPanel({
                   <th className="px-4 py-2.5">Empfänger</th>
                   <th className="px-4 py-2.5">E-Mail</th>
                   <th className="px-4 py-2.5">Aktivität</th>
-                  <th className="px-4 py-2.5">Reaktion / Notiz</th>
-                  <th className="w-[130px] px-4 py-2.5 text-right"></th>
+                  <th className="px-4 py-2.5">Akquise-Status</th>
+                  <th className="w-[170px] min-w-[170px] px-4 py-2.5 text-right"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5">
+                {sortedRecipients.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-zinc-500">Keine Empfänger mit diesem Status.</td></tr>}
                 {sortedRecipients.map((recipient) => {
-                  const target = recipient.venue || recipient.organizer;
+                  const matchedOrganizer = resolveRecipientOrganizer(recipient);
+                  const effectiveOrganizerId = recipient.organizer_id || recipient.organizer?.id || matchedOrganizer?.id || null;
+                  const target = recipient.organizer || matchedOrganizer || recipient.venue;
                   const city = target?.city || null;
 
                   return (
                     <tr key={recipient.id} className="align-top hover:bg-[#fffdf8]">
                       <td className="px-4 py-2.5">
-                        <p className="font-black">
-                          {recipient.venue ? "🏛️ " : "🏢 "}
-                          {target?.name || "Unbekannter Empfänger"}
-                        </p>
+                        {target ? (
+                          <Link
+                            href={effectiveOrganizerId
+                              ? `/admin/organizers/${effectiveOrganizerId}`
+                              : `/admin/locations/${recipient.venue_id}?returnTo=${encodeURIComponent("/admin/acquisition")}`}
+                            className="inline-flex items-center gap-1.5 font-black text-zinc-950 transition hover:text-lime-700 hover:underline"
+                            title={effectiveOrganizerId ? "Veranstalter öffnen" : "Location öffnen"}
+                          >
+                            <span aria-hidden="true">{effectiveOrganizerId ? "🏢" : "🏛️"}</span>
+                            <span>{target.name}</span>
+                            <span aria-hidden="true" className="text-xs text-zinc-400">↗</span>
+                          </Link>
+                        ) : (
+                          <p className="font-black text-zinc-400">Unbekannter Empfänger</p>
+                        )}
                         {city && <p className="mt-1 text-xs text-zinc-400">{city}</p>}
                       </td>
                       <td className="px-4 py-2.5 text-xs font-semibold text-zinc-600">
@@ -2586,35 +2697,15 @@ function MailingPanel({
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
-                        <form action={updateMailingRecipient} className="flex min-w-[300px] gap-2">
-                          <input type="hidden" name="id" value={recipient.id} />
-                          <select
-                            name="reaction"
-                            defaultValue={recipient.reaction || ""}
-                            className="h-10 rounded-xl bg-[#fbf7ef] px-3 text-xs font-bold outline-none"
-                          >
-                            <option value="">Keine Reaktion</option>
-                            <option value="Interesse">Interesse</option>
-                            <option value="Termin angefragt">Termin angefragt</option>
-                            <option value="Rückfrage">Rückfrage</option>
-                            <option value="Absage">Absage</option>
-                            <option value="Gebucht">Gebucht</option>
-                          </select>
-                          <input
-                            name="notes"
-                            defaultValue={recipient.notes || ""}
-                            placeholder="Notiz …"
-                            className="h-10 min-w-0 flex-1 rounded-xl bg-[#fbf7ef] px-3 text-xs font-semibold outline-none"
-                          />
-                          <button
-                            type="submit"
-                            className="h-9 min-w-[96px] rounded-full bg-[#fbf7ef] px-3 text-[11px] font-black text-zinc-600 ring-1 ring-black/5 transition hover:bg-zinc-100 hover:text-zinc-950"
-                          >
-                            ✓ Speichern
-                          </button>
-                        </form>
+                        {recipient.acquisition_id ? (
+                          <span className="inline-flex rounded-full bg-lime-100 px-3 py-2 text-xs font-black text-lime-900">✓ Akquise angelegt</span>
+                        ) : recipient.reaction || recipient.notes ? (
+                          <span className="text-xs font-semibold text-amber-700" title={recipient.notes || undefined}>Bisherige Rückmeldung vorhanden</span>
+                        ) : (
+                          <span className="text-xs text-zinc-400">Noch keine Akquise</span>
+                        )}
                       </td>
-                      <td className="px-4 py-2.5 text-right">
+                      <td className="min-w-[170px] whitespace-nowrap px-4 py-2.5 text-right">
                         {recipient.show_id ? (
                           <Link
                             href={`/admin/shows/${recipient.show_id}`}
@@ -2625,22 +2716,23 @@ function MailingPanel({
                         ) : recipient.acquisition_id ? (
                           <Link
                             href={`/admin/acquisition/${recipient.acquisition_id}`}
+                            onClick={saveMailingListPosition}
                             title="Bestehenden Akquise-Vorgang öffnen"
-                            className="inline-flex rounded-full bg-lime-100 px-2.5 py-1.5 text-[11px] font-black text-zinc-700 transition hover:bg-lime-200 hover:text-zinc-950"
+                            className="inline-flex w-max shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-lime-100 px-3 py-1.5 text-[11px] font-black text-zinc-700 transition hover:bg-lime-200 hover:text-zinc-950"
                           >
-                            🎯 Akquise
+                            Akquise öffnen ↗
                           </Link>
                         ) : isSent ? (
                           <Link
+                            onClick={saveMailingListPosition}
                             href={`/admin/acquisition/new?${new URLSearchParams({
-                              ...(recipient.venue_id ? { venue: recipient.venue_id } : {}),
-                              ...(recipient.organizer_id ? { organizer: recipient.organizer_id } : {}),
+                              ...(effectiveOrganizerId ? { organizer: effectiveOrganizerId } : recipient.venue_id ? { venue: recipient.venue_id } : {}),
                               mailingRecipient: recipient.id,
                             }).toString()}`}
                             title="Als echten Akquise-Vorgang weiterführen"
-                            className="inline-flex h-9 min-w-[96px] items-center justify-center rounded-full bg-lime-100 px-3 text-[11px] font-black text-zinc-700 ring-1 ring-lime-200/70 transition hover:bg-lime-200 hover:text-zinc-950"
+                            className="inline-flex h-9 w-max shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-lime-100 px-3 text-[11px] font-black text-zinc-700 ring-1 ring-lime-200/70 transition hover:bg-lime-200 hover:text-zinc-950"
                           >
-                            → Akquise
+                            + Akquise starten
                           </Link>
                         ) : round.active ? (
                           <form action={deleteMailingRecipient}>
@@ -2699,26 +2791,11 @@ function ActivityEmoji({
   );
 }
 
-function MailingStat({
-  value,
-  label,
-  icon,
-}: {
-  value: number;
-  label: string;
-  icon: string;
-}) {
-  return (
-    <div className="rounded-[1.4rem] bg-white px-5 py-4 shadow-lg shadow-black/[0.03] ring-1 ring-black/5">
-      <div className="flex items-center gap-4">
-        <div className="text-3xl">{icon}</div>
-        <div>
-          <p className="text-2xl font-black leading-none">{value}</p>
-          <p className="mt-1 text-xs font-semibold text-zinc-400">{label}</p>
-        </div>
-      </div>
-    </div>
-  );
+function MailingStat({value,label,icon,active,onClick}:{value:number;label:string;icon:string;active:boolean;onClick:()=>void}) {
+  return <button type="button" aria-pressed={active} onClick={onClick}
+    className={`w-full rounded-[1.4rem] px-5 py-4 text-left shadow-lg shadow-black/[0.03] ring-1 transition hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-[#17385F] ${active ? "bg-[#effbd1] ring-2 ring-[#b9d77e]" : "bg-white ring-black/5"}`}>
+    <div className="flex items-center gap-4"><div className="text-3xl">{icon}</div><div><p className="text-2xl font-black leading-none">{value}</p><p className="mt-1 text-xs font-semibold text-zinc-400">{label}</p></div></div>
+  </button>;
 }
 
 function formatMailingDate(value: string) {
