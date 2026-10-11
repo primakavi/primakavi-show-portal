@@ -341,45 +341,83 @@ export default async function AcquisitionDetailPage({
   }
 
   // Newsletter zum Akquise-Kontext laden. Explizite Verknüpfungen haben Vorrang;
+
   // bei gleicher Location/gleichem Veranstalter nur bislang unverknüpfte Empfänger
+
   // als Kontext zeigen (keine automatische Zuordnung bei mehreren Akquisen).
+
   const newsletterConditions = [`acquisition_id.eq.${acquisition.id}`];
+
   if (acquisition.venue_id) newsletterConditions.push(`venue_id.eq.${acquisition.venue_id}`);
+
   if (acquisition.organizer_id) newsletterConditions.push(`organizer_id.eq.${acquisition.organizer_id}`);
+
   const { data: newsletterRows, error: newsletterError } = await supabaseAdmin
+
     .from("mailing_recipients")
+
     .select("id,acquisition_id,venue_id,organizer_id,email,sent_at,scheduled_at,created_at,opened_at,clicked_at,last_clicked_url,bounced_at,unsubscribed_at")
+
     .or(newsletterConditions.join(","))
+
     .order("created_at", { ascending: false });
+
   if (newsletterError) console.error("Newsletter-Verlauf konnte nicht geladen werden:", newsletterError);
+
   const newsletterEvents = (newsletterRows || []).filter((row) =>
+
     row.acquisition_id === acquisition.id ||
+
     (!row.acquisition_id && (
+
       (Boolean(acquisition.venue_id) && row.venue_id === acquisition.venue_id) ||
+
       (Boolean(acquisition.organizer_id) && row.organizer_id === acquisition.organizer_id)
+
     ))
+
   );
 
   // Historischer Kontaktstand: vor Einführung der separaten Aktivitäten
+
   // möglicherweise nur direkt in acquisition gespeichert.
+
   // Kein erfundener Kontakt aus created_at; schreibgeschützt anzeigen.
+
   const legacyContact = !activities?.length &&
+
     Boolean(acquisition.last_contact_at || acquisition.contact_note?.trim() || acquisition.response?.trim())
+
     ? [{
+
         id: `legacy-${acquisition.id}`,
+
         acquisition_id: acquisition.id,
+
         activity_date: acquisition.last_contact_at || "",
+
         activity_type: "Bisheriger Kontaktstand",
+
         channel: acquisition.contact_channel,
+
         subject: "Aus älterem Akquise-Datensatz",
+
         note: acquisition.contact_note,
+
         response: acquisition.response,
+
         next_step: acquisition.next_step,
+
         follow_up_at: acquisition.next_follow_up_at,
+
         status_after: null,
+
         interest_after: null,
+
         created_at: null,
+
       }]
+
     : [];
 
   // ------------------------------------------------------------
@@ -505,6 +543,66 @@ export default async function AcquisitionDetailPage({
   // KONTAKT ZUR HISTORIE HINZUFÜGEN
 
   // ------------------------------------------------------------
+
+  // Wiedervorlagen direkt in der Historie abhaken bzw. wieder öffnen.
+  // Keine neue Aktivität und keine Änderung am letzten Kontakt.
+  async function setActivityFollowUpStatus(formData: FormData) {
+    "use server";
+
+    const acquisitionId = String(formData.get("acquisition_id") || "");
+    const activityId = String(formData.get("activity_id") || "");
+    const status = String(formData.get("status") || "");
+    if (!acquisitionId || !activityId || !["open", "done"].includes(status)) {
+      throw new Error("Ungültige Wiedervorlage.");
+    }
+
+    const { data: current, error: currentError } = await supabaseAdmin
+      .from("acquisition")
+      .select("archived_at")
+      .eq("id", acquisitionId)
+      .single();
+    if (currentError || !current) throw new Error("Akquise nicht gefunden.");
+    if (current.archived_at) throw new Error("Abgeschlossene Akquisen können nicht bearbeitet werden.");
+
+    const { error } = await supabaseAdmin
+      .from("acquisition_activities")
+      .update({ follow_up_status_override: status })
+      .eq("id", activityId)
+      .eq("acquisition_id", acquisitionId);
+    if (error) throw new Error(error.message);
+
+    revalidatePath(`/admin/acquisition/${acquisitionId}`);
+    revalidatePath("/admin/acquisition");
+  }
+
+  async function setEmailFollowUpStatus(formData: FormData) {
+    "use server";
+
+    const acquisitionId = String(formData.get("acquisition_id") || "");
+    const emailId = String(formData.get("email_id") || "");
+    const status = String(formData.get("status") || "");
+    if (!acquisitionId || !emailId || !["open", "done"].includes(status)) {
+      throw new Error("Ungültige E-Mail-Wiedervorlage.");
+    }
+
+    const { data: current, error: currentError } = await supabaseAdmin
+      .from("acquisition")
+      .select("archived_at")
+      .eq("id", acquisitionId)
+      .single();
+    if (currentError || !current) throw new Error("Akquise nicht gefunden.");
+    if (current.archived_at) throw new Error("Abgeschlossene Akquisen können nicht bearbeitet werden.");
+
+    const { error } = await supabaseAdmin
+      .from("crm_emails")
+      .update({ follow_up_status_override: status })
+      .eq("id", emailId)
+      .eq("acquisition_id", acquisitionId);
+    if (error) throw new Error(error.message);
+
+    revalidatePath(`/admin/acquisition/${acquisitionId}`);
+    revalidatePath("/admin/acquisition");
+  }
 
   async function addActivity(formData: FormData) {
 
@@ -1813,13 +1911,16 @@ export default async function AcquisitionDetailPage({
       }
 
       activities={[...(activities || []), ...legacyContact]}
+
       newsletterEvents={newsletterEvents}
 
       crmContacts={crmContacts || []}
 
       crmTasks={crmTasks || []}
 
-      addTask={addTask}
+      setActivityFollowUpStatus={setActivityFollowUpStatus}
+    setEmailFollowUpStatus={setEmailFollowUpStatus}
+    addTask={addTask}
 
       toggleTask={toggleTask}
 
