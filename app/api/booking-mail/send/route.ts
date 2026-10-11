@@ -84,9 +84,21 @@ export async function POST(request: NextRequest) {
       in_reply_to: inReplyTo ?? null, email_references: references,
     });
     if (insertError) {
-      console.error("CRM mail insert failed:", insertError);
-      return NextResponse.json({ error: "E-Mail konnte nicht im CRM vorbereitet werden. Nichts versendet." }, { status: 500 });
-    }
+  console.error("CRM mail insert failed:", {
+    code: insertError.code,
+    message: insertError.message,
+    details: insertError.details,
+    hint: insertError.hint,
+  });
+
+  return NextResponse.json(
+    {
+      error: "E-Mail konnte nicht im CRM vorbereitet werden. Nichts versendet.",
+      diagnosticCode: insertError.code,
+    },
+    { status: 500 }
+  );
+}
     let result: Awaited<ReturnType<typeof sendStratoMail>>;
     try {
       result = await sendStratoMail({ to, cc, subject: subject.trim(), text: fullText, html, inReplyTo, references, attachments });
