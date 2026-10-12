@@ -970,7 +970,7 @@ export default async function AcquisitionPage({
       ];
 
       // Unabhängige offene Wiedervorlagen haben ihre eigene Fälligkeit.
-     candidates.push(...tasks.filter(t => t.due_at).map(t => t.due_at as string));
+     candidates.push(...tasks.filter(t => t.due_at).map(t => String(t.due_at).slice(0, 10)));
      // Legacy-Datum nur beibehalten, wenn keine datierte Historien-WVL existiert.
 
       const hasHistoricalWvl = acts.some(a => a.follow_up_at) || mails.some(m => m.follow_up_at);
