@@ -7,7 +7,8 @@ import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const FOLDER = "INBOX";
-const MAX_MESSAGES = 100;
+const MAX_MESSAGES = 500;
+const LOOKBACK_DAYS = 30;
 
 export async function POST(request: NextRequest) {
   try { await requireBookingMailAdmin(); }
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
   const email = process.env.STRATO_EMAIL?.trim();
   const password = process.env.STRATO_PASSWORD;
   if (!email || !password) return NextResponse.json({ error: "STRATO-Zugangsdaten fehlen." }, { status: 500 });
-  const since = new Date(Date.now() - 7 * 86400000);
+  const since = new Date(Date.now() - LOOKBACK_DAYS * 86400000);
   const imap = new ImapFlow({
     host: process.env.STRATO_IMAP_HOST || "imap.strato.de",
     port: Number(process.env.STRATO_IMAP_PORT || 993),
@@ -35,7 +36,9 @@ export async function POST(request: NextRequest) {
         ? String(imap.mailbox.uidValidity ?? "") : "";
       if (!validity) throw new Error("UIDVALIDITY fehlt; Import abgebrochen.");
       const matches = await imap.search({ since }, { uid: true });
-      const uids = [...(matches || [])].sort((a, b) => b - a).slice(0, MAX_MESSAGES);
+      const allUids = [...(matches || [])].sort((a, b) => b - a);
+      const truncated = allUids.length > MAX_MESSAGES;
+      const uids = allUids.slice(0, MAX_MESSAGES);
       for (const uid of uids) {
         try {
           const { data: exists, error: lookupError } = await supabaseAdmin.from("crm_emails")
@@ -45,12 +48,8 @@ export async function POST(request: NextRequest) {
           if (exists) { skipped++; continue; }
           // UID addressing; read-only fetch does not set \\Seen.
           const downloaded = await imap.download(String(uid), undefined, { uid: true });
-
-if (!downloaded?.content) {
-  throw new Error(`Nachricht mit UID ${uid} konnte nicht geladen werden.`);
-}
-
-const parsed = await simpleParser(downloaded.content);
+          if (!downloaded?.content) throw new Error(`Nachricht mit UID ${uid} konnte nicht geladen werden.`);
+          const parsed = await simpleParser(downloaded.content);
           const messageId = parsed.messageId?.trim() || null;
           if (messageId) {
             const { data: sameMessage, error: idError } = await supabaseAdmin.from("crm_emails")
@@ -70,12 +69,10 @@ const parsed = await simpleParser(downloaded.content);
             subject: parsed.subject || "(ohne Betreff)",
             body_text: parsed.text || "", body_html: null,
             message_id: messageId, in_reply_to: parsed.inReplyTo || null,
-email_references: parsed.references
-  ? Array.isArray(parsed.references)
-    ? parsed.references
-    : [parsed.references]
-  : [],
-received_at: receivedAt,
+            email_references: parsed.references
+              ? Array.isArray(parsed.references) ? parsed.references : [parsed.references]
+              : [],
+            received_at: receivedAt,
             imap_folder: FOLDER, imap_uid: uid, imap_uidvalidity: validity,
           });
           if (insertError) {
@@ -90,7 +87,7 @@ received_at: receivedAt,
           errors.push(`UID ${uid}: ${msg.slice(0, 160)}`);
         }
       }
-      return NextResponse.json({ imported, skipped, failed, errors, limit: MAX_MESSAGES, since: since.toISOString() });
+      return NextResponse.json({ imported, skipped, failed, errors, truncated, limit: MAX_MESSAGES, since: since.toISOString() });
     } finally { lock.release(); }
   } catch (error) {
     console.error("Inbox import failed", error);

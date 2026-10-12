@@ -6,8 +6,6 @@ import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 
 import LocationClient from "./LocationClient";
 
-
-
 export default async function LocationPage({
 
   params,
@@ -26,8 +24,6 @@ export default async function LocationPage({
 
   const { imported, returnTo } = await searchParams;
 
-
-
   const safeReturnTo =
 
     returnTo &&
@@ -40,15 +36,11 @@ export default async function LocationPage({
 
       : "/admin/locations";
 
-
-
   // ------------------------------------------------------------
 
   // LOCATION
 
   // ------------------------------------------------------------
-
-
 
   const { data: venue, error: venueError } = await supabaseAdmin
 
@@ -60,67 +52,98 @@ export default async function LocationPage({
 
     .single();
 
-
-
   if (venueError || !venue) {
 
     notFound();
 
   }
 
-
-
   // Verknüpfte Veranstalter: reine Übersicht, keine doppelte Kontaktspeicherung.
+
   const { data: organizerLinks, error: organizerLinksError } = await supabaseAdmin
+
     .from("organizer_venues")
+
     .select("organizer_id, is_primary, notes")
+
     .eq("venue_id", id);
 
   if (organizerLinksError) {
+
     console.error("Veranstalter-Verknüpfungen konnten nicht geladen werden:", organizerLinksError);
+
   }
 
   const organizerIds = Array.from(
+
     new Set((organizerLinks || []).map((link) => link.organizer_id).filter(Boolean))
+
   );
 
   const { data: organizerRows, error: organizerRowsError } = organizerIds.length
+
     ? await supabaseAdmin
+
         .from("organizers")
+
         .select("id, name, city, email, phone")
+
         .in("id", organizerIds)
+
     : { data: [], error: null };
 
   if (organizerRowsError) {
+
     console.error("Veranstalter konnten nicht geladen werden:", organizerRowsError);
+
   }
 
   const organizerById = new Map((organizerRows || []).map((item) => [item.id, item]));
+
   const linkedOrganizers = (organizerLinks || []).flatMap((link) => {
+
     const organizer = organizerById.get(link.organizer_id);
+
     return organizer
+
       ? [{ ...organizer, is_primary: Boolean(link.is_primary), link_notes: link.notes || null }]
+
       : [];
+
   }).sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.name.localeCompare(b.name, "de"));
 
   // Diese Akquisen gehören den Veranstaltern, nicht automatisch dieser Location.
+
   const { data: organizerAcquisitionRows, error: organizerAcquisitionError } = organizerIds.length
+
     ? await supabaseAdmin
+
         .from("acquisition")
+
         .select("id, organizer_id, venue_id, program, status, next_follow_up_at, archived_at")
+
         .in("organizer_id", organizerIds)
+
         .order("created_at", { ascending: false })
+
     : { data: [], error: null };
 
   if (organizerAcquisitionError) {
+
     console.error("Veranstalter-Akquisen konnten nicht geladen werden:", organizerAcquisitionError);
+
   }
 
   const linkedOrganizerAcquisitions = (organizerAcquisitionRows || [])
+
     .filter((item) => !item.venue_id || item.venue_id === id)
+
     .map((item) => ({
+
       ...item,
+
       organizer_name: organizerById.get(item.organizer_id)?.name || "Veranstalter",
+
     }));
 
   // ------------------------------------------------------------
@@ -128,8 +151,6 @@ export default async function LocationPage({
   // SHOWS DIESER LOCATION
 
   // ------------------------------------------------------------
-
-
 
   const { data: shows, error: showsError } = await supabaseAdmin
 
@@ -157,23 +178,40 @@ export default async function LocationPage({
 
     .order("show_date", { ascending: true });
 
-
-
   if (showsError) {
 
     console.error("Shows konnten nicht geladen werden:", showsError);
 
   }
 
+  // Direkte Location-Mails und Mails zu Shows dieser Location.
+  // Akquise-Mails bleiben ausschließlich in ihrer Akquise.
+  const showIds = (shows || []).map((show) => show.id);
+  const showMailFilter = showIds.length
+    ? `venue_id.eq.${id},show_id.in.(${showIds.join(",")})`
+    : `venue_id.eq.${id}`;
+  const { data: locationMailRowsRaw, error: locationMailError } = await supabaseAdmin
+    .from("crm_emails")
+    .select("id, show_id, direction, from_email, to_emails, subject, body_text, sent_at, received_at, created_at")
+    .or(showMailFilter)
+    .is("acquisition_id", null)
+    .neq("inbox_state", "deleted")
+    .order("created_at", { ascending: false });
 
+  // Eine Mail, die explizit einer fremden Show zugeordnet wurde,
+  // darf nicht nur wegen eines alten venue_id hier auftauchen.
+  const locationMailRows = (locationMailRowsRaw || []).filter(
+    (mail) => !mail.show_id || showIds.includes(mail.show_id)
+  );
+  if (locationMailError) {
+    console.error("Location-Kommunikation konnte nicht geladen werden:", locationMailError);
+  }
 
   // ------------------------------------------------------------
 
   // AKQUISE-RUNDEN
 
   // ------------------------------------------------------------
-
-
 
   const { data: acquisitionRounds, error: acquisitionRoundsError } =
 
@@ -187,8 +225,6 @@ export default async function LocationPage({
 
       .order("name", { ascending: true });
 
-
-
   if (acquisitionRoundsError) {
 
     console.error(
@@ -201,8 +237,6 @@ export default async function LocationPage({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // AKQUISE-HISTORIE
@@ -212,8 +246,6 @@ export default async function LocationPage({
   // inkl. aller Verlaufseinträge
 
   // ------------------------------------------------------------
-
-
 
   const { data: acquisition, error: acquisitionError } =
 
@@ -261,8 +293,6 @@ export default async function LocationPage({
 
       });
 
-
-
   if (acquisitionError) {
 
     console.error(
@@ -275,15 +305,9 @@ export default async function LocationPage({
 
   }
 
-
-
   const acquisitionIds = acquisition?.map((item) => item.id) || [];
 
-
-
   let acquisitionActivities: any[] = [];
-
-
 
   if (acquisitionIds.length > 0) {
 
@@ -327,8 +351,6 @@ export default async function LocationPage({
 
         .order("created_at", { ascending: false });
 
-
-
     if (activitiesError) {
 
       console.error(
@@ -347,15 +369,11 @@ export default async function LocationPage({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // NEWSLETTER / MAILING-HISTORIE DIESER LOCATION
 
   // ------------------------------------------------------------
-
-
 
   const { data: mailingRecipientsRaw, error: mailingRecipientsError } =
 
@@ -379,23 +397,17 @@ export default async function LocationPage({
 
       .order("created_at", { ascending: false });
 
-
-
   if (mailingRecipientsError) {
 
     console.error("Mailing-Historie konnte nicht geladen werden:", mailingRecipientsError);
 
   }
 
-
-
   const mailingRoundIds = Array.from(
 
     new Set((mailingRecipientsRaw || []).map((item) => item.round_id).filter(Boolean))
 
   ) as string[];
-
-
 
   const { data: mailingRounds, error: mailingRoundsError } =
 
@@ -405,23 +417,17 @@ export default async function LocationPage({
 
       : { data: [], error: null };
 
-
-
   if (mailingRoundsError) {
 
     console.error("Mailing-Runden konnten nicht geladen werden:", mailingRoundsError);
 
   }
 
-
-
   const mailingRoundMap = new Map(
 
     (mailingRounds || []).map((round) => [round.id, round.name])
 
   );
-
-
 
   const mailingHistory = (mailingRecipientsRaw || []).map((recipient) => ({
 
@@ -430,8 +436,6 @@ export default async function LocationPage({
     round_name: (recipient.round_id && mailingRoundMap.get(recipient.round_id)) || "Newsletter",
 
   }));
-
-
 
   const locationEmails = Array.from(
 
@@ -447,8 +451,6 @@ export default async function LocationPage({
 
   );
 
-
-
   const { data: newsletterSuppressions, error: newsletterSuppressionsError } =
 
     locationEmails.length > 0
@@ -463,15 +465,11 @@ export default async function LocationPage({
 
       : { data: [], error: null };
 
-
-
   if (newsletterSuppressionsError) {
 
     console.error("Newsletter-Abmeldungen konnten nicht geladen werden:", newsletterSuppressionsError);
 
   }
-
-
 
   // ------------------------------------------------------------
 
@@ -479,17 +477,11 @@ export default async function LocationPage({
 
   // ------------------------------------------------------------
 
-
-
   async function createAcquisitionRound(formData: FormData) {
 
     "use server";
 
-
-
     const name = valueOrNull(formData.get("name"));
-
-
 
     if (!name) {
 
@@ -503,8 +495,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { data: existing } = await supabaseAdmin
 
       .from("acquisition_rounds")
@@ -514,8 +504,6 @@ export default async function LocationPage({
       .ilike("name", name)
 
       .maybeSingle();
-
-
 
     if (existing) {
 
@@ -531,8 +519,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { data: created, error } = await supabaseAdmin
 
       .from("acquisition_rounds")
@@ -542,8 +528,6 @@ export default async function LocationPage({
       .select("id, name")
 
       .single();
-
-
 
     if (error || !created) {
 
@@ -557,13 +541,9 @@ export default async function LocationPage({
 
     }
 
-
-
     revalidatePath(`/admin/locations/${id}`);
 
     revalidatePath("/admin/acquisition");
-
-
 
     return {
 
@@ -577,25 +557,17 @@ export default async function LocationPage({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // NEUEN AKQUISE-VORGANG FÜR DIESE LOCATION STARTEN
 
   // ------------------------------------------------------------
 
-
-
   async function createAcquisition(formData: FormData) {
 
     "use server";
 
-
-
     const roundName = valueOrNull(formData.get("round_name"));
-
-
 
     if (!roundName) {
 
@@ -608,8 +580,6 @@ export default async function LocationPage({
       };
 
     }
-
-
 
     const { data: activeExisting } = await supabaseAdmin
 
@@ -627,8 +597,6 @@ export default async function LocationPage({
 
       .limit(1);
 
-
-
     if (activeExisting && activeExisting.length > 0) {
 
       return {
@@ -642,8 +610,6 @@ export default async function LocationPage({
       };
 
     }
-
-
 
     const { error } = await supabaseAdmin
 
@@ -661,8 +627,6 @@ export default async function LocationPage({
 
       });
 
-
-
     if (error) {
 
       return {
@@ -675,13 +639,9 @@ export default async function LocationPage({
 
     }
 
-
-
     revalidatePath(`/admin/locations/${id}`);
 
     revalidatePath("/admin/acquisition");
-
-
 
     return {
 
@@ -693,29 +653,21 @@ export default async function LocationPage({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // AKQUISE-EINTRAG DIREKT AUS DER LOCATION
 
   // ------------------------------------------------------------
 
-
-
   async function addActivity(formData: FormData) {
 
     "use server";
-
-
 
     const acquisitionId = valueOrNull(
 
       formData.get("acquisition_id")
 
     );
-
-
 
     if (!acquisitionId) {
 
@@ -728,8 +680,6 @@ export default async function LocationPage({
       };
 
     }
-
-
 
     // Sicherheitscheck:
 
@@ -748,8 +698,6 @@ export default async function LocationPage({
         .eq("venue_id", id)
 
         .single();
-
-
 
     if (
 
@@ -773,21 +721,15 @@ export default async function LocationPage({
 
     }
 
-
-
     const activityType =
 
       valueOrNull(formData.get("activity_type")) || "Kontakt";
-
-
 
     const activityDate =
 
       valueOrNull(formData.get("activity_date")) ||
 
       new Date().toISOString().slice(0, 10);
-
-
 
     const channel = valueOrNull(formData.get("channel"));
 
@@ -805,11 +747,7 @@ export default async function LocationPage({
 
     );
 
-
-
     let statusAfter = valueOrNull(formData.get("status_after"));
-
-
 
     if (activityType === "Absage") {
 
@@ -817,15 +755,11 @@ export default async function LocationPage({
 
     }
 
-
-
     if (activityType === "Buchung") {
 
       statusAfter = "Gebucht 🎉";
 
     }
-
-
 
     if (
 
@@ -844,8 +778,6 @@ export default async function LocationPage({
       statusAfter = "Kontaktiert";
 
     }
-
-
 
     const { error: insertError } = await supabaseAdmin
 
@@ -875,8 +807,6 @@ export default async function LocationPage({
 
       });
 
-
-
     if (insertError) {
 
       return {
@@ -889,11 +819,7 @@ export default async function LocationPage({
 
     }
 
-
-
     const acquisitionUpdate: Record<string, string | null> = {};
-
-
 
     if (
 
@@ -907,8 +833,6 @@ export default async function LocationPage({
 
       acquisitionUpdate.last_contact_at = activityDate;
 
-
-
       if (channel) {
 
         acquisitionUpdate.contact_channel = channel;
@@ -917,15 +841,11 @@ export default async function LocationPage({
 
     }
 
-
-
     if (note) {
 
       acquisitionUpdate.contact_note = note;
 
     }
-
-
 
     if (response) {
 
@@ -933,15 +853,11 @@ export default async function LocationPage({
 
     }
 
-
-
     if (nextStep !== null) {
 
       acquisitionUpdate.next_step = nextStep;
 
     }
-
-
 
     if (followUpAt !== null) {
 
@@ -949,23 +865,17 @@ export default async function LocationPage({
 
     }
 
-
-
     if (statusAfter) {
 
       acquisitionUpdate.status = statusAfter;
 
     }
 
-
-
     if (interestAfter) {
 
       acquisitionUpdate.interest = interestAfter;
 
     }
-
-
 
     if (Object.keys(acquisitionUpdate).length > 0) {
 
@@ -978,8 +888,6 @@ export default async function LocationPage({
         .eq("id", acquisitionId)
 
         .eq("venue_id", id);
-
-
 
       if (updateError) {
 
@@ -999,8 +907,6 @@ export default async function LocationPage({
 
     }
 
-
-
     revalidatePath(`/admin/locations/${id}`);
 
     revalidatePath("/admin/acquisition");
@@ -1008,8 +914,6 @@ export default async function LocationPage({
     revalidatePath("/admin");
 
     revalidatePath(`/admin/acquisition/${acquisitionId}`);
-
-
 
     return {
 
@@ -1021,27 +925,19 @@ export default async function LocationPage({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // AKQUISE-EINTRAG LÖSCHEN
 
   // ------------------------------------------------------------
 
-
-
   async function deleteActivity(formData: FormData) {
 
     "use server";
 
-
-
     const acquisitionId = valueOrNull(formData.get("acquisition_id"));
 
     const activityId = valueOrNull(formData.get("activity_id"));
-
-
 
     if (!acquisitionId || !activityId) {
 
@@ -1054,8 +950,6 @@ export default async function LocationPage({
       };
 
     }
-
-
 
     // Sicherheitscheck: Vorgang muss zu dieser Location gehören.
 
@@ -1073,8 +967,6 @@ export default async function LocationPage({
 
         .single();
 
-
-
     if (acquisitionCheckError || !currentAcquisition) {
 
       return {
@@ -1087,8 +979,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { error: deleteError } = await supabaseAdmin
 
       .from("acquisition_activities")
@@ -1098,8 +988,6 @@ export default async function LocationPage({
       .eq("id", activityId)
 
       .eq("acquisition_id", acquisitionId);
-
-
 
     if (deleteError) {
 
@@ -1112,8 +1000,6 @@ export default async function LocationPage({
       };
 
     }
-
-
 
     // Nach dem Löschen den aktuellen Stand aus den verbliebenen
 
@@ -1153,8 +1039,6 @@ export default async function LocationPage({
 
         .order("created_at", { ascending: false });
 
-
-
     if (remainingError) {
 
       return {
@@ -1171,11 +1055,7 @@ export default async function LocationPage({
 
     }
 
-
-
     const remaining = remainingActivities || [];
-
-
 
     const latestContact = remaining.find((activity) =>
 
@@ -1187,8 +1067,6 @@ export default async function LocationPage({
 
     );
 
-
-
     const latestWithNote = remaining.find((activity) => activity.note);
 
     const latestWithResponse = remaining.find((activity) => activity.response);
@@ -1198,8 +1076,6 @@ export default async function LocationPage({
     const latestWithFollowUp = remaining.find((activity) => activity.follow_up_at);
 
     const latestWithStatus = remaining.find((activity) => activity.status_after);
-
-
 
     const { error: updateError } = await supabaseAdmin
 
@@ -1227,8 +1103,6 @@ export default async function LocationPage({
 
       .eq("venue_id", id);
 
-
-
     if (updateError) {
 
       return {
@@ -1245,8 +1119,6 @@ export default async function LocationPage({
 
     }
 
-
-
     revalidatePath(`/admin/locations/${id}`);
 
     revalidatePath("/admin/acquisition");
@@ -1254,8 +1126,6 @@ export default async function LocationPage({
     revalidatePath("/admin");
 
     revalidatePath(`/admin/acquisition/${acquisitionId}`);
-
-
 
     return {
 
@@ -1267,8 +1137,6 @@ export default async function LocationPage({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // KOMPLETTEN AKQUISE-VORGANG LÖSCHEN
@@ -1277,17 +1145,11 @@ export default async function LocationPage({
 
   // ------------------------------------------------------------
 
-
-
   async function deleteAcquisition(formData: FormData) {
 
     "use server";
 
-
-
     const acquisitionId = valueOrNull(formData.get("acquisition_id"));
-
-
 
     if (!acquisitionId) {
 
@@ -1300,8 +1162,6 @@ export default async function LocationPage({
       };
 
     }
-
-
 
     const { data: currentAcquisition, error: acquisitionCheckError } =
 
@@ -1317,8 +1177,6 @@ export default async function LocationPage({
 
         .single();
 
-
-
     if (acquisitionCheckError || !currentAcquisition) {
 
       return {
@@ -1331,8 +1189,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { error: activitiesDeleteError } = await supabaseAdmin
 
       .from("acquisition_activities")
@@ -1340,8 +1196,6 @@ export default async function LocationPage({
       .delete()
 
       .eq("acquisition_id", acquisitionId);
-
-
 
     if (activitiesDeleteError) {
 
@@ -1359,8 +1213,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { error: acquisitionDeleteError } = await supabaseAdmin
 
       .from("acquisition")
@@ -1370,8 +1222,6 @@ export default async function LocationPage({
       .eq("id", acquisitionId)
 
       .eq("venue_id", id);
-
-
 
     if (acquisitionDeleteError) {
 
@@ -1385,8 +1235,6 @@ export default async function LocationPage({
 
     }
 
-
-
     revalidatePath(`/admin/locations/${id}`);
 
     revalidatePath("/admin/acquisition");
@@ -1394,8 +1242,6 @@ export default async function LocationPage({
     revalidatePath("/admin");
 
     revalidatePath(`/admin/acquisition/${acquisitionId}`);
-
-
 
     return {
 
@@ -1407,8 +1253,6 @@ export default async function LocationPage({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // AKQUISE-RUNDE ENTFERNEN
@@ -1419,17 +1263,11 @@ export default async function LocationPage({
 
   // ------------------------------------------------------------
 
-
-
   async function removeAcquisitionRound(formData: FormData) {
 
     "use server";
 
-
-
     const roundName = valueOrNull(formData.get("round_name"));
-
-
 
     if (!roundName) {
 
@@ -1443,8 +1281,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { data: round, error: roundError } = await supabaseAdmin
 
       .from("acquisition_rounds")
@@ -1454,8 +1290,6 @@ export default async function LocationPage({
       .ilike("name", roundName)
 
       .maybeSingle();
-
-
 
     if (roundError) {
 
@@ -1469,8 +1303,6 @@ export default async function LocationPage({
 
     }
 
-
-
     if (!round) {
 
       return {
@@ -1483,8 +1315,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { data: usage, error: usageError } = await supabaseAdmin
 
       .from("acquisition")
@@ -1494,8 +1324,6 @@ export default async function LocationPage({
       .ilike("program", round.name)
 
       .limit(1);
-
-
 
     if (usageError) {
 
@@ -1509,8 +1337,6 @@ export default async function LocationPage({
 
     }
 
-
-
     if (usage && usage.length > 0) {
 
       const { error: deactivateError } = await supabaseAdmin
@@ -1520,8 +1346,6 @@ export default async function LocationPage({
         .update({ active: false })
 
         .eq("id", round.id);
-
-
 
       if (deactivateError) {
 
@@ -1535,13 +1359,9 @@ export default async function LocationPage({
 
       }
 
-
-
       revalidatePath(`/admin/locations/${id}`);
 
       revalidatePath("/admin/acquisition");
-
-
 
       return {
 
@@ -1555,8 +1375,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { error: deleteRoundError } = await supabaseAdmin
 
       .from("acquisition_rounds")
@@ -1564,8 +1382,6 @@ export default async function LocationPage({
       .delete()
 
       .eq("id", round.id);
-
-
 
     if (deleteRoundError) {
 
@@ -1579,13 +1395,9 @@ export default async function LocationPage({
 
     }
 
-
-
     revalidatePath(`/admin/locations/${id}`);
 
     revalidatePath("/admin/acquisition");
-
-
 
     return {
 
@@ -1597,8 +1409,6 @@ export default async function LocationPage({
 
   }
 
-
-
   // ------------------------------------------------------------
 
   // LOCATION LÖSCHEN
@@ -1609,13 +1419,9 @@ export default async function LocationPage({
 
   // ------------------------------------------------------------
 
-
-
   async function deleteLocation() {
 
     "use server";
-
-
 
     const [
 
@@ -1637,8 +1443,6 @@ export default async function LocationPage({
 
         .eq("venue_id", id),
 
-
-
       supabaseAdmin
 
         .from("acquisition")
@@ -1646,8 +1450,6 @@ export default async function LocationPage({
         .select("id", { count: "exact", head: true })
 
         .eq("venue_id", id),
-
-
 
       supabaseAdmin
 
@@ -1658,8 +1460,6 @@ export default async function LocationPage({
         .eq("venue_id", id),
 
     ]);
-
-
 
     if (showCountError || acquisitionCountError || mailingCountError) {
 
@@ -1681,11 +1481,7 @@ export default async function LocationPage({
 
     }
 
-
-
     const blockers: string[] = [];
-
-
 
     if ((showCount || 0) > 0) {
 
@@ -1696,8 +1492,6 @@ export default async function LocationPage({
       );
 
     }
-
-
 
     if ((acquisitionCount || 0) > 0) {
 
@@ -1717,8 +1511,6 @@ export default async function LocationPage({
 
     }
 
-
-
     if ((mailingCount || 0) > 0) {
 
       blockers.push(
@@ -1732,8 +1524,6 @@ export default async function LocationPage({
       );
 
     }
-
-
 
     if (blockers.length > 0) {
 
@@ -1753,8 +1543,6 @@ export default async function LocationPage({
 
     }
 
-
-
     const { error: deleteError } = await supabaseAdmin
 
       .from("venues")
@@ -1762,8 +1550,6 @@ export default async function LocationPage({
       .delete()
 
       .eq("id", id);
-
-
 
     if (deleteError) {
 
@@ -1777,15 +1563,11 @@ export default async function LocationPage({
 
     }
 
-
-
     revalidatePath("/admin/locations");
 
     redirect("/admin/locations");
 
   }
-
-
 
   // ------------------------------------------------------------
 
@@ -1793,19 +1575,13 @@ export default async function LocationPage({
 
   // ------------------------------------------------------------
 
-
-
   async function saveLocation(formData: FormData) {
 
     "use server";
 
-
-
     const payload = {
 
       name: valueOrNull(formData.get("name")),
-
-
 
       street: valueOrNull(formData.get("street")),
 
@@ -1819,21 +1595,15 @@ export default async function LocationPage({
 
       website: valueOrNull(formData.get("website")),
 
-
-
       capacity: formData.get("capacity")
 
         ? Number(formData.get("capacity"))
 
         : null,
 
-
-
       venue_type: valueOrNull(formData.get("venue_type")),
 
       audience_notes: valueOrNull(formData.get("audience_notes")),
-
-
 
       contact_name: valueOrNull(formData.get("contact_name")),
 
@@ -1843,8 +1613,6 @@ export default async function LocationPage({
 
       contact_phone: valueOrNull(formData.get("contact_phone")),
 
-
-
       contact_name_2: valueOrNull(formData.get("contact_name_2")),
 
       contact_role_2: valueOrNull(formData.get("contact_role_2")),
@@ -1853,11 +1621,7 @@ export default async function LocationPage({
 
       contact_phone_2: valueOrNull(formData.get("contact_phone_2")),
 
-
-
       booking_email: valueOrNull(formData.get("booking_email")),
-
-
 
       relationship_status: valueOrNull(
 
@@ -1865,27 +1629,17 @@ export default async function LocationPage({
 
       ),
 
-
-
       internal_notes: valueOrNull(formData.get("internal_notes")),
 
       special_notes: valueOrNull(formData.get("special_notes")),
-
-
 
       lat: valueOrNull(formData.get("lat")),
 
       lng: valueOrNull(formData.get("lng")),
 
-
-
       played_before: formData.get("played_before") === "on",
 
-
-
       season_notes: valueOrNull(formData.get("season_notes")),
-
-
 
       program_focus: valueOrNull(formData.get("program_focus"))
 
@@ -1899,8 +1653,6 @@ export default async function LocationPage({
 
         : [],
 
-
-
       instagram_url: valueOrNull(formData.get("instagram_url")),
 
       facebook_url: valueOrNull(formData.get("facebook_url")),
@@ -1909,8 +1661,6 @@ export default async function LocationPage({
 
     };
 
-
-
     const { error } = await supabaseAdmin
 
       .from("venues")
@@ -1918,8 +1668,6 @@ export default async function LocationPage({
       .update(payload)
 
       .eq("id", id);
-
-
 
     if (error) {
 
@@ -1933,13 +1681,9 @@ export default async function LocationPage({
 
     }
 
-
-
     revalidatePath("/admin/locations");
 
     revalidatePath(`/admin/locations/${id}`);
-
-
 
     return {
 
@@ -1951,14 +1695,14 @@ export default async function LocationPage({
 
   }
 
-
-
   return (
 
     <LocationClient
 
       venue={venue}
+
     linkedOrganizers={linkedOrganizers}
+
     linkedOrganizerAcquisitions={linkedOrganizerAcquisitions}
 
       shows={shows || []}
@@ -1993,23 +1737,19 @@ export default async function LocationPage({
 
       importedFromDiscover={imported === "1"}
 
+      locationMailRows={locationMailRows || []}
+      locationMailError={Boolean(locationMailError)}
     />
 
   );
 
 }
 
-
-
 function valueOrNull(value: FormDataEntryValue | null) {
 
   if (value === null) return null;
 
-
-
   const stringValue = String(value).trim();
-
-
 
   return stringValue === "" ? null : stringValue;
 

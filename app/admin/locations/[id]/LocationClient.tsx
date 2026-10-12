@@ -119,6 +119,19 @@ type AcquisitionActivity = {
   created_at: string | null;
 };
 
+type LocationMail = {
+  id: string;
+  show_id: string | null;
+  direction: string;
+  from_email: string | null;
+  to_emails: string[] | null;
+  subject: string | null;
+  body_text: string | null;
+  sent_at: string | null;
+  received_at: string | null;
+  created_at: string | null;
+};
+
 type CrmEmail = {
   id: string;
   acquisition_id: string;
@@ -217,6 +230,8 @@ export default function LocationClient({
   acquisitionActivities = [],
   acquisitionRounds = [],
   mailingHistory = [],
+  locationMailRows = [],
+  locationMailError = false,
   newsletterSuppressions = [],
   addActivity,
   createAcquisition,
@@ -238,6 +253,8 @@ export default function LocationClient({
   acquisitionActivities?: AcquisitionActivity[];
   acquisitionRounds?: AcquisitionRound[];
   mailingHistory?: MailingHistoryItem[];
+  locationMailRows?: LocationMail[];
+  locationMailError?: boolean;
   newsletterSuppressions?: NewsletterSuppression[];
   addActivity?: (formData: FormData) => Promise<ActionResult>;
   createAcquisition?: (formData: FormData) => Promise<ActionResult>;
@@ -405,11 +422,30 @@ export default function LocationClient({
     "Kontakt", "Kontaktversuch", "Rückmeldung", "Telefonat", "Persönlicher Kontakt",
     "Absage", "Buchung", "Weiterleitung", "Bisheriger Kontaktstand",
   ]);
+  const showById = new Map(shows.map((show) => [show.id, show]));
+  // Einheitliche Zeitstempel für die chronologische Sortierung aller Quellen.
+  // Bei manuellen Aktivitäten gilt das gewählte Aktivitätsdatum; die Uhrzeit
+  // aus created_at nur dann, wenn beide auf denselben Kalendertag fallen.
+  const activityTimelineStamp = (activity: AcquisitionActivity) => {
+    const day = activity.activity_date?.slice(0, 10);
+    const created = activity.created_at;
+    if (!day) return created || "";
+    if (created && new Date(created).toLocaleDateString("en-CA", { timeZone: "Europe/Berlin" }) === day) {
+      return created;
+    }
+    return `${day}T00:00:00`;
+  };
   const contactTimeline = [
-    ...crmEmails.filter((mail) => mail.status === "sent" || mail.direction === "incoming").map((mail) => ({ key: `crm-email-${mail.id}`, kind: "email" as const, date: mail.sent_at || mail.created_at || "", mail, parent: acquisition.find((item) => item.id === mail.acquisition_id) })),
+    ...crmEmails.filter((mail) => mail.status === "sent" || mail.direction === "incoming").map((mail) => ({ key: `crm-email-${mail.id}`, kind: "email" as const, date: mail.sent_at || mail.received_at || mail.created_at || "", mail, parent: acquisition.find((item) => item.id === mail.acquisition_id) })),
+    ...locationMailRows.filter((mail) => mail.direction === "incoming" || mail.direction === "outgoing" || mail.direction === "sent").map((mail) => ({ key: `location-email-${mail.id}`, kind: "location-email" as const, date: mail.sent_at || mail.received_at || mail.created_at || "", mail })),
     ...mailingHistory.map((mailing) => ({ key: `mailing-${mailing.id}`, kind: "mailing" as const, date: mailing.sent_at || mailing.scheduled_at || mailing.created_at || "", mailing })),
-    ...displayedActivities.filter((activity) => contactTypes.has(activity.activity_type || "")).map((activity) => ({ key: `activity-${activity.id}`, kind: "activity" as const, date: activity.activity_date || activity.created_at || "", activity, parent: acquisition.find((item) => item.id === activity.acquisition_id) })),
-  ].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    ...displayedActivities.filter((activity) => contactTypes.has(activity.activity_type || "")).map((activity) => ({ key: `activity-${activity.id}`, kind: "activity" as const, date: activityTimelineStamp(activity), activity, parent: acquisition.find((item) => item.id === activity.acquisition_id) })),
+  ].sort((a, b) => {
+    const timeA = Date.parse(a.date);
+    const timeB = Date.parse(b.date);
+    if (Number.isFinite(timeA) && Number.isFinite(timeB)) return timeB - timeA;
+    return String(b.date).localeCompare(String(a.date));
+  });
   // Nur echte persönliche Kontakte schließen eine Kontakt-WVL automatisch ab.
   // Newsletter, interne Notizen und bloße Statusänderungen zählen nicht dazu.
   const actualContactTypes = new Set(["Kontakt", "Kontaktversuch", "Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Absage", "Buchung", "Weiterleitung"]);
@@ -719,7 +755,7 @@ export default function LocationClient({
                 )
               }
             >
-              {acquisition.length === 0 && mailingHistory.length === 0 && !showNewAcquisitionForm ? (
+              {acquisition.length === 0 && mailingHistory.length === 0 && locationMailRows.length === 0 && !showNewAcquisitionForm ? (
                 <div className="rounded-2xl border border-dashed border-black/10 bg-[#fbf7ef] px-5 py-8 text-center">
                   <p className="text-sm font-black text-zinc-700">
                     Noch keine Kontakte oder Akquise für diese Location.
@@ -1149,16 +1185,19 @@ export default function LocationClient({
                     <div className="mt-5 max-h-[560px] min-h-[180px] overflow-y-auto bg-white pr-1">
                       {mailLoading && <p className="py-3 text-xs font-semibold text-zinc-500">E-Mails werden geladen …</p>}
                       {mailError && <p className="py-3 text-xs font-semibold text-amber-700">{mailError}</p>}
+                      {locationMailError && <p className="py-3 text-xs font-semibold text-amber-700">Location-E-Mails konnten nicht geladen werden.</p>}
                       {contactTimeline.length === 0 && !mailLoading && <p className="py-6 text-sm font-semibold text-zinc-500">Noch keine Kontakte, E-Mails oder Newsletter dokumentiert.</p>}
                       {contactTimeline.map((entry, index) => (
                         <div key={entry.key} className="grid grid-cols-[18px_minmax(0,1fr)] gap-3">
                           <div className="flex flex-col items-center pt-[19px]">
-                            <span className={`h-3 w-3 shrink-0 rounded-full ring-2 ring-white ${entry.kind === "mailing" ? "bg-violet-500" : entry.kind === "email" ? "bg-lime-400" : ["bg-lime-400", "bg-blue-700", "bg-red-500", "bg-zinc-400"][index % 4]}`} />
+                            <span className={`h-3 w-3 shrink-0 rounded-full ring-2 ring-white ${entry.kind === "mailing" ? "bg-violet-500" : (entry.kind === "email" || entry.kind === "location-email") ? "bg-lime-400" : ["bg-lime-400", "bg-blue-700", "bg-red-500", "bg-zinc-400"][index % 4]}`} />
                             {index < contactTimeline.length - 1 && <span className="mt-2 min-h-5 w-px flex-1 border-l border-dashed border-zinc-300" />}
                           </div>
                           <div className="min-w-0 border-b border-zinc-200">
                             {entry.kind === "email" ? (
                               <LocationEmailRow mail={entry.mail} parent={entry.parent} contactEvents={contactEvents} />
+                            ) : entry.kind === "location-email" ? (
+                              <LocationDirectEmailRow mail={entry.mail} show={entry.mail.show_id ? showById.get(entry.mail.show_id) : undefined} />
                             ) : entry.kind === "mailing" ? (
                               <LocationMailingRow mailing={entry.mailing} />
                             ) : (
@@ -1688,14 +1727,42 @@ function LocationEmailRow({ mail, parent, contactEvents }: { mail: CrmEmail; par
   const stamp = mail.sent_at || mail.received_at || mail.created_at || "";
   const date = stamp.slice(0, 10);
   const outgoing = mail.direction !== "incoming";
+  const forwardedToSonja = outgoing &&
+    (mail.to_emails ?? []).some((address) => address.trim().toLowerCase() === "kontakt@sonja-gruendemann.de") &&
+    /^(wg|fw|fwd)\s*:/i.test(mail.subject?.trim() || "");
   const followUp = followUpState(mail.follow_up_at, mail.follow_up_status_override, mail.acquisition_id, date, stamp, contactEvents);
   return (
     <TimelineLine date={date} timestamp={stamp} icon={outgoing ? "✉️" : "📩"} title={mail.subject || "Ohne Betreff"}
       label={`${outgoing ? "E-Mail gesendet" : "E-Mail empfangen"}${parent?.program ? ` · ${parent.program}` : ""}`}
-      status={<FollowUpLabel state={followUp} />}>
+      status={<>
+        {forwardedToSonja && <span className="rounded-md bg-lime-100 px-2 py-1 text-[10px] font-black text-lime-900">↗ An Sonja weitergeleitet</span>}
+        <FollowUpLabel state={followUp} />
+      </>}>
       <p className="break-all text-xs font-semibold text-zinc-500">{outgoing ? "An" : "Von"}: {outgoing ? (mail.to_emails ?? []).join(", ") || "—" : mail.from_email || "—"}</p>
       <p className="mt-2 whitespace-pre-wrap break-words leading-6">{mail.body_text || "Kein Nachrichtentext vorhanden."}</p>
       {parent && <Link href={`/admin/acquisition/${parent.id}`} className="mt-3 inline-block text-xs font-black text-blue-700">Akquise öffnen →</Link>}
+    </TimelineLine>
+  );
+}
+
+function LocationDirectEmailRow({ mail, show }: { mail: LocationMail; show?: LocationShow }) {
+  const stamp = mail.sent_at || mail.received_at || mail.created_at || "";
+  const outgoing = mail.direction !== "incoming";
+  return (
+    <TimelineLine
+      date={stamp.slice(0, 10)}
+      timestamp={stamp}
+      icon={outgoing ? "✉️" : "📩"}
+      title={mail.subject || "Ohne Betreff"}
+      label={`${outgoing ? "E-Mail gesendet" : "E-Mail empfangen"}${show ? ` · Show ${formatShowDate(show.show_date)}${show.program ? ` · ${show.program}` : ""}` : " · Location"}`}
+    >
+      <p className="break-all text-xs font-semibold text-zinc-500">
+        {outgoing ? "An" : "Von"}: {outgoing ? (mail.to_emails ?? []).join(", ") || "—" : mail.from_email || "—"}
+      </p>
+      <p className="mt-2 whitespace-pre-wrap break-words leading-6">
+        {mail.body_text || "Kein Nachrichtentext vorhanden."}
+      </p>
+      {show && mail.show_id && <Link href={`/admin/shows/${mail.show_id}`} className="mt-3 inline-block text-xs font-black text-blue-700">Show öffnen →</Link>}
     </TimelineLine>
   );
 }

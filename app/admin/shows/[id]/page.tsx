@@ -199,6 +199,14 @@ export default async function ShowAkteV2Page({
   const show = showResult.data;
   if (showResult.error || !show) notFound();
 
+  // Nur ausdrücklich dieser Show zugeordnete E-Mails; keine Akquise-Vererbung.
+  const { data: showCommunication, error: showCommunicationError } = await supabaseAdmin
+    .from("crm_emails")
+    .select("id, direction, from_email, to_emails, subject, body_text, sent_at, received_at, created_at")
+    .eq("show_id", id)
+    .neq("inbox_state", "deleted")
+    .order("created_at", { ascending: false });
+
   const copySource = show.copy_setup_pending && show.copy_source_show_id
     ? (await supabaseAdmin.schema("booking").from("shows").select("id, venue, city, show_date").eq("id", show.copy_source_show_id).maybeSingle()).data
     : null;
@@ -1861,6 +1869,38 @@ export default async function ShowAkteV2Page({
 
           </section>
         </div>
+
+          {/* Kommunikation: ausschließlich direkte Show-Zuordnungen */}
+          <section className="rounded-[1.4rem] bg-white p-5 shadow-sm ring-1 ring-black/5 sm:p-6" aria-label="Show-Kommunikation">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black text-zinc-950">✉️ Kommunikation</h2>
+                <p className="mt-1 text-xs font-medium text-zinc-500">Nur E-Mails, die ausdrücklich dieser Show zugeordnet wurden.</p>
+              </div>
+              <Link href="/admin/mail" className="rounded-xl bg-zinc-900 px-3 py-2 text-xs font-black text-white hover:bg-zinc-700">Mail-Zentrale öffnen →</Link>
+            </div>
+            {showCommunicationError ? (
+              <p className="mt-4 text-sm text-red-700">Die Kommunikation konnte nicht geladen werden.</p>
+            ) : !showCommunication?.length ? (
+              <p className="mt-4 rounded-xl bg-zinc-50 p-4 text-sm text-zinc-500">Noch keine E-Mails direkt dieser Show zugeordnet.</p>
+            ) : (
+              <div className="mt-4 space-y-2">
+                {showCommunication.map((mail: any) => (
+                  <details key={mail.id} className="group rounded-xl border border-zinc-200 bg-white">
+                    <summary className="cursor-pointer list-none px-4 py-3 marker:hidden">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-sm font-black text-zinc-900">{mail.subject || "(Ohne Betreff)"}</span>
+                        <span className="text-xs font-semibold text-zinc-500">{mail.direction === "outgoing" ? "↗ Gesendet" : "↙ Empfangen"} · {mail.sent_at || mail.received_at || mail.created_at ? new Date(mail.sent_at || mail.received_at || mail.created_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" }) : "Datum unbekannt"}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-500">Von: {mail.from_email || "–"} · An: {Array.isArray(mail.to_emails) ? mail.to_emails.join(", ") : "–"}</div>
+                    </summary>
+                    <div className="border-t border-zinc-100 px-4 py-4 text-sm leading-relaxed whitespace-pre-wrap text-zinc-700">{mail.body_text || "Kein Textinhalt vorhanden."}</div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </section>
+
 
         <div className="fixed bottom-5 left-[calc(260px+2rem)] right-8 z-30 rounded-[1.5rem] bg-zinc-950 p-3 text-white shadow-2xl">
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">

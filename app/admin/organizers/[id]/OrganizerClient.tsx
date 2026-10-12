@@ -360,6 +360,13 @@ export default function OrganizerClient({
   ] =
     useState(false);
 
+  // Rückmeldungen gehören zur Aktion, nicht mitten in die Akquise-Chronik.
+  useEffect(() => {
+    if (!actionMessage) return;
+    const timeout = window.setTimeout(() => setActionMessage(null), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [actionMessage]);
+
   const [crmEmails, setCrmEmails] = useState<CrmEmail[]>([]);
   const [mailLoading, setMailLoading] = useState(false);
   const [mailError, setMailError] = useState<string | null>(null);
@@ -561,11 +568,7 @@ export default function OrganizerClient({
       timestamp: m.sent_at || m.received_at || m.created_at || "",
     })),
   ].filter((event) => event.date);
-  const acquisitionOverview = [...acquisition].sort((a, b) =>
-    String(b.last_contact_at || b.created_at || "").localeCompare(
-      String(a.last_contact_at || a.created_at || "")
-    )
-  );
+
 
   // ============================================================
   // SAVE
@@ -606,6 +609,15 @@ export default function OrganizerClient({
     <main className="min-h-screen bg-[#fbf7ef] px-8 py-8 text-zinc-950">
 
       <div className="mx-auto max-w-7xl space-y-5">
+
+        {actionMessage && (
+          <div role="status" aria-live="polite" className="fixed right-6 top-6 z-50 max-w-sm rounded-2xl bg-zinc-950 px-5 py-3 text-sm font-bold text-white shadow-2xl ring-1 ring-white/10">
+            <div className="flex items-start gap-3">
+              <span className="min-w-0 flex-1">{actionMessage}</span>
+              <button type="button" onClick={() => setActionMessage(null)} aria-label="Meldung schließen" className="text-white/60 hover:text-white">✕</button>
+            </div>
+          </div>
+        )}
 
         {/* ================================================== */}
         {/* HEADER */}
@@ -1033,11 +1045,6 @@ export default function OrganizerClient({
             }
           >
 
-            {actionMessage && (
-              <div className="mb-4 rounded-xl bg-zinc-950 px-4 py-3 text-sm font-bold text-white">
-                {actionMessage}
-              </div>
-            )}
 
             {showNewAcquisitionForm && (
               <div className="mb-6 overflow-hidden rounded-[24px] border border-black/5 bg-white shadow-sm">
@@ -1422,44 +1429,7 @@ export default function OrganizerClient({
               </div>
             ) : (
               <div className="space-y-5">
-                <div>
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-zinc-400">Akquise-Vorgänge</p>
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-black text-zinc-500">
-                      {acquisitionOverview.length} {acquisitionOverview.length === 1 ? "Vorgang" : "Vorgänge"}
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {acquisitionOverview.map((item) => {
-                      const itemActivities = displayedActivities
-                        .filter((activity) => activity.acquisition_id === item.id && contactTypes.has(activity.activity_type || ""))
-                        .sort((a, b) => String(b.activity_date || b.created_at || "").localeCompare(String(a.activity_date || a.created_at || "")));
-                      const roundName = acquisitionRounds.find((round) => round.id === item.round_id)?.name;
-                      return (
-                        <div key={item.id} className="rounded-2xl border border-black/10 bg-white p-4 sm:p-5">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-black text-zinc-900">{roundName || item.program || "Allgemein"}</span>
-                                <AcquisitionStatus status={item.status} />
-                                {item.archived_at && <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs font-bold text-zinc-500">Archiv</span>}
-                              </div>
-                              {roundName && item.program && item.program !== roundName && <p className="mt-1 text-xs font-semibold text-zinc-500">{item.program}</p>}
-                            </div>
-                            <Link href={`/admin/acquisition/${item.id}`} className="shrink-0 text-sm font-black text-zinc-600 hover:text-zinc-950">Vorgang öffnen →</Link>
-                          </div>
-                          <div className="mt-3 grid gap-x-5 gap-y-2 border-t border-zinc-100 pt-3 text-xs sm:grid-cols-3">
-                            <p><span className="font-semibold text-zinc-400">Letzter Kontakt</span><span className="mt-1 block font-bold text-zinc-700">{itemActivities.length ? (itemActivities[0].activity_date ? formatDate(itemActivities[0].activity_date) : "Datum nicht erfasst") : "Noch kein Kontakt"}</span></p>
-                            <p><span className="font-semibold text-zinc-400">Wiedervorlage</span><span className="mt-1 block font-bold text-amber-700">{item.next_follow_up_at ? formatDate(item.next_follow_up_at) : "—"}</span></p>
-                            <p><span className="font-semibold text-zinc-400">Nächste Aktion</span><span className="mt-1 block font-bold text-zinc-700">{item.next_step || "—"}</span></p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="mt-5 max-h-[560px] min-h-[180px] overflow-y-auto bg-white pr-1">
+                <div className="mt-3 max-h-[560px] min-h-[180px] overflow-y-auto bg-white pr-1">
                   {mailLoading && <p className="py-3 text-xs font-semibold text-zinc-500">E-Mails werden geladen …</p>}
                   {mailError && <p className="py-3 text-xs font-semibold text-amber-700">{mailError}</p>}
                   {contactTimeline.length === 0 && !mailLoading && <p className="py-6 text-sm font-semibold text-zinc-500">Noch keine Kontakte, E-Mails oder Newsletter dokumentiert.</p>}
@@ -2495,62 +2465,28 @@ function VenueRow({
     );
 
   return (
-    <div className="rounded-2xl bg-[#fbf7ef] p-5 ring-1 ring-black/5">
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-
-        <div>
-
-          <div className="flex flex-wrap items-center gap-2">
-
-            <p className="font-black text-zinc-950">
-              {venue.name}
-            </p>
-
-            {venue.acquisition_relevant ===
-              false && (
-              <span className="rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-black text-red-600">
-                Nur Spielort
-              </span>
-            )}
-
-          </div>
-
-          <p className="mt-1 text-xs font-semibold text-zinc-400">
-            {venue.city ||
-              "Ort offen"}
-          </p>
-
-          <p className="mt-2 text-xs font-bold text-zinc-500">
-            {venue.relationship_status ||
-              "Kein Status"}
-          </p>
-
-        </div>
-
-        <div className="flex gap-2">
-
-          <Link
-            href={`/admin/locations/${venue.id}`}
-            className="rounded-full bg-white px-4 py-2 text-xs font-black text-zinc-700 ring-1 ring-black/5"
-          >
-            Location öffnen →
+    <div className="rounded-xl border border-black/5 bg-[#fbf7ef] px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+          <Link href={`/admin/locations/${venue.id}`} className="min-w-0 truncate text-sm font-black text-zinc-950 hover:underline">
+            {venue.name} <span className="text-zinc-400">↗</span>
           </Link>
-
-          <button
-            type="button"
-            onClick={() =>
-              setEditing(
-                !editing
-              )
-            }
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-sm ring-1 ring-black/5"
-          >
-            ✏️
-          </button>
-
+          {venue.city && <span className="text-xs font-semibold text-zinc-500">{venue.city}</span>}
+          {venue.acquisition_relevant === false && (
+            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-black text-red-600">Nur Spielort</span>
+          )}
+          {venue.relationship_status && (
+            <span className="text-[11px] font-semibold text-zinc-400">{venue.relationship_status}</span>
+          )}
         </div>
-
+        <button
+          type="button"
+          onClick={() => setEditing(!editing)}
+          aria-label={`Zuordnung von ${venue.name} bearbeiten`}
+          className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-black text-zinc-600 ring-1 ring-black/5 hover:text-zinc-950"
+        >
+          {editing ? "Schließen" : "Bearbeiten"}
+        </button>
       </div>
 
       {editing && (

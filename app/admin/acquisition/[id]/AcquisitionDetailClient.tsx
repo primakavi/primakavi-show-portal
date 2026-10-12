@@ -420,23 +420,46 @@ export default function AcquisitionDetailClient({
 
   useEffect(() => { void refreshTimelineEmails(); }, [refreshTimelineEmails, mailRefreshKey]);
 
+  const sonjaHandoffs = timelineEmails.filter(mail =>
+
+    mail.direction === "outgoing" && mail.status === "sent" &&
+
+    (mail.to_emails || []).some(address => address.toLowerCase() === "kontakt@sonja-gruendemann.de") &&
+
+    /^WG:\s/i.test(mail.subject || "")
+
+  );
+
+  const latestSonjaHandoff = sonjaHandoffs.slice().sort((a, b) =>
+
+    (b.sent_at || b.created_at).localeCompare(a.sent_at || a.created_at)
+
+  )[0] || null;
+
+
+
   const timelineItems = [
+   ...activities.map(activity => {
+     const day = activity.activity_date?.slice(0, 10) || "";
+     const created = activity.created_at || "";
+     // Keep the chosen activity day. Use creation time only when it belongs to that day.
+     const localCreatedDay = created && !Number.isNaN(Date.parse(created))
+       ? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(created))
+       : "";
+     const timestamp = day && localCreatedDay === day ? created : `${day}T00:00:00`;
+     return { kind: "activity" as const, activity, date: day, time: timestamp, id: `a-${activity.id}` };
+   }),
+   ...timelineEmails.map(mail => ({ kind: "email" as const, mail, date: mail.sent_at || mail.received_at || mail.created_at, time: mail.sent_at || mail.received_at || mail.created_at, id: `m-${mail.id}` })),
+   ...newsletterEvents.map(newsletter => ({ kind: "newsletter" as const, newsletter, date: newsletter.sent_at || newsletter.scheduled_at || newsletter.created_at || newsletter.opened_at || newsletter.clicked_at || "1970-01-01", time: newsletter.sent_at || newsletter.scheduled_at || newsletter.created_at || newsletter.opened_at || newsletter.clicked_at || "1970-01-01", id: `n-${newsletter.id}` })),
+ ].sort((a, b) => {
+   const toTimestamp = (value: string) => {
+     const parsed = Date.parse(value);
+     return Number.isFinite(parsed) ? parsed : 0;
+   };
+   return toTimestamp(b.time) - toTimestamp(a.time);
+ });
 
-    ...activities.map(activity => ({ kind: "activity" as const, activity, date: activity.activity_date, time: activity.created_at || activity.activity_date, id: `a-${activity.id}` })),
-
-    ...timelineEmails.map(mail => ({ kind: "email" as const, mail, date: mail.sent_at || mail.received_at || mail.created_at, time: mail.sent_at || mail.received_at || mail.created_at, id: `m-${mail.id}` })),
-
-  ...newsletterEvents.map(newsletter => ({ kind: "newsletter" as const, newsletter, date: newsletter.sent_at || newsletter.scheduled_at || newsletter.created_at || newsletter.opened_at || newsletter.clicked_at || "1970-01-01", time: newsletter.sent_at || newsletter.scheduled_at || newsletter.created_at || newsletter.opened_at || newsletter.clicked_at || "1970-01-01", id: `n-${newsletter.id}` })),
-
-  ].sort((a, b) => {
-
-    const day = b.date.slice(0, 10).localeCompare(a.date.slice(0, 10));
-
-    return day || b.time.localeCompare(a.time);
-
-  });
-
-  const [showActivityForm, setShowActivityForm] = useState(false);
+ const [showActivityForm, setShowActivityForm] = useState(false);
 
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
@@ -594,6 +617,8 @@ export default function AcquisitionDetailClient({
 
                 {isArchived && <span className="rounded-full border border-black/[0.06] bg-zinc-100 px-3 py-1.5 text-xs font-black text-zinc-600">📦 abgeschlossen</span>}
 
+              {latestSonjaHandoff && <span className="rounded-full border border-lime-200 bg-lime-50 px-3 py-1.5 text-xs font-black text-zinc-700">↗ An Sonja übergeben · {formatDate((latestSonjaHandoff.sent_at || latestSonjaHandoff.created_at).slice(0, 10))}</span>}
+
               </div>
 
             </div>
@@ -602,7 +627,9 @@ export default function AcquisitionDetailClient({
 
               <p className="text-xs font-black uppercase tracking-[0.18em] text-zinc-400">Nächste Aktion</p>
 
-              <p className="mt-2 text-xl font-black text-zinc-950">{nextTask?.title || acquisition.next_step || "Noch keine Aufgabe"}</p>
+              {latestSonjaHandoff && <p className="mt-2 text-xs font-black text-zinc-700">↗ An Sonja weitergeleitet · Rückmeldung ausstehend</p>}
+
+            <p className="mt-2 text-xl font-black text-zinc-950">{nextTask?.title || acquisition.next_step || "Noch keine Aufgabe"}</p>
 
               <p className="mt-1 text-sm font-semibold text-zinc-500">{nextTask?.due_at ? `Fällig ${new Date(nextTask.due_at).toLocaleDateString("de-DE")}` : acquisition.next_follow_up_at ? `Follow-up ${formatDate(acquisition.next_follow_up_at)}` : "Wiedervorlage offen"}</p>
 
@@ -836,7 +863,7 @@ export default function AcquisitionDetailClient({
 
                         <button type="button" onClick={() => setExpandedMailId(expanded ? null : mail.id)} className="flex w-full min-w-0 items-center gap-3 rounded-lg py-1 text-left hover:bg-zinc-50">
 
-                          <span className="w-[82px] shrink-0 text-xs font-bold text-zinc-700">{new Date(item.date).toLocaleDateString("de-DE")}<span className="mt-1 block font-medium text-zinc-400">{new Date(item.date).toLocaleTimeString("de-DE", {hour:"2-digit",minute:"2-digit"})}</span></span>
+                          <span className="w-[82px] shrink-0 text-xs font-bold text-zinc-700">{new Date(item.date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}<span className="mt-1 block font-medium text-zinc-400">{new Date(item.date).toLocaleTimeString("de-DE", {hour:"2-digit",minute:"2-digit"})}</span></span>
 
                           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700"><TimelineIcon kind="email" /></span>
 
@@ -844,7 +871,9 @@ export default function AcquisitionDetailClient({
 
                           {emailWvlStatus.has(mail.id) && <span className={`hidden shrink-0 rounded-md px-2 py-1 text-[11px] font-bold sm:inline ${emailWvlStatus.get(mail.id)?.done ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-800"}`}>{emailWvlStatus.get(mail.id)?.done ? `✓ Erledigt${mail.follow_up_status_override === "done" ? " (manuell)" : emailWvlStatus.get(mail.id)?.completedDate ? ` am ${formatDate(emailWvlStatus.get(mail.id)?.completedDate)}` : ""}` : `WVL ${formatDate(mail.follow_up_at)}`}</span>}
 
-<span className="hidden shrink-0 text-xs font-semibold text-zinc-500 sm:inline">{mail.direction === "incoming" ? "↓ Empfangen" : mail.status === "sent" ? "↑ Versendet" : mail.status === "sending" ? "Versand prüfen" : mail.status}</span>
+{mail.direction === "outgoing" && mail.status === "sent" && (mail.to_emails || []).some(address => address.toLowerCase() === "kontakt@sonja-gruendemann.de") && /^WG:\s/i.test(mail.subject || "") && <span className="shrink-0 rounded-md bg-lime-50 px-2 py-1 text-[11px] font-bold text-zinc-700">↗ An Sonja übergeben</span>}
+
+                          <span className="hidden shrink-0 text-xs font-semibold text-zinc-500 sm:inline">{mail.direction === "incoming" ? "↓ Empfangen" : mail.status === "sent" ? "↑ Versendet" : mail.status === "sending" ? "Versand prüfen" : mail.status}</span>
 
                           <span className="shrink-0 text-zinc-500">{expanded ? "⌃" : "⌄"}</span>
 
@@ -1690,7 +1719,7 @@ function formatDate(value?: string | null) {
 
   if (!year || !month || !day) return value;
 
-  return `${day}.${month}.${year}`;
+  return `${day.padStart(2, "0")}.${month.padStart(2, "0")}.${year}`;
 
 }
 
@@ -1715,8 +1744,6 @@ function formatCreatedTime(value?: string | null) {
   if (!value) return "";
 
   return new Intl.DateTimeFormat("de-DE", {
-
-    weekday: "short",
 
     hour: "2-digit",
 
