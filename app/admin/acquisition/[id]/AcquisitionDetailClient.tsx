@@ -436,27 +436,44 @@ export default function AcquisitionDetailClient({
 
   )[0] || null;
 
-
-
   const timelineItems = [
+
    ...activities.map(activity => {
+
      const day = activity.activity_date?.slice(0, 10) || "";
+
      const created = activity.created_at || "";
+
      // Keep the chosen activity day. Use creation time only when it belongs to that day.
+
      const localCreatedDay = created && !Number.isNaN(Date.parse(created))
+
        ? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(created))
+
        : "";
+
      const timestamp = day && localCreatedDay === day ? created : `${day}T00:00:00`;
+
      return { kind: "activity" as const, activity, date: day, time: timestamp, id: `a-${activity.id}` };
+
    }),
+
    ...timelineEmails.map(mail => ({ kind: "email" as const, mail, date: mail.sent_at || mail.received_at || mail.created_at, time: mail.sent_at || mail.received_at || mail.created_at, id: `m-${mail.id}` })),
+
    ...newsletterEvents.map(newsletter => ({ kind: "newsletter" as const, newsletter, date: newsletter.sent_at || newsletter.scheduled_at || newsletter.created_at || newsletter.opened_at || newsletter.clicked_at || "1970-01-01", time: newsletter.sent_at || newsletter.scheduled_at || newsletter.created_at || newsletter.opened_at || newsletter.clicked_at || "1970-01-01", id: `n-${newsletter.id}` })),
+
  ].sort((a, b) => {
+
    const toTimestamp = (value: string) => {
+
      const parsed = Date.parse(value);
+
      return Number.isFinite(parsed) ? parsed : 0;
+
    };
+
    return toTimestamp(b.time) - toTimestamp(a.time);
+
  });
 
  const [showActivityForm, setShowActivityForm] = useState(false);
@@ -805,7 +822,7 @@ export default function AcquisitionDetailClient({
 
                           <span className="w-[82px] shrink-0 text-xs font-bold text-zinc-700">{formatDate((n.sent_at || n.scheduled_at || n.created_at)?.slice(0, 10))}</span>
 
-                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-fuchsia-50 text-fuchsia-700">✉</span>
+                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-fuchsia-50 text-fuchsia-700"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></span>
 
                           <span className="min-w-0 flex-1 truncate text-sm font-bold text-zinc-900">Veranstalter-Newsletter</span>
 
@@ -1549,7 +1566,7 @@ export default function AcquisitionDetailClient({
 
         {!isArchived && <form id="add-crm-task" action={addTask} className="hidden" />}
 
-        {emailFollowUps.map(({mail,done}) => <form key={`email-wvl-${mail.id}`} id={`toggle-email-wvl-${mail.id}`} action={setEmailFollowUpStatus} className="hidden">
+        {emailFollowUps.map(({mail,done}) => <form key={`email-wvl-${mail.id}`} id={`toggle-email-wvl-${mail.id}`} action={setEmailFollowUpStatus} className="sr-only">
 
           <input type="hidden" name="acquisition_id" value={acquisition.id} />
 
@@ -1559,7 +1576,7 @@ export default function AcquisitionDetailClient({
 
         </form>)}
 
-        {activityFollowUps.map(({activity,done}) => <form key={`activity-wvl-${activity.id}`} id={`toggle-activity-wvl-${activity.id}`} action={setActivityFollowUpStatus} className="hidden">
+        {activityFollowUps.map(({activity,done}) => <form key={`activity-wvl-${activity.id}`} id={`toggle-activity-wvl-${activity.id}`} action={setActivityFollowUpStatus} className="sr-only">
 
         <input type="hidden" name="acquisition_id" value={acquisition.id}/>
 
@@ -1754,7 +1771,9 @@ function formatCreatedTime(value?: string | null) {
 }
 
 function normalizeUrl(value: string) {
+
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+
 }
 
 function channelIcon(channel?: string | null) {

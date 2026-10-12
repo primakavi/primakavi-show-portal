@@ -6,8 +6,6 @@ import { supabaseAdmin } from "@/app/lib/supabaseAdmin";
 
 import AcquisitionClient from "./AcquisitionClient";
 
-
-
 export default async function AcquisitionPage({
 
   searchParams,
@@ -27,8 +25,6 @@ export default async function AcquisitionPage({
   // AKQUISE
 
   // ============================================================
-
-
 
   const { data: acquisitionRaw, error } = await supabaseAdmin
 
@@ -90,8 +86,6 @@ export default async function AcquisitionPage({
 
     });
 
-
-
   if (error) {
 
     return (
@@ -106,15 +100,11 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   // ============================================================
 
   // LOCATIONS
 
   // ============================================================
-
-
 
   const venueIds = Array.from(
 
@@ -129,8 +119,6 @@ export default async function AcquisitionPage({
     )
 
   );
-
-
 
   const { data: venues, error: venuesError } =
 
@@ -174,8 +162,6 @@ export default async function AcquisitionPage({
 
       : { data: [], error: null };
 
-
-
   if (venuesError) {
 
     return (
@@ -190,15 +176,11 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   // ============================================================
 
   // VERANSTALTER
 
   // ============================================================
-
-
 
   const organizerIds = Array.from(
 
@@ -213,8 +195,6 @@ export default async function AcquisitionPage({
     )
 
   );
-
-
 
   const { data: organizers, error: organizersError } =
 
@@ -250,8 +230,6 @@ export default async function AcquisitionPage({
 
       : { data: [], error: null };
 
-
-
   if (organizersError) {
 
     return (
@@ -266,15 +244,11 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   // ============================================================
 
   // SPIELORTE DER VERANSTALTER
 
   // ============================================================
-
-
 
   const { data: organizerVenueLinks, error: linksError } =
 
@@ -298,8 +272,6 @@ export default async function AcquisitionPage({
 
       : { data: [], error: null };
 
-
-
   if (linksError) {
 
     return (
@@ -313,8 +285,6 @@ export default async function AcquisitionPage({
     );
 
   }
-
-
 
   const organizerVenueIds = Array.from(
 
@@ -330,15 +300,11 @@ export default async function AcquisitionPage({
 
   );
 
-
-
   const additionalVenueIds = organizerVenueIds.filter(
 
     (id) => !venueIds.includes(id)
 
   );
-
-
 
   const { data: additionalVenues, error: additionalVenuesError } =
 
@@ -382,8 +348,6 @@ export default async function AcquisitionPage({
 
       : { data: [], error: null };
 
-
-
   if (additionalVenuesError) {
 
     return (
@@ -398,27 +362,19 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   // ============================================================
 
   // MAPS
 
   // ============================================================
 
-
-
   const allVenues = [...(venues || []), ...(additionalVenues || [])];
-
-
 
   const venueMap = new Map(
 
     allVenues.map((venue) => [venue.id, venue])
 
   );
-
-
 
   const organizerMap = new Map(
 
@@ -432,8 +388,6 @@ export default async function AcquisitionPage({
 
   );
 
-
-
   const organizerVenueMap = new Map<
 
     string,
@@ -442,23 +396,15 @@ export default async function AcquisitionPage({
 
   >();
 
-
-
   for (const link of organizerVenueLinks || []) {
 
     const venue = venueMap.get(link.venue_id);
 
-
-
     if (!venue) continue;
-
-
 
     const existing =
 
       organizerVenueMap.get(link.organizer_id) || [];
-
-
 
     existing.push({
 
@@ -468,21 +414,15 @@ export default async function AcquisitionPage({
 
     });
 
-
-
     organizerVenueMap.set(link.organizer_id, existing);
 
   }
-
-
 
   // ============================================================
 
   // AKQUISE-RUNDEN
 
   // ============================================================
-
-
 
   const { data: rounds, error: roundsError } = await supabaseAdmin
 
@@ -508,8 +448,6 @@ export default async function AcquisitionPage({
 
     .order("created_at", { ascending: false });
 
-
-
   if (roundsError) {
 
     return (
@@ -524,17 +462,11 @@ export default async function AcquisitionPage({
 
   }
 
-
-
-
-
   // ============================================================
 
   // MAILING / NEWSLETTER
 
   // ============================================================
-
-
 
   const { data: mailingRecipientsRaw, error: mailingRecipientsError } =
 
@@ -586,8 +518,6 @@ export default async function AcquisitionPage({
 
       .order("created_at", { ascending: false });
 
-
-
   if (mailingRecipientsError) {
 
     return (
@@ -602,10 +532,6 @@ export default async function AcquisitionPage({
 
   }
 
-
-
-
-
   const { data: newsletterSuppressions, error: newsletterSuppressionsError } =
 
     await supabaseAdmin
@@ -613,8 +539,6 @@ export default async function AcquisitionPage({
       .from("newsletter_suppressions")
 
       .select("email, reason, unsubscribed_at");
-
-
 
   if (newsletterSuppressionsError) {
 
@@ -630,15 +554,11 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   const suppressedEmails = (newsletterSuppressions || []).map((item) =>
 
     String(item.email || "").trim().toLowerCase()
 
   );
-
-
 
   const { data: mailingVenues, error: mailingVenuesError } =
 
@@ -678,8 +598,6 @@ export default async function AcquisitionPage({
 
       .order("name", { ascending: true });
 
-
-
   if (mailingVenuesError) {
 
     return (
@@ -693,8 +611,6 @@ export default async function AcquisitionPage({
     );
 
   }
-
-
 
   const { data: mailingOrganizers, error: mailingOrganizersError } =
 
@@ -718,8 +634,6 @@ export default async function AcquisitionPage({
 
       .order("name", { ascending: true });
 
-
-
   if (mailingOrganizersError) {
 
     return (
@@ -734,38 +648,60 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   // Ansprechpartner-E-Mails ergänzen, damit der Client ältere Mailing-Empfänger
+
   // ohne organizer_id eindeutig einem Veranstalter zuordnen kann.
+
   const mailingOrganizerIds = (mailingOrganizers || []).map((item) => item.id);
+
   const { data: mailingOrganizerContacts, error: mailingOrganizerContactsError } =
+
     mailingOrganizerIds.length > 0
+
       ? await supabaseAdmin
+
           .from("organizer_contacts")
+
           .select("organizer_id, email")
+
           .in("organizer_id", mailingOrganizerIds)
+
           .not("email", "is", null)
+
       : { data: [], error: null };
 
   if (mailingOrganizerContactsError) {
+
     return (
+
       <div className="rounded-[2rem] bg-white p-8 font-bold text-red-600 shadow-xl">
+
         Fehler beim Laden der Veranstalter-Ansprechpartner: {mailingOrganizerContactsError.message}
+
       </div>
+
     );
+
   }
 
   const contactsByMailingOrganizer = new Map<string, { email: string | null }[]>();
+
   for (const contact of mailingOrganizerContacts || []) {
+
     const current = contactsByMailingOrganizer.get(contact.organizer_id) || [];
+
     current.push({ email: contact.email });
+
     contactsByMailingOrganizer.set(contact.organizer_id, current);
+
   }
 
   const mailingOrganizersWithContacts = (mailingOrganizers || []).map((organizer) => ({
+
     ...organizer,
+
     organizer_contacts: contactsByMailingOrganizer.get(organizer.id) || [],
+
   }));
 
   const mailingVenueMap = new Map(
@@ -774,36 +710,50 @@ export default async function AcquisitionPage({
 
   );
 
-
-
   const mailingOrganizerMap = new Map(
 
     mailingOrganizersWithContacts.map((organizer) => [organizer.id, organizer])
 
   );
 
-
-
   // Eindeutige E-Mail-Zuordnung direkt auf dem Server auflösen.
+
   // So sind Anzeigename und Akquise-Link unabhängig vom Client-Fallback.
+
   const normalizeMail = (value: string | null | undefined) =>
+
     String(value || "").trim().toLowerCase();
 
   const organizerByRecipientEmail = new Map<string, string | null>();
+
   for (const organizer of mailingOrganizersWithContacts) {
+
     const emails = new Set([
+
       normalizeMail(organizer.email),
+
       ...organizer.organizer_contacts.map((contact) => normalizeMail(contact.email)),
+
     ]);
+
     for (const email of emails) {
+
       if (!email) continue;
+
       if (organizerByRecipientEmail.has(email) &&
+
           organizerByRecipientEmail.get(email) !== organizer.id) {
+
         organizerByRecipientEmail.set(email, null);
+
       } else if (!organizerByRecipientEmail.has(email)) {
+
         organizerByRecipientEmail.set(email, organizer.id);
+
       }
+
     }
+
   }
 
   const mailingRecipients = (mailingRecipientsRaw || []).map((recipient) => ({
@@ -817,20 +767,20 @@ export default async function AcquisitionPage({
       : null,
 
     organizer: recipient.organizer_id
+
       ? mailingOrganizerMap.get(recipient.organizer_id) || null
+
       : mailingOrganizerMap.get(
+
           organizerByRecipientEmail.get(normalizeMail(recipient.email)) || ""
+
         ) || null,
 
   }));
 
-
-
   async function addMailingRecipient(formData: FormData) {
 
     "use server";
-
-
 
     const roundId = String(formData.get("round_id") || "").trim();
 
@@ -838,15 +788,11 @@ export default async function AcquisitionPage({
 
     const targetId = String(formData.get("target_id") || "").trim();
 
-
-
     if (!roundId || !targetId || !["venue", "organizer"].includes(targetType)) {
 
       throw new Error("Bitte einen Empfänger auswählen.");
 
     }
-
-
 
     const { data: round, error: roundError } = await supabaseAdmin
 
@@ -857,8 +803,6 @@ export default async function AcquisitionPage({
       .eq("id", roundId)
 
       .single();
-
-
 
     if (
 
@@ -878,8 +822,6 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     const { count: alreadySentCount, error: sentCheckError } = await supabaseAdmin
 
       .from("mailing_recipients")
@@ -890,8 +832,6 @@ export default async function AcquisitionPage({
 
       .not("sent_at", "is", null);
 
-
-
     if (sentCheckError) throw new Error(sentCheckError.message);
 
     if ((alreadySentCount || 0) > 0) {
@@ -900,15 +840,11 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     let venueId: string | null = null;
 
     let organizerId: string | null = null;
 
     let email: string | null = null;
-
-
 
     if (targetType === "venue") {
 
@@ -922,15 +858,11 @@ export default async function AcquisitionPage({
 
         .single();
 
-
-
       if (error || !venue) {
 
         throw new Error(error?.message || "Location konnte nicht geladen werden.");
 
       }
-
-
 
       venueId = venue.id;
 
@@ -948,8 +880,6 @@ export default async function AcquisitionPage({
 
         .single();
 
-
-
       if (error || !organizer) {
 
         throw new Error(
@@ -960,11 +890,7 @@ export default async function AcquisitionPage({
 
       }
 
-
-
       organizerId = organizer.id;
-
-
 
       const { data: primaryContact } = await supabaseAdmin
 
@@ -982,13 +908,9 @@ export default async function AcquisitionPage({
 
         .maybeSingle();
 
-
-
       email = primaryContact?.email || organizer.email || null;
 
     }
-
-
 
     if (email) {
 
@@ -1004,8 +926,6 @@ export default async function AcquisitionPage({
 
         .maybeSingle();
 
-
-
       if (suppressionError) throw new Error(suppressionError.message);
 
       if (suppression) {
@@ -1016,8 +936,6 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     const duplicateQuery = supabaseAdmin
 
       .from("mailing_recipients")
@@ -1025,8 +943,6 @@ export default async function AcquisitionPage({
       .select("id")
 
       .eq("round_id", roundId);
-
-
 
     const { data: existing, error: existingError } =
 
@@ -1036,19 +952,13 @@ export default async function AcquisitionPage({
 
         : await duplicateQuery.eq("organizer_id", targetId).maybeSingle();
 
-
-
     if (existingError) throw new Error(existingError.message);
-
-
 
     if (existing) {
 
       throw new Error("Dieser Empfänger ist bereits in der Mailing-Runde.");
 
     }
-
-
 
     const { error: insertError } = await supabaseAdmin
 
@@ -1068,39 +978,25 @@ export default async function AcquisitionPage({
 
       });
 
-
-
     if (insertError) throw new Error(insertError.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
 
-
-
-
-
   async function addMailingRecipientsBulk(formData: FormData) {
 
     "use server";
 
-
-
     const roundId = String(formData.get("round_id") || "").trim();
 
     const rawTargets = String(formData.get("targets") || "").trim();
-
-
 
     if (!roundId || !rawTargets) {
 
       throw new Error("Bitte mindestens einen Empfänger auswählen.");
 
     }
-
-
 
     const { count: alreadySentCount, error: sentCheckError } = await supabaseAdmin
 
@@ -1112,8 +1008,6 @@ export default async function AcquisitionPage({
 
       .not("sent_at", "is", null);
 
-
-
     if (sentCheckError) throw new Error(sentCheckError.message);
 
     if ((alreadySentCount || 0) > 0) {
@@ -1121,8 +1015,6 @@ export default async function AcquisitionPage({
       throw new Error("Dieses Mailing wurde bereits versendet. Die Empfängerliste ist eingefroren.");
 
     }
-
-
 
     const { data: round, error: roundError } = await supabaseAdmin
 
@@ -1133,8 +1025,6 @@ export default async function AcquisitionPage({
       .eq("id", roundId)
 
       .single();
-
-
 
     if (
 
@@ -1154,11 +1044,7 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     let targets: Array<{ type: "venue" | "organizer"; id: string }> = [];
-
-
 
     try {
 
@@ -1169,8 +1055,6 @@ export default async function AcquisitionPage({
       throw new Error("Die Empfängerauswahl konnte nicht gelesen werden.");
 
     }
-
-
 
     targets = targets.filter(
 
@@ -1184,15 +1068,11 @@ export default async function AcquisitionPage({
 
     );
 
-
-
     if (!targets.length) {
 
       throw new Error("Bitte mindestens einen Empfänger auswählen.");
 
     }
-
-
 
     const venueIds = targets
 
@@ -1200,15 +1080,11 @@ export default async function AcquisitionPage({
 
       .map((target) => target.id);
 
-
-
     const organizerIds = targets
 
       .filter((target) => target.type === "organizer")
 
       .map((target) => target.id);
-
-
 
     const [{ data: selectedVenues, error: venueError }, { data: selectedOrganizers, error: organizerError }] =
 
@@ -1240,13 +1116,9 @@ export default async function AcquisitionPage({
 
       ]);
 
-
-
     if (venueError) throw new Error(venueError.message);
 
     if (organizerError) throw new Error(organizerError.message);
-
-
 
     const { data: organizerContacts, error: contactsError } = organizerIds.length
 
@@ -1262,11 +1134,7 @@ export default async function AcquisitionPage({
 
       : { data: [], error: null };
 
-
-
     if (contactsError) throw new Error(contactsError.message);
-
-
 
     const primaryEmailByOrganizer = new Map<string, string>();
 
@@ -1282,8 +1150,6 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     const { data: existing, error: existingError } = await supabaseAdmin
 
       .from("mailing_recipients")
@@ -1292,11 +1158,7 @@ export default async function AcquisitionPage({
 
       .eq("round_id", roundId);
 
-
-
     if (existingError) throw new Error(existingError.message);
-
-
 
     const existingVenueIds = new Set(
 
@@ -1309,8 +1171,6 @@ export default async function AcquisitionPage({
       (existing || []).map((item) => item.organizer_id).filter(Boolean)
 
     );
-
-
 
     const rows = [
 
@@ -1358,19 +1218,13 @@ export default async function AcquisitionPage({
 
     ];
 
-
-
     const { data: suppressions, error: suppressionsError } = await supabaseAdmin
 
       .from("newsletter_suppressions")
 
       .select("email");
 
-
-
     if (suppressionsError) throw new Error(suppressionsError.message);
-
-
 
     const blocked = new Set(
 
@@ -1378,15 +1232,11 @@ export default async function AcquisitionPage({
 
     );
 
-
-
     const allowedRows = rows.filter(
 
       (row) => !row.email || !blocked.has(String(row.email).trim().toLowerCase())
 
     );
-
-
 
     if (!allowedRows.length) {
 
@@ -1396,43 +1246,29 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     const { error: insertError } = await supabaseAdmin
 
       .from("mailing_recipients")
 
       .insert(allowedRows);
 
-
-
     if (insertError) throw new Error(insertError.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
 
-
-
   async function updateMailingRecipient(formData: FormData) {
 
     "use server";
-
-
 
     const id = String(formData.get("id") || "").trim();
 
     if (!id) return;
 
-
-
     const reaction = String(formData.get("reaction") || "").trim() || null;
 
     const notes = String(formData.get("notes") || "").trim() || null;
-
-
 
     const { error } = await supabaseAdmin
 
@@ -1450,29 +1286,19 @@ export default async function AcquisitionPage({
 
       .eq("id", id);
 
-
-
     if (error) throw new Error(error.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
 
-
-
   async function markMailingSent(formData: FormData) {
 
     "use server";
 
-
-
     const id = String(formData.get("id") || "").trim();
 
     if (!id) return;
-
-
 
     const { error } = await supabaseAdmin
 
@@ -1490,31 +1316,21 @@ export default async function AcquisitionPage({
 
       .eq("id", id);
 
-
-
     if (error) throw new Error(error.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
 
-
-
   async function markWholeMailingSent(formData: FormData) {
 
     "use server";
-
-
 
     const roundId = String(formData.get("round_id") || "").trim();
 
     const sentAtRaw = String(formData.get("sent_at") || "").trim();
 
     if (!roundId) return;
-
-
 
     const parsed = sentAtRaw ? new Date(sentAtRaw) : new Date();
 
@@ -1524,13 +1340,9 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     const sentAt = parsed.toISOString();
 
     const now = new Date().toISOString();
-
-
 
     const { error } = await supabaseAdmin
 
@@ -1548,37 +1360,25 @@ export default async function AcquisitionPage({
 
       .eq("round_id", roundId);
 
-
-
     if (error) throw new Error(error.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
 
-
-
   async function scheduleWholeMailing(formData: FormData) {
 
     "use server";
 
-
-
     const roundId = String(formData.get("round_id") || "").trim();
 
     const scheduledAt = String(formData.get("scheduled_at") || "").trim();
-
-
 
     if (!roundId || !scheduledAt) {
 
       throw new Error("Bitte Datum und Uhrzeit für den Versand auswählen.");
 
     }
-
-
 
     const parsed = new Date(scheduledAt);
 
@@ -1588,11 +1388,7 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     const now = new Date().toISOString();
-
-
 
     // Wichtig: Planung hebt einen versehentlich gesetzten Versandstatus auf.
 
@@ -1612,31 +1408,21 @@ export default async function AcquisitionPage({
 
       .eq("round_id", roundId);
 
-
-
     if (error) throw new Error(error.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
 
-
-
   async function updateMailingTracking(formData: FormData) {
 
     "use server";
-
-
 
     const id = String(formData.get("id") || "").trim();
 
     const field = String(formData.get("field") || "").trim();
 
     const active = String(formData.get("active") || "") === "true";
-
-
 
     const allowedFields = [
 
@@ -1650,15 +1436,11 @@ export default async function AcquisitionPage({
 
     ];
 
-
-
     if (!id || !allowedFields.includes(field)) {
 
       throw new Error("Ungültiger Tracking-Status.");
 
     }
-
-
 
     const { data: recipient, error: loadError } = await supabaseAdmin
 
@@ -1670,15 +1452,11 @@ export default async function AcquisitionPage({
 
       .single();
 
-
-
     if (loadError || !recipient) {
 
       throw new Error(loadError?.message || "Mailing-Empfänger nicht gefunden.");
 
     }
-
-
 
     const now = new Date().toISOString();
 
@@ -1690,8 +1468,6 @@ export default async function AcquisitionPage({
 
     };
 
-
-
     // Ein Klick setzt fachlich auch "geöffnet".
 
     if (field === "clicked_at" && active && !recipient.opened_at) {
@@ -1699,8 +1475,6 @@ export default async function AcquisitionPage({
       updateData.opened_at = now;
 
     }
-
-
 
     const { error: updateError } = await supabaseAdmin
 
@@ -1710,19 +1484,13 @@ export default async function AcquisitionPage({
 
       .eq("id", id);
 
-
-
     if (updateError) throw new Error(updateError.message);
-
-
 
     // Abmeldung dauerhaft und E-Mail-bezogen speichern.
 
     if (field === "unsubscribed_at" && recipient.email) {
 
       const email = recipient.email.trim().toLowerCase();
-
-
 
       if (active) {
 
@@ -1748,8 +1516,6 @@ export default async function AcquisitionPage({
 
           );
 
-
-
         if (suppressionError) throw new Error(suppressionError.message);
 
       } else {
@@ -1764,33 +1530,23 @@ export default async function AcquisitionPage({
 
           .eq("reason", "unsubscribed");
 
-
-
         if (suppressionError) throw new Error(suppressionError.message);
 
       }
 
     }
 
-
-
     revalidatePath("/admin/acquisition");
 
   }
-
-
 
   async function createAcquisitionFromMailing(formData: FormData) {
 
     "use server";
 
-
-
     const recipientId = String(formData.get("recipient_id") || "").trim();
 
     if (!recipientId) return;
-
-
 
     const { data: recipient, error: recipientError } = await supabaseAdmin
 
@@ -1822,15 +1578,11 @@ export default async function AcquisitionPage({
 
       .single();
 
-
-
     if (recipientError || !recipient) {
 
       throw new Error(recipientError?.message || "Mailing-Empfänger nicht gefunden.");
 
     }
-
-
 
     // Idempotent: ein Mailing-Empfänger darf nur einmal umgewandelt werden.
 
@@ -1842,8 +1594,6 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     const { data: round } = await supabaseAdmin
 
       .from("acquisition_rounds")
@@ -1854,8 +1604,6 @@ export default async function AcquisitionPage({
 
       .maybeSingle();
 
-
-
     const now = new Date().toISOString();
 
     const reaction = String(recipient.reaction || "").trim();
@@ -1863,8 +1611,6 @@ export default async function AcquisitionPage({
     const sourceName = round?.name || "Newsletter";
 
     const response = reaction || "Antwort auf Newsletter";
-
-
 
     const { data: acquisitionItem, error: acquisitionError } = await supabaseAdmin
 
@@ -1906,15 +1652,11 @@ export default async function AcquisitionPage({
 
       .single();
 
-
-
     if (acquisitionError || !acquisitionItem) {
 
       throw new Error(acquisitionError?.message || "Akquise-Vorgang konnte nicht angelegt werden.");
 
     }
-
-
 
     const { error: linkError } = await supabaseAdmin
 
@@ -1932,11 +1674,7 @@ export default async function AcquisitionPage({
 
       .is("acquisition_id", null);
 
-
-
     if (linkError) throw new Error(linkError.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
@@ -1944,27 +1682,19 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   async function addNoteToWholeMailing(formData: FormData) {
 
     "use server";
 
-
-
     const roundId = String(formData.get("round_id") || "").trim();
 
     const note = String(formData.get("note") || "").trim();
-
-
 
     if (!roundId || !note) {
 
       throw new Error("Bitte eine Notiz eingeben.");
 
     }
-
-
 
     const { data: rows, error: loadError } = await supabaseAdmin
 
@@ -1974,21 +1704,15 @@ export default async function AcquisitionPage({
 
       .eq("round_id", roundId);
 
-
-
     if (loadError) throw new Error(loadError.message);
 
     if (!rows?.length) return;
-
-
 
     const stamp = new Intl.DateTimeFormat("de-DE", {
 
       dateStyle: "short",
 
     }).format(new Date());
-
-
 
     const updates = rows.map((row) => {
 
@@ -1997,8 +1721,6 @@ export default async function AcquisitionPage({
       const addition = `${stamp}: ${note}`;
 
       const nextNotes = existing ? `${existing}\n${addition}` : addition;
-
-
 
       return supabaseAdmin
 
@@ -2016,35 +1738,23 @@ export default async function AcquisitionPage({
 
     });
 
-
-
     const results = await Promise.all(updates);
 
     const failed = results.find((result) => result.error);
 
-
-
     if (failed?.error) throw new Error(failed.error.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
 
-
-
   async function deleteMailingRecipient(formData: FormData) {
 
     "use server";
 
-
-
     const id = String(formData.get("id") || "").trim();
 
     if (!id) return;
-
-
 
     const { data: recipient, error: loadError } = await supabaseAdmin
 
@@ -2056,23 +1766,17 @@ export default async function AcquisitionPage({
 
       .single();
 
-
-
     if (loadError || !recipient) {
 
       throw new Error(loadError?.message || "Empfänger nicht gefunden.");
 
     }
 
-
-
     if (recipient.sent_at) {
 
       throw new Error("Versendete Mailing-Empfänger können nicht mehr entfernt werden.");
 
     }
-
-
 
     const { error } = await supabaseAdmin
 
@@ -2082,17 +1786,11 @@ export default async function AcquisitionPage({
 
       .eq("id", id);
 
-
-
     if (error) throw new Error(error.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
-
-
 
   // ============================================================
 
@@ -2100,7 +1798,45 @@ export default async function AcquisitionPage({
 
   // ============================================================
 
-
+  // Offene WVL aus der Historie ableiten statt veraltetes acquisition-Datum blind anzuzeigen.
+  const acquisitionIds = (acquisitionRaw || []).map((row) => row.id);
+  const [{ data: followUpActivities, error: followUpActivityError }, { data: followUpEmails, error: followUpEmailError }] = acquisitionIds.length
+    ? await Promise.all([
+        supabaseAdmin.from("acquisition_activities")
+          .select("id,acquisition_id,activity_date,activity_type,created_at,follow_up_at,follow_up_status_override")
+          .in("acquisition_id", acquisitionIds),
+        supabaseAdmin.from("crm_emails")
+          .select("id,acquisition_id,direction,status,sent_at,received_at,created_at,follow_up_at,follow_up_status_override")
+          .in("acquisition_id", acquisitionIds),
+      ])
+    : [{ data: [], error: null }, { data: [], error: null }];
+  if (followUpActivityError) console.error("WVL-Aktivitäten:", followUpActivityError);
+  if (followUpEmailError) console.error("WVL-E-Mails:", followUpEmailError);
+  const effectiveFollowUpByAcquisition = new Map<string, string | null>();
+  if (!followUpActivityError && !followUpEmailError) {
+    for (const row of acquisitionRaw || []) {
+      const acts = (followUpActivities || []).filter(a => a.acquisition_id === row.id);
+      const mails = (followUpEmails || []).filter(m => m.acquisition_id === row.id);
+      const events = [
+        ...acts.filter(a => ["Kontakt", "Rückmeldung", "Telefonat", "Persönlicher Kontakt", "Absage", "Buchung"].includes(a.activity_type || ""))
+          .map(a => ({ date: a.activity_date || "", stamp: a.created_at || `${a.activity_date}T00:00:00` })),
+        ...mails.filter(m => m.direction === "incoming" || m.status === "sent")
+          .map(m => { const stamp = m.sent_at || m.received_at || m.created_at || ""; return { date: stamp.slice(0,10), stamp }; }),
+      ];
+      const isOpen = (date: string, stamp: string, override: string | null) =>
+        override === "open" || (override !== "done" && !events.some(e => e.date > date || (e.date === date && e.stamp > stamp)));
+      const candidates = [
+        ...acts.filter(a => a.follow_up_at && isOpen(a.activity_date || "", a.created_at || `${a.activity_date}T23:59:59`, a.follow_up_status_override))
+          .map(a => a.follow_up_at as string),
+        ...mails.filter(m => m.status === "sent" && m.follow_up_at && isOpen((m.sent_at || m.created_at || "").slice(0,10), m.sent_at || m.created_at || "", m.follow_up_status_override))
+          .map(m => m.follow_up_at as string),
+      ];
+      // Legacy-Datum nur beibehalten, wenn keine datierte Historien-WVL existiert.
+      const hasHistoricalWvl = acts.some(a => a.follow_up_at) || mails.some(m => m.follow_up_at);
+      if (!hasHistoricalWvl && row.next_follow_up_at) candidates.push(row.next_follow_up_at);
+      effectiveFollowUpByAcquisition.set(row.id, candidates.sort()[0] || null);
+    }
+  }
 
   const acquisition = (acquisitionRaw || []).map((item) => {
 
@@ -2110,15 +1846,11 @@ export default async function AcquisitionPage({
 
       : null;
 
-
-
     const organizer = item.organizer_id
 
       ? organizerMap.get(item.organizer_id) || null
 
       : null;
-
-
 
     const organizerVenues = item.organizer_id
 
@@ -2126,11 +1858,14 @@ export default async function AcquisitionPage({
 
       : [];
 
-
-
     return {
 
       ...item,
+
+      // Use the calculated open reminder instead of the stale summary column.
+      next_follow_up_at: effectiveFollowUpByAcquisition.has(item.id)
+        ? effectiveFollowUpByAcquisition.get(item.id) ?? null
+        : item.next_follow_up_at,
 
       venue: venue ? [venue] : [],
 
@@ -2142,29 +1877,19 @@ export default async function AcquisitionPage({
 
   });
 
-
-
   // ============================================================
 
   // ARCHIVIEREN
 
   // ============================================================
 
-
-
   async function archiveAcquisition(formData: FormData) {
 
     "use server";
 
-
-
     const id = String(formData.get("id") || "");
 
-
-
     if (!id) return;
-
-
 
     const { error } = await supabaseAdmin
 
@@ -2180,15 +1905,11 @@ export default async function AcquisitionPage({
 
       .eq("id", id);
 
-
-
     if (error) {
 
       throw new Error(error.message);
 
     }
-
-
 
     revalidatePath("/admin/acquisition");
 
@@ -2196,29 +1917,19 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   // ============================================================
 
   // REAKTIVIEREN
 
   // ============================================================
 
-
-
   async function restoreAcquisition(formData: FormData) {
 
     "use server";
 
-
-
     const id = String(formData.get("id") || "");
 
-
-
     if (!id) return;
-
-
 
     const { error } = await supabaseAdmin
 
@@ -2234,15 +1945,11 @@ export default async function AcquisitionPage({
 
       .eq("id", id);
 
-
-
     if (error) {
 
       throw new Error(error.message);
 
     }
-
-
 
     revalidatePath("/admin/acquisition");
 
@@ -2250,27 +1957,19 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   // ============================================================
 
   // AKQUISE-RUNDEN
 
   // ============================================================
 
-
-
   async function createRound(formData: FormData) {
 
     "use server";
 
-
-
     const name = String(formData.get("name") || "").trim();
 
     const type = String(formData.get("type") || "acquisition").trim();
-
-
 
     if (!name) {
 
@@ -2278,15 +1977,11 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     if (!["acquisition", "mailing"].includes(type)) {
 
       throw new Error("Ungültiger Rundentyp.");
 
     }
-
-
 
     const { data: newRound, error } = await supabaseAdmin
 
@@ -2308,15 +2003,11 @@ export default async function AcquisitionPage({
 
       .single();
 
-
-
     if (error || !newRound) {
 
       throw new Error(error?.message || "Runde konnte nicht angelegt werden.");
 
     }
-
-
 
     revalidatePath("/admin/acquisition");
 
@@ -2324,19 +2015,13 @@ export default async function AcquisitionPage({
 
   }
 
-
-
   async function archiveRound(formData: FormData) {
 
     "use server";
 
-
-
     const id = String(formData.get("round_id") || "");
 
     if (!id) return;
-
-
 
     const { error } = await supabaseAdmin
 
@@ -2352,29 +2037,19 @@ export default async function AcquisitionPage({
 
       .eq("id", id);
 
-
-
     if (error) throw new Error(error.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
 
-
-
   async function restoreRound(formData: FormData) {
 
     "use server";
 
-
-
     const id = String(formData.get("round_id") || "");
 
     if (!id) return;
-
-
 
     const { error } = await supabaseAdmin
 
@@ -2390,17 +2065,11 @@ export default async function AcquisitionPage({
 
       .eq("id", id);
 
-
-
     if (error) throw new Error(error.message);
-
-
 
     revalidatePath("/admin/acquisition");
 
   }
-
-
 
   // ============================================================
 
@@ -2408,13 +2077,9 @@ export default async function AcquisitionPage({
 
   // ============================================================
 
-
-
   async function createShowFromAcquisition(formData: FormData) {
 
     "use server";
-
-
 
     const acquisitionId = String(
 
@@ -2422,15 +2087,11 @@ export default async function AcquisitionPage({
 
     );
 
-
-
     const selectedVenueId = String(
 
       formData.get("venue_id") || ""
 
     );
-
-
 
     if (!acquisitionId) {
 
@@ -2438,15 +2099,11 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     // ----------------------------------------------------------
 
     // AKQUISE LADEN
 
     // ----------------------------------------------------------
-
-
 
     const {
 
@@ -2476,8 +2133,6 @@ export default async function AcquisitionPage({
 
       .single();
 
-
-
     if (acquisitionError || !acquisitionItem) {
 
       throw new Error(
@@ -2490,19 +2145,13 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     // ----------------------------------------------------------
 
     // KONKRETE LOCATION BESTIMMEN
 
     // ----------------------------------------------------------
 
-
-
     let venueId = acquisitionItem.venue_id || selectedVenueId || null;
-
-
 
     if (!venueId && acquisitionItem.organizer_id) {
 
@@ -2520,15 +2169,11 @@ export default async function AcquisitionPage({
 
         .eq("organizer_id", acquisitionItem.organizer_id);
 
-
-
       if (linksError) {
 
         throw new Error(linksError.message);
 
       }
-
-
 
       if (!links || links.length === 0) {
 
@@ -2539,8 +2184,6 @@ export default async function AcquisitionPage({
         );
 
       }
-
-
 
       if (links.length === 1) {
 
@@ -2554,8 +2197,6 @@ export default async function AcquisitionPage({
 
         );
 
-
-
         if (primary && !selectedVenueId) {
 
           venueId = primary.venue_id;
@@ -2565,8 +2206,6 @@ export default async function AcquisitionPage({
       }
 
     }
-
-
 
     if (!venueId) {
 
@@ -2578,8 +2217,6 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     // ----------------------------------------------------------
 
     // SICHERHEIT:
@@ -2589,8 +2226,6 @@ export default async function AcquisitionPage({
     // verwendet werden.
 
     // ----------------------------------------------------------
-
-
 
     if (
 
@@ -2620,15 +2255,11 @@ export default async function AcquisitionPage({
 
           .maybeSingle();
 
-
-
       if (validLinkError) {
 
         throw new Error(validLinkError.message);
 
       }
-
-
 
       if (!validLink) {
 
@@ -2642,15 +2273,11 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     // ----------------------------------------------------------
 
     // LOCATION
 
     // ----------------------------------------------------------
-
-
 
     const { data: venue, error: venueError } =
 
@@ -2686,8 +2313,6 @@ export default async function AcquisitionPage({
 
         .single();
 
-
-
     if (venueError || !venue) {
 
       throw new Error(
@@ -2700,15 +2325,11 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     // ----------------------------------------------------------
 
     // VERANSTALTER-KONTAKT
 
     // ----------------------------------------------------------
-
-
 
     let organizerContact:
 
@@ -2723,8 +2344,6 @@ export default async function AcquisitionPage({
         }
 
       | null = null;
-
-
 
     if (acquisitionItem.organizer_id) {
 
@@ -2745,8 +2364,6 @@ export default async function AcquisitionPage({
         .eq("id", acquisitionItem.organizer_id)
 
         .maybeSingle();
-
-
 
       const { data: primaryContact } = await supabaseAdmin
 
@@ -2776,8 +2393,6 @@ export default async function AcquisitionPage({
 
         .maybeSingle();
 
-
-
       organizerContact = {
 
         name:
@@ -2788,8 +2403,6 @@ export default async function AcquisitionPage({
 
           null,
 
-
-
         email:
 
           primaryContact?.email ||
@@ -2797,8 +2410,6 @@ export default async function AcquisitionPage({
           organizer?.email ||
 
           null,
-
-
 
         phone:
 
@@ -2812,19 +2423,13 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     // ----------------------------------------------------------
 
     // SHOWDATEN
 
     // ----------------------------------------------------------
 
-
-
     const showDate = acquisitionItem.show_date || null;
-
-
 
     const token = createToken(
 
@@ -2833,8 +2438,6 @@ export default async function AcquisitionPage({
       venue.name || ""
 
     );
-
-
 
     const venueAddress = [
 
@@ -2852,15 +2455,11 @@ export default async function AcquisitionPage({
 
       .join(", ");
 
-
-
     // ----------------------------------------------------------
 
     // SHOW ANLEGEN
 
     // ----------------------------------------------------------
-
-
 
     const { data: show, error: showError } =
 
@@ -2874,19 +2473,11 @@ export default async function AcquisitionPage({
 
           token,
 
-
-
           acquisition_id: acquisitionItem.id,
-
-
 
           venue_id: venue.id,
 
-
-
           artist: "Sonja Gründemann",
-
-
 
           program:
 
@@ -2894,35 +2485,21 @@ export default async function AcquisitionPage({
 
             "Jetzt mal Tacheles",
 
-
-
           show_date: showDate,
-
-
 
           weekday: getWeekday(showDate),
 
-
-
           venue: venue.name,
-
-
 
           city: venue.city,
 
-
-
           venue_address: venueAddress || null,
-
-
 
           contact_name:
 
             organizerContact?.name ||
 
             venue.contact_name,
-
-
 
           contact_email:
 
@@ -2932,35 +2509,21 @@ export default async function AcquisitionPage({
 
             venue.booking_email,
 
-
-
           contact_phone:
 
             organizerContact?.phone ||
 
             venue.contact_phone,
 
-
-
           capacity: venue.capacity,
-
-
 
           internal_status: "neu",
 
-
-
           billing_status: "offen",
-
-
 
           contract_status: "offen",
 
-
-
           markus_included: false,
-
-
 
           checklist: {},
 
@@ -2969,8 +2532,6 @@ export default async function AcquisitionPage({
         .select("id")
 
         .single();
-
-
 
     if (showError || !show) {
 
@@ -2984,15 +2545,11 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     // ----------------------------------------------------------
 
     // AKQUISE AUF GEBUCHT
 
     // ----------------------------------------------------------
-
-
 
     const { error: updateError } = await supabaseAdmin
 
@@ -3010,23 +2567,17 @@ export default async function AcquisitionPage({
 
       .eq("id", acquisitionId);
 
-
-
     if (updateError) {
 
       throw new Error(updateError.message);
 
     }
 
-
-
     // ----------------------------------------------------------
 
     // REFRESH
 
     // ----------------------------------------------------------
-
-
 
     revalidatePath("/admin/acquisition");
 
@@ -3035,8 +2586,6 @@ export default async function AcquisitionPage({
     revalidatePath("/admin");
 
     revalidatePath("/admin/markus");
-
-
 
     if (acquisitionItem.organizer_id) {
 
@@ -3048,8 +2597,6 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     if (acquisitionItem.venue_id) {
 
       revalidatePath(
@@ -3060,13 +2607,9 @@ export default async function AcquisitionPage({
 
     }
 
-
-
     redirect(`/admin/shows/${show.id}`);
 
   }
-
-
 
   return (
 
@@ -3078,15 +2621,11 @@ export default async function AcquisitionPage({
 
   initialRoundId={initialRoundId}
 
-
-
   mailingRecipients={mailingRecipients}
 
   mailingVenues={mailingVenues || []}
 
   mailingOrganizers={mailingOrganizersWithContacts}
-
-
 
   addMailingRecipient={addMailingRecipient}
 
@@ -3110,8 +2649,6 @@ export default async function AcquisitionPage({
 
   deleteMailingRecipient={deleteMailingRecipient}
 
-
-
   createRound={createRound}
 
   archiveRound={archiveRound}
@@ -3130,15 +2667,11 @@ export default async function AcquisitionPage({
 
 }
 
-
-
 // ============================================================
 
 // TOKEN
 
 // ============================================================
-
-
 
 function createToken(date: string, venue: string) {
 
@@ -3166,25 +2699,17 @@ function createToken(date: string, venue: string) {
 
       .slice(0, 18) || "show";
 
-
-
   const cleanDate = date
 
     ? date.replaceAll("-", "")
 
     : "date";
 
-
-
   const random = crypto.randomUUID().slice(0, 6);
-
-
 
   return `${cleanDate}-${cleanVenue}-${random}`;
 
 }
-
-
 
 // ============================================================
 
@@ -3192,13 +2717,9 @@ function createToken(date: string, venue: string) {
 
 // ============================================================
 
-
-
 function getWeekday(date?: string | null) {
 
   if (!date) return null;
-
-
 
   const [year, month, day] = date
 
@@ -3206,15 +2727,11 @@ function getWeekday(date?: string | null) {
 
     .map(Number);
 
-
-
   if (!year || !month || !day) {
 
     return null;
 
   }
-
-
 
   const d = new Date(
 
@@ -3226,15 +2743,11 @@ function getWeekday(date?: string | null) {
 
   );
 
-
-
   if (Number.isNaN(d.getTime())) {
 
     return null;
 
   }
-
-
 
   return d
 
